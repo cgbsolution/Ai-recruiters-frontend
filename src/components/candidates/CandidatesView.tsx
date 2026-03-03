@@ -1,0 +1,946 @@
+"use client";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import {
+  ArrowLeft,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  FileText,
+  Filter,
+  Link,
+  MoreVertical,
+  Plus,
+  Upload,
+  Users,
+  X,
+} from "lucide-react";
+import { notifySuccess, notifyError } from "@/lib/notify";
+import FitScoreBadge from "./FitScoreBadge";
+import AddCandidateModal from "./AddCandidateModal";
+import UploadResumesModal from "./UploadResumesModal";
+import ScheduleInterviewModal from "./ScheduleInterviewModal";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+
+type ResumeFitScore = "high" | "medium" | "low" | null;
+
+interface Candidate {
+  id: number;
+  name: string;
+  email: string;
+  phone: string;
+  role: string;
+  location: string;
+  status: string;
+  job_id: number | null;
+  candidate_stage: string;
+  interview_status: string;
+  interview_date: string | null;
+  interview_timezone: string | null;
+  resume_fit_score: ResumeFitScore;
+  fit_score_reasoning: string | null;
+  fit_score_details: string | null;
+  resume_path: string | null;
+  score: number | null;
+  trust_score: number | null;
+  grammar_score: number | null;
+  confidence_score: number | null;
+  clarity_score: number | null;
+  pronunciation_score: number | null;
+  enthusiasm_score: number | null;
+  conciseness_score: number | null;
+  ai_cheating_score: number | null;
+  recording_link: string | null;
+  video_duration: string | null;
+  mail_contact_history: boolean | null;
+}
+
+interface Job {
+  id: number;
+  title: string;
+  manager_name?: string;
+  manager_phone?: string;
+  manager_email?: string;
+  interview_link?: string;
+  interview_token?: string;
+}
+
+// "Candidates" is the "All" tab; the rest are stage-specific
+const STAGES = ["Candidates", "AI Round", "Panel Round", "Offer-Made", "Rejected"];
+const PAGE_SIZE = 20;
+
+const STATUS_COLORS: Record<string, string> = {
+  Scheduled: "bg-blue-100 text-blue-700",
+  New: "bg-pink-100 text-pink-700",
+  Completed: "bg-green-100 text-green-700",
+  Cancelled: "bg-gray-100 text-gray-500",
+  "Ended by Candidate": "bg-amber-100 text-amber-700",
+  "Terminated – Cheating Detected": "bg-red-100 text-red-700",
+  "Disconnected – Network Issue": "bg-orange-100 text-orange-700",
+  "Candidate Terminated Prematurely": "bg-yellow-100 text-yellow-700",
+  "Terminated Prematurely": "bg-yellow-100 text-yellow-700",
+};
+
+const COMPLETED_STATUSES = new Set(["Completed", "Terminated Prematurely"]);
+
+// Statuses where reschedule/cancel/schedule should be hidden
+const TERMINAL_STATUSES = new Set([
+  "Completed",
+  "Terminated – Cheating Detected",
+]);
+
+// Statuses that allow (re)scheduling
+const SCHEDULE_ALLOWED_STATUSES = new Set([
+  "New",
+  "Cancelled",
+  "Candidate Terminated Prematurely",
+  "Ended by Candidate",
+  "Disconnected – Network Issue",
+]);
+
+function formatSchedule(date: string | null, tz: string | null): string | null {
+  if (!date) return null;
+  // Map common timezone names to IANA identifiers
+  const tzMap: Record<string, string> = {
+    "Asia/Calcutta": "Asia/Kolkata",
+    "Asia/Kolkata": "Asia/Kolkata",
+    IST: "Asia/Kolkata",
+  };
+  const ianaZone = tz ? tzMap[tz] || tz : undefined;
+  const formatted = new Date(date).toLocaleString("en-US", {
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: ianaZone,
+  });
+  return `Scheduled: ${formatted}${tz ? ` (${tz})` : ""}`;
+}
+
+function ScoreCell({ value }: { value: number | null }) {
+  if (value === null || value === undefined)
+    return <span className="text-gray-400">N/A</span>;
+  return <span>{value.toFixed(1)}</span>;
+}
+
+export default function CandidatesView({ jobId }: { jobId: number }) {
+  const router = useRouter();
+
+  const [job, setJob] = useState<Job | null>(null);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // "Candidates" tab = show all stages; other tabs = filter by stage
+  const [activeTab, setActiveTab] = useState("Candidates");
+
+  // "Show All" — only on Candidates tab. When checked: show all stages. When unchecked: show only Candidates stage.
+  const [showAll, setShowAll] = useState(true);
+
+  // "Show Completed Interviews" — available on ALL tabs.
+  // When checked: additionally show completed interviews (they are hidden by default).
+  // When unchecked: hide completed interviews.
+  const [showCompleted, setShowCompleted] = useState(false);
+
+  const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [pageIndex, setPageIndex] = useState(0);
+  const [scheduleCandidate, setScheduleCandidate] = useState<Candidate | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [recomputingIds, setRecomputingIds] = useState<Set<number>>(new Set());
+  const [interviewUrl, setInterviewUrl] = useState<string | null>(null);
+  const [urlCopied, setUrlCopied] = useState(false);
+
+  const API = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+  // ── Data fetching ─────────────────────────────────────────────────────────
+  const fetchJob = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/jobs/${jobId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setJob(data);
+        if (data.interview_token) {
+          setInterviewUrl(`${window.location.origin}/interview/${data.interview_token}`);
+        }
+      }
+    } catch {}
+  }, [jobId, API]);
+
+  const fetchCandidates = useCallback(async () => {
+    setLoading(true);
+    try {
+      // Always fetch all candidates for this job; filtering is done client-side
+      const params = new URLSearchParams({ job_id: String(jobId) });
+      const res = await fetch(`${API}/candidates/?${params}`);
+      if (res.ok) setCandidates(await res.json());
+    } catch {}
+    finally { setLoading(false); }
+  }, [jobId, API]);
+
+  useEffect(() => { fetchJob(); }, [fetchJob]);
+  useEffect(() => { fetchCandidates(); }, [fetchCandidates]);
+
+  // ── Tab change handler ────────────────────────────────────────────────────
+  const handleTabChange = useCallback((tab: string) => {
+    setActiveTab(tab);
+    setShowAll(true);       // reset Show All when switching tabs
+    setShowCompleted(false); // reset completed filter when switching tabs
+    setPageIndex(0);
+  }, []);
+
+  // ── Filtering ─────────────────────────────────────────────────────────────
+  const filteredCandidates = useMemo(() => {
+    return candidates.filter((c) => {
+      // ── Stage filter ──────────────────────────────────────────────────────
+      if (activeTab === "Candidates") {
+        // "Show All" ticked (default) → every stage, every interview status
+        // "Show All" unticked → only "Candidates" stage
+        if (!showAll && c.candidate_stage !== "Candidates") return false;
+      } else {
+        // Stage-specific tabs always filter by that stage
+        if (c.candidate_stage !== activeTab) return false;
+      }
+
+      // ── "Show Completed Interviews" filter — applies to ALL tabs ──────────
+      // When ticked: show ONLY candidates who completed their interview
+      // When unticked: show ALL candidates regardless of interview status
+      if (showCompleted && !COMPLETED_STATUSES.has(c.interview_status)) return false;
+
+      // ── Search ────────────────────────────────────────────────────────────
+      if (search) {
+        const q = search.toLowerCase();
+        if (!c.name.toLowerCase().includes(q) && !c.email.toLowerCase().includes(q))
+          return false;
+      }
+
+      return true;
+    });
+  }, [candidates, activeTab, showAll, showCompleted, search]);
+
+  // Reset to page 0 whenever the filtered set changes
+  useEffect(() => { setPageIndex(0); }, [filteredCandidates.length, activeTab]);
+
+  // ── Pagination ─────────────────────────────────────────────────────────────
+  const totalRows = filteredCandidates.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
+  const safePage = Math.min(pageIndex, totalPages - 1);
+  const pagedCandidates = filteredCandidates.slice(
+    safePage * PAGE_SIZE,
+    (safePage + 1) * PAGE_SIZE,
+  );
+  const firstRow = totalRows === 0 ? 0 : safePage * PAGE_SIZE + 1;
+  const lastRow = Math.min((safePage + 1) * PAGE_SIZE, totalRows);
+
+  // ── Tab counts — count by candidate_stage across ALL candidates ───────────
+  const tabCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    STAGES.forEach((s) => {
+      if (s === "Candidates") {
+        counts[s] = candidates.length; // total
+      } else {
+        counts[s] = candidates.filter((c) => c.candidate_stage === s).length;
+      }
+    });
+    return counts;
+  }, [candidates]);
+
+  // ── Whether the current view is the "all" (Candidates) tab ───────────────
+  const isCandidatesTab = activeTab === "Candidates";
+
+  // ── Selection helpers ─────────────────────────────────────────────────────
+  const toggleSelect = useCallback((id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(
+    (checked: boolean) => {
+      setSelectedIds(checked ? new Set(pagedCandidates.map((c) => c.id)) : new Set());
+    },
+    [pagedCandidates],
+  );
+
+  const allPageSelected =
+    pagedCandidates.length > 0 &&
+    pagedCandidates.every((c) => selectedIds.has(c.id));
+
+  // ── Action handlers ───────────────────────────────────────────────────────
+  const handlePromote = useCallback(
+    async (candidateId: number, stage: string) => {
+      try {
+        const res = await fetch(`${API}/candidates/${candidateId}/promote`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ stage }),
+        });
+        if (res.ok) {
+          const updated = await res.json();
+          setCandidates((prev) =>
+            prev.map((c) => (c.id === updated.id ? updated : c)),
+          );
+        }
+      } catch {}
+    },
+    [API],
+  );
+
+  const handleScheduled = useCallback((updated: Candidate) => {
+    setCandidates((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+  }, []);
+
+  const handleCancelInterview = useCallback(
+    async (candidateId: number) => {
+      if (!window.confirm("Are you sure you want to cancel this interview? The candidate will be notified.")) {
+        return;
+      }
+      try {
+        const res = await fetch(`${API}/candidates/${candidateId}/cancel-interview`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: "Cancelled by admin" }),
+        });
+        if (res.ok) {
+          const updated = await res.json();
+          setCandidates((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+          notifySuccess("Interview cancelled. Candidate has been notified.");
+        } else {
+          const err = await res.json().catch(() => ({ detail: "Failed to cancel interview" }));
+          notifyError(err.detail || "Failed to cancel interview");
+        }
+      } catch {
+        notifyError("Failed to cancel interview");
+      }
+    },
+    [API],
+  );
+
+  const handleCandidateCreated = useCallback((c: Candidate) => {
+    setCandidates((prev) => [c, ...prev]);
+  }, []);
+
+  const handleResumesUploaded = useCallback((newCandidates: Candidate[]) => {
+    setCandidates((prev) => [...newCandidates, ...prev]);
+  }, []);
+
+  const handleRecomputeFit = useCallback(
+    async (candidateId: number) => {
+      setRecomputingIds((prev) => new Set([...prev, candidateId]));
+      try {
+        const res = await fetch(
+          `${API}/candidates/${candidateId}/compute-fit-score`,
+          { method: "POST" },
+        );
+        if (res.ok) {
+          const updated = await res.json();
+          setCandidates((prev) =>
+            prev.map((c) => (c.id === updated.id ? updated : c)),
+          );
+        }
+      } catch {}
+      finally {
+        setRecomputingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(candidateId);
+          return next;
+        });
+      }
+    },
+    [API],
+  );
+
+  const copyLink = useCallback(() => {
+    if (!interviewUrl) return;
+    navigator.clipboard.writeText(interviewUrl);
+    setUrlCopied(true);
+    setTimeout(() => setUrlCopied(false), 2000);
+  }, [interviewUrl]);
+
+  // ── Promote stage options — exclude current stage ─────────────────────────
+  const getPromoteOptions = (currentStage: string) =>
+    ["AI Round", "Panel Round", "Offer-Made", "Rejected"].filter(
+      (s) => s !== currentStage,
+    );
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  return (
+    <div className="flex flex-col gap-4 min-w-0">
+
+      {/* ── Job Header ───────────────────────────────────────────────────── */}
+      <div className="flex items-start justify-between">
+        <div className="min-w-0 flex-1 mr-4">
+          {/* <button
+            onClick={() => router.push("/job-openings")}
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-1"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back to openings
+          </button>
+          <p className="text-xs text-gray-400">Job ID: {jobId}</p> */}
+          <h1 className="text-xl font-bold text-gray-800">
+            {job?.title || "Loading…"}
+          </h1>
+
+          {interviewUrl && (
+            <div className="flex items-center gap-2 mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 max-w-xl">
+              <Link className="w-4 h-4 text-blue-500 shrink-0" />
+              <span className="text-sm text-blue-700 truncate flex-1 font-mono">
+                {interviewUrl}
+              </span>
+              <button
+                onClick={copyLink}
+                title={urlCopied ? "Copied!" : "Copy link"}
+                className="shrink-0 p-1 rounded hover:bg-blue-100 transition-colors"
+              >
+                {urlCopied ? (
+                  <Check className="w-4 h-4 text-green-600" />
+                ) : (
+                  <Copy className="w-4 h-4 text-blue-500" />
+                )}
+              </button>
+              <a
+                href={interviewUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open interview link"
+                className="shrink-0 p-1 rounded hover:bg-blue-100 transition-colors"
+              >
+                <ExternalLink className="w-4 h-4 text-blue-500" />
+              </a>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <Button size="sm" onClick={() => setShowAddModal(true)} className="gap-1">
+            <Plus className="w-4 h-4" /> Add Candidate
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1 bg-yellow-500 hover:bg-yellow-600 text-white border-yellow-500"
+            onClick={() => setShowUploadModal(true)}
+          >
+            <Upload className="w-4 h-4" /> Upload Resumes
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <MoreVertical className="w-5 h-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem>Export Candidates</DropdownMenuItem>
+              <DropdownMenuItem>Job Settings</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {/* ── Stage Tabs ────────────────────────────────────────────────────── */}
+      <div className="border-b border-gray-200">
+        <div className="flex items-center gap-0">
+          {STAGES.map((stage) => (
+            <button
+              key={stage}
+              onClick={() => handleTabChange(stage)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
+                ${activeTab === stage
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"}`}
+            >
+              {stage === "Candidates" ? "CANDIDATES" : stage.toUpperCase()}
+              {/* Show count for all tabs; for Candidates tab show total */}
+              <span className="ml-1 text-xs text-gray-400">
+                ({tabCounts[stage] ?? 0})
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Filters Row ───────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-4 flex-wrap">
+          {/* "Show All" — only on Candidates tab */}
+          {isCandidatesTab && (
+            <label className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
+              <Checkbox
+                checked={showAll}
+                onCheckedChange={(v) => { setShowAll(v as boolean); setPageIndex(0); }}
+              />
+              Show All
+            </label>
+          )}
+          {/* "Show Completed Interviews" — on ALL tabs */}
+          <label className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
+            <Checkbox
+              checked={showCompleted}
+              onCheckedChange={(v) => { setShowCompleted(v as boolean); setPageIndex(0); }}
+            />
+            Show Completed Interviews
+          </label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-1">
+            <Filter className="w-4 h-4" /> FILTERS
+          </Button>
+          <Input
+            placeholder="Search…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-8 w-44"
+          />
+        </div>
+      </div>
+
+      {/* ── Table ─────────────────────────────────────────────────────────── */}
+      <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+        <div className="overflow-x-auto w-full">
+          <Table className="min-w-max">
+
+            <TableHeader className="bg-gray-50">
+              <TableRow>
+                <TableHead className="w-10 px-3">
+                  <Checkbox
+                    checked={allPageSelected}
+                    onCheckedChange={(v) => toggleSelectAll(!!v)}
+                    aria-label="Select all on page"
+                  />
+                </TableHead>
+
+                {/* Extra columns shown only on Candidates (all) tab */}
+                {isCandidatesTab && <TableHead className="px-3 text-xs font-medium text-gray-600">AI-CHEATING SCORE</TableHead>}
+                {isCandidatesTab && <TableHead className="px-3 text-xs font-medium text-gray-600">PROMOTE</TableHead>}
+                {isCandidatesTab && <TableHead className="px-3 text-xs font-medium text-gray-600">INTERVIEW DATE</TableHead>}
+
+                <TableHead className="px-3 text-xs font-medium text-gray-600">NAME</TableHead>
+                <TableHead className="px-3 text-xs font-medium text-gray-600">SCORE</TableHead>
+
+                {isCandidatesTab && <TableHead className="px-3 text-xs font-medium text-gray-600">TRUST SCORE</TableHead>}
+
+                <TableHead className="px-3 text-xs font-medium text-gray-600">CANDIDATE FIT SCORE</TableHead>
+                <TableHead className="px-3 text-xs font-medium text-gray-600">INTERVIEW STATUS</TableHead>
+                <TableHead className="px-3 text-xs font-medium text-gray-600">VIEW REPORT</TableHead>
+                <TableHead className="px-3 text-xs font-medium text-gray-600">RESUME</TableHead>
+                <TableHead className="px-3 text-xs font-medium text-gray-600">INTERVIEW SCHEDULE</TableHead>
+                <TableHead className="px-3 text-xs font-medium text-gray-600">RECORDING</TableHead>
+                <TableHead className="px-3 text-xs font-medium text-gray-600">VIDEO DURATION</TableHead>
+
+                {/* Detail score columns shown only on stage-specific tabs */}
+                {!isCandidatesTab && <TableHead className="px-3 text-xs font-medium text-gray-600">PRONUNCIATION</TableHead>}
+                {!isCandidatesTab && <TableHead className="px-3 text-xs font-medium text-gray-600">ENTHUSIASM</TableHead>}
+                {!isCandidatesTab && <TableHead className="px-3 text-xs font-medium text-gray-600">GRAMMAR</TableHead>}
+                {!isCandidatesTab && <TableHead className="px-3 text-xs font-medium text-gray-600">CONCISENESS</TableHead>}
+                {!isCandidatesTab && <TableHead className="px-3 text-xs font-medium text-gray-600">CLARITY</TableHead>}
+                {!isCandidatesTab && <TableHead className="px-3 text-xs font-medium text-gray-600">CONFIDENCE</TableHead>}
+                {!isCandidatesTab && <TableHead className="px-3 text-xs font-medium text-gray-600">INITIAL AUDIO</TableHead>}
+              </TableRow>
+            </TableHeader>
+
+            <TableBody>
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={i}>
+                    {Array.from({ length: 8 }).map((__, j) => (
+                      <TableCell key={j} className="px-3 py-4">
+                        <Skeleton className="h-4 w-24" />
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : pagedCandidates.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={20} className="py-16 text-center text-gray-500">
+                    <Users className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+                    {showCompleted
+                      ? "No completed interviews found."
+                      : "No candidates found. Add candidates or upload resumes."}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                pagedCandidates.map((c) => {
+                  const isScheduled = c.interview_status === "Scheduled";
+                  // Only show schedule label when status is actually "Scheduled"
+                  const scheduleLabel = isScheduled
+                    ? formatSchedule(c.interview_date, c.interview_timezone)
+                    : null;
+                  // Promote options exclude the candidate's current stage
+                  const promoteOptions = getPromoteOptions(c.candidate_stage);
+
+                  return (
+                    <TableRow key={c.id}>
+                      {/* Checkbox */}
+                      <TableCell className="px-3">
+                        <Checkbox
+                          checked={selectedIds.has(c.id)}
+                          onCheckedChange={() => toggleSelect(c.id)}
+                          aria-label={`Select ${c.name}`}
+                        />
+                      </TableCell>
+
+                      {/* AI Cheating Score — Candidates tab only */}
+                      {isCandidatesTab && (
+                        <TableCell className="px-3">
+                          {c.ai_cheating_score !== null ? (
+                            <span className="text-orange-500">
+                              ⚠ {c.ai_cheating_score.toFixed(0)}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </TableCell>
+                      )}
+
+                      {/* Promote — Candidates tab only */}
+                      {isCandidatesTab && (
+                        <TableCell className="px-3">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="outline" size="sm" className="gap-1 h-7 whitespace-nowrap">
+                                Promote <ChevronDown className="w-3 h-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                              <DropdownMenuItem disabled className="text-xs text-gray-400">
+                                -- Move To --
+                              </DropdownMenuItem>
+                              {promoteOptions.map((stage) => (
+                                <DropdownMenuItem
+                                  key={stage}
+                                  onClick={() => handlePromote(c.id, stage)}
+                                >
+                                  {stage}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      )}
+
+                      {/* Interview Date — Candidates tab only */}
+                      {isCandidatesTab && (
+                        <TableCell className="px-3 text-gray-600 whitespace-nowrap">
+                          {c.interview_date ? (
+                            new Date(c.interview_date).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            })
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </TableCell>
+                      )}
+
+                      {/* Name */}
+                      <TableCell className="px-3">
+                        <div className="min-w-[160px]">
+                          <p className="font-medium text-gray-800">{c.name}</p>
+                          {c.phone && (
+                            <p className="text-xs text-gray-500">{c.phone}</p>
+                          )}
+                          <a
+                            href={`mailto:${c.email}`}
+                            className="text-xs text-blue-600 hover:underline"
+                          >
+                            {c.email}
+                          </a>
+                        </div>
+                      </TableCell>
+
+                      {/* Score */}
+                      <TableCell className="px-3 text-gray-600">
+                        <ScoreCell value={c.score} />
+                      </TableCell>
+
+                      {/* Trust Score — Candidates tab only */}
+                      {isCandidatesTab && (
+                        <TableCell className="px-3 text-gray-600">
+                          <ScoreCell value={c.trust_score} />
+                        </TableCell>
+                      )}
+
+                      {/* Candidate Fit Score */}
+                      <TableCell className="px-3">
+                        <FitScoreBadge
+                          fitLevel={c.resume_fit_score}
+                          reasoning={c.fit_score_reasoning}
+                          details={c.fit_score_details}
+                          onRecompute={
+                            c.job_id !== null
+                              ? () => handleRecomputeFit(c.id)
+                              : undefined
+                          }
+                          recomputing={recomputingIds.has(c.id)}
+                        />
+                      </TableCell>
+
+                      {/* Interview Status */}
+                      <TableCell className="px-3">
+                        {scheduleLabel ? (
+                          <div className="flex items-center gap-1 min-w-[200px]">
+                            <span
+                              className={`px-2 py-1 rounded text-xs font-medium ${STATUS_COLORS["Scheduled"]}`}
+                            >
+                              {scheduleLabel}
+                            </span>
+                            {isScheduled && (
+                              <button
+                                className="text-gray-400 hover:text-red-500"
+                                title="Cancel scheduled interview"
+                                onClick={() => handleCancelInterview(c.id)}
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-medium whitespace-nowrap ${
+                              STATUS_COLORS[c.interview_status] || "bg-gray-100 text-gray-600"
+                            }`}
+                          >
+                            {c.interview_status || "New"}
+                          </span>
+                        )}
+                      </TableCell>
+
+                      {/* View Report */}
+                      <TableCell className="px-3">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => router.push(`/evaluation/${c.id}`)}
+                          title="View Report"
+                        >
+                          <ChevronRight className="w-5 h-5 text-blue-500" />
+                        </Button>
+                      </TableCell>
+
+                      {/* Resume */}
+                      <TableCell className="px-3">
+                        {c.resume_path ? (
+                          <a
+                            href={
+                              c.resume_path.startsWith("/")
+                                ? `${API_BASE.replace(/\/api$/, "")}${c.resume_path}`
+                                : c.resume_path
+                            }
+                            target="_blank"
+                            rel="noreferrer"
+                            title="View Resume"
+                          >
+                            <Button variant="ghost" size="icon">
+                              <FileText className="w-5 h-5 text-red-500" />
+                            </Button>
+                          </a>
+                        ) : (
+                          <Button variant="ghost" size="icon" disabled title="No Resume">
+                            <FileText className="w-5 h-5 text-gray-300" />
+                          </Button>
+                        )}
+                      </TableCell>
+
+                      {/* Interview Schedule */}
+                      <TableCell className="px-3">
+                        <div className="flex items-center gap-1 min-w-[200px]">
+                          {TERMINAL_STATUSES.has(c.interview_status) ? (
+                            <span className="text-gray-400 text-xs">
+                              {c.interview_status === "Completed" ? "Interview Completed" : "N/A"}
+                            </span>
+                          ) : isScheduled ? (
+                            <>
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs bg-yellow-500 hover:bg-yellow-600 text-white gap-1 whitespace-nowrap"
+                                onClick={() => setScheduleCandidate(c)}
+                              >
+                                <CalendarDays className="w-3 h-3" /> Reschedule
+                              </Button>
+                              {interviewUrl && (
+                                <Button
+                                  size="sm"
+                                  className="h-7 text-xs bg-blue-500 hover:bg-blue-600 text-white gap-1 whitespace-nowrap"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(interviewUrl);
+                                    notifySuccess("Interview link copied!");
+                                  }}
+                                >
+                                  <Link className="w-3 h-3" /> Share Link
+                                </Button>
+                              )}
+                            </>
+                          ) : SCHEDULE_ALLOWED_STATUSES.has(c.interview_status) || !c.interview_status ? (
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white gap-1 whitespace-nowrap"
+                              onClick={() => setScheduleCandidate(c)}
+                            >
+                              <CalendarDays className="w-3 h-3" /> Schedule
+                            </Button>
+                          ) : (
+                            <span className="text-gray-400 text-xs">N/A</span>
+                          )}
+                        </div>
+                      </TableCell>
+
+                      {/* Recording */}
+                      <TableCell className="px-3">
+                        {c.recording_link ? (
+                          <a
+                            href={
+                              c.recording_link.startsWith("/")
+                                ? `${API_BASE.replace(/\/api$/, "")}${c.recording_link}`
+                                : c.recording_link
+                            }
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-blue-600 hover:underline text-xs whitespace-nowrap"
+                          >
+                            View
+                          </a>
+                        ) : (
+                          <span className="text-gray-400 text-xs whitespace-nowrap">
+                            {c.interview_status === "Scheduled"
+                              ? "Meeting has not started"
+                              : "Not started"}
+                          </span>
+                        )}
+                      </TableCell>
+
+                      {/* Video Duration */}
+                      <TableCell className="px-3 text-gray-600">
+                        {c.video_duration ?? <span className="text-gray-400">N/A</span>}
+                      </TableCell>
+
+                      {/* Detail scores — stage-specific tabs only */}
+                      {!isCandidatesTab && (
+                        <>
+                          <TableCell className="px-3"><ScoreCell value={c.pronunciation_score} /></TableCell>
+                          <TableCell className="px-3"><ScoreCell value={c.enthusiasm_score} /></TableCell>
+                          <TableCell className="px-3"><ScoreCell value={c.grammar_score} /></TableCell>
+                          <TableCell className="px-3"><ScoreCell value={c.conciseness_score} /></TableCell>
+                          <TableCell className="px-3"><ScoreCell value={c.clarity_score} /></TableCell>
+                          <TableCell className="px-3"><ScoreCell value={c.confidence_score} /></TableCell>
+                          <TableCell className="px-3 text-gray-400 text-xs">No Audio</TableCell>
+                        </>
+                      )}
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        {/* ── Pagination footer ─────────────────────────────────────────── */}
+        <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3">
+          <p className="text-sm text-gray-500">
+            {totalRows === 0
+              ? "No results"
+              : `Showing ${firstRow}–${lastRow} of ${totalRows} candidate${totalRows !== 1 ? "s" : ""}`}
+          </p>
+
+          <Pagination className="w-auto mx-0">
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  onClick={safePage > 0 ? () => setPageIndex(safePage - 1) : undefined}
+                  aria-disabled={safePage === 0}
+                  className={safePage === 0 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                />
+              </PaginationItem>
+
+              <PaginationItem>
+                <span className="flex h-9 min-w-[72px] items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium tabular-nums">
+                  {safePage + 1} / {totalPages}
+                </span>
+              </PaginationItem>
+
+              <PaginationItem>
+                <PaginationNext
+                  onClick={
+                    safePage < totalPages - 1
+                      ? () => setPageIndex(safePage + 1)
+                      : undefined
+                  }
+                  aria-disabled={safePage >= totalPages - 1}
+                  className={
+                    safePage >= totalPages - 1
+                      ? "pointer-events-none opacity-50"
+                      : "cursor-pointer"
+                  }
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        </div>
+      </div>
+
+      {/* ── Modals ────────────────────────────────────────────────────────── */}
+      <AddCandidateModal
+        open={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        jobId={jobId}
+        onCreated={handleCandidateCreated}
+      />
+      <UploadResumesModal
+        open={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        jobId={jobId}
+        onUploaded={handleResumesUploaded}
+      />
+      {scheduleCandidate && (
+        <ScheduleInterviewModal
+          open={!!scheduleCandidate}
+          onClose={() => setScheduleCandidate(null)}
+          candidateId={scheduleCandidate.id}
+          candidateName={scheduleCandidate.name}
+          jobTitle={job?.title || ""}
+          contactInfo={
+            job?.manager_name
+              ? `You may also reach your HR/Recruiter - ${job.manager_name} at ${
+                  job.manager_phone || ""
+                } or via email ${job.manager_email || ""}`
+              : undefined
+          }
+          onScheduled={handleScheduled}
+        />
+      )}
+    </div>
+  );
+}
