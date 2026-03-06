@@ -129,7 +129,7 @@ export default function InterviewRoom({
   /* ── Hooks ── */
   const { transcript, interimTranscript, isListening, isSupported, lastFinalAt, start, stop, reset } = useSpeechRecognition();
   const { speak, cancel, isSpeaking } = useSpeechSynthesis();
-  const { violationCount, lastViolation, disable: disableViolations } = useViolationDetection(sessionId, true, webcamStream);
+  const { violationCount, lastViolation, shouldTerminate, disable: disableViolations } = useViolationDetection(sessionId, true, webcamStream);
 
   /* ── Keep transcriptRef in sync ── */
   useEffect(() => {
@@ -428,6 +428,14 @@ export default function InterviewRoom({
     setShowEndConfirm(false);
     onComplete();
   }, [disableViolations, cancel, stop, cancelSilenceAnim, onComplete]);
+
+  // Auto-terminate interview when violation threshold is reached
+  useEffect(() => {
+    if (!shouldTerminate) return;
+    setShowViolationModal(true);
+    const t = setTimeout(() => handleEndInterview(), 3000);
+    return () => clearTimeout(t);
+  }, [shouldTerminate, handleEndInterview]);
 
   /* ── Draggable PIP handlers ── */
   const handlePipMouseDown = useCallback((e: React.MouseEvent) => {

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { PlusIcon, PencilIcon, TrashIcon } from "lucide-react";
 import { notifyError, notifySuccess } from "@/lib/notify";
+import { api, ApiError } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -33,8 +34,6 @@ interface Question {
   updated_at?: string;
 }
 
-const API_BASE = `${process.env.NEXT_PUBLIC_API_BASE_URL}`;
-
 const QuestionsBank: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,17 +52,7 @@ const QuestionsBank: React.FC = () => {
   const fetchQuestions = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/questions/`, {
-        headers: { Accept: "application/json" },
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        console.error("❌ Failed to fetch questions:", text);
-        notifyError("Failed to fetch questions");
-        setLoading(false);
-        return;
-      }
-      const data = await res.json();
+      const data = await api<Question[]>("/questions/");
       setQuestions(data);
       setLoading(false);
     } catch (err: any) {
@@ -118,48 +107,18 @@ const QuestionsBank: React.FC = () => {
       difficulty: difficulty,
     };
 
-    const url = selectedQuestion
-      ? `${API_BASE}/questions/${selectedQuestion.id}`
-      : `${API_BASE}/questions/`;
+    const path = selectedQuestion
+      ? `/questions/${selectedQuestion.id}`
+      : "/questions/";
 
     const method = selectedQuestion ? "PUT" : "POST";
 
-    console.log("Saving question →", { url, method, payload });
-
     try {
-      const res = await fetch(url, {
+      const data = await api<Question>(path, {
         method,
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      // Handle server errors
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error("❌ API error:", errorText);
-
-        if (res.status === 422) {
-          const errorData = JSON.parse(errorText);
-          if (errorData.detail && Array.isArray(errorData.detail)) {
-            errorData.detail.forEach((error: any) => {
-              const errorMsg = error.msg || JSON.stringify(error);
-              notifyError(errorMsg);
-            });
-          } else {
-            notifyError(`Validation failed: ${JSON.stringify(errorData)}`);
-          }
-        } else {
-          notifyError(`Server error: ${errorText}`);
-        }
-        setSaving(false);
-        return;
-      }
-
-      const data = await res.json();
-      console.log("✅ Success:", data);
 
       if (selectedQuestion) {
         setQuestions((prev) =>
@@ -174,31 +133,18 @@ const QuestionsBank: React.FC = () => {
       resetModal();
       setSaving(false);
     } catch (err: any) {
-      console.error("❌ Network error:", err);
-      notifyError(`Network error: ${err.message}`);
+      notifyError(err instanceof ApiError ? err.detail : `Network error: ${err.message}`);
       setSaving(false);
     }
   };
 
   const handleDelete = async (id: number) => {
     if (!confirm("Are you sure you want to delete this question?")) return;
-    console.log("Deleting question →", `${API_BASE}/questions/${id}`);
-
     try {
-      const res = await fetch(`${API_BASE}/questions/${id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        console.error("❌ Delete error:", text);
-        notifyError("Failed to delete question");
-        return;
-      }
-
+      await api(`/questions/${id}`, { method: "DELETE" });
       setQuestions((prev) => prev.filter((q) => q.id !== id));
       notifySuccess("Question deleted successfully!");
     } catch (err: any) {
-      console.error("❌ Network error deleting question:", err);
       notifyError("Network error deleting question");
     }
   };

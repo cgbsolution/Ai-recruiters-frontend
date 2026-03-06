@@ -20,8 +20,9 @@ import {
   XCircle,
 } from "lucide-react";
 import VideoPlayer from "@/components/evaluation/VideoPlayer";
+import { api, API_BASE } from "@/lib/api";
 
-const API_STATIC = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/api$/, "");
+const API_STATIC = API_BASE.replace(/\/api$/, "");
 
 interface TranscriptPair {
   question: string;
@@ -147,20 +148,16 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const API = process.env.NEXT_PUBLIC_API_BASE_URL;
-
   useEffect(() => {
     const fetch_ = async () => {
       setLoading(true);
       try {
-        const res = await fetch(`${API}/candidates/${candidateId}/evaluation`);
-        if (!res.ok) throw new Error("Failed to load evaluation");
-        setData(await res.json());
+        setData(await api<EvaluationData>(`/candidates/${candidateId}/evaluation`));
       } catch (err: any) { setError(err.message); }
       finally { setLoading(false); }
     };
     fetch_();
-  }, [candidateId, API]);
+  }, [candidateId]);
 
   if (loading) return (
     <div className="space-y-4 p-6 max-w-5xl mx-auto">

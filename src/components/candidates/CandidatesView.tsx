@@ -48,8 +48,7 @@ import FitScoreBadge from "./FitScoreBadge";
 import AddCandidateModal from "./AddCandidateModal";
 import UploadResumesModal from "./UploadResumesModal";
 import ScheduleInterviewModal from "./ScheduleInterviewModal";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+import { api, apiPost, ApiError, API_BASE } from "@/lib/api";
 
 type ResumeFitScore = "high" | "medium" | "low" | null;
 
@@ -182,32 +181,27 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
   const [interviewUrl, setInterviewUrl] = useState<string | null>(null);
   const [urlCopied, setUrlCopied] = useState(false);
 
-  const API = process.env.NEXT_PUBLIC_API_BASE_URL;
-
   // ── Data fetching ─────────────────────────────────────────────────────────
   const fetchJob = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/jobs/${jobId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setJob(data);
-        if (data.interview_token) {
-          setInterviewUrl(`${window.location.origin}/interview/${data.interview_token}`);
-        }
+      const data = await api<any>(`/jobs/${jobId}`);
+      setJob(data);
+      if (data.interview_token) {
+        setInterviewUrl(`${window.location.origin}/interview/${data.interview_token}`);
       }
     } catch {}
-  }, [jobId, API]);
+  }, [jobId]);
 
   const fetchCandidates = useCallback(async () => {
     setLoading(true);
     try {
       // Always fetch all candidates for this job; filtering is done client-side
       const params = new URLSearchParams({ job_id: String(jobId) });
-      const res = await fetch(`${API}/candidates/?${params}`);
-      if (res.ok) setCandidates(await res.json());
+      const data = await api<Candidate[]>(`/candidates/?${params}`);
+      setCandidates(data);
     } catch {}
     finally { setLoading(false); }
-  }, [jobId, API]);
+  }, [jobId]);
 
   useEffect(() => { fetchJob(); }, [fetchJob]);
   useEffect(() => { fetchCandidates(); }, [fetchCandidates]);
@@ -303,20 +297,13 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
   const handlePromote = useCallback(
     async (candidateId: number, stage: string) => {
       try {
-        const res = await fetch(`${API}/candidates/${candidateId}/promote`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ stage }),
-        });
-        if (res.ok) {
-          const updated = await res.json();
-          setCandidates((prev) =>
-            prev.map((c) => (c.id === updated.id ? updated : c)),
-          );
-        }
+        const updated = await apiPost<Candidate>(`/candidates/${candidateId}/promote`, { stage });
+        setCandidates((prev) =>
+          prev.map((c) => (c.id === updated.id ? updated : c)),
+        );
       } catch {}
     },
-    [API],
+    [],
   );
 
   const handleScheduled = useCallback((updated: Candidate) => {
@@ -329,24 +316,14 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
         return;
       }
       try {
-        const res = await fetch(`${API}/candidates/${candidateId}/cancel-interview`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reason: "Cancelled by admin" }),
-        });
-        if (res.ok) {
-          const updated = await res.json();
-          setCandidates((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-          notifySuccess("Interview cancelled. Candidate has been notified.");
-        } else {
-          const err = await res.json().catch(() => ({ detail: "Failed to cancel interview" }));
-          notifyError(err.detail || "Failed to cancel interview");
-        }
-      } catch {
-        notifyError("Failed to cancel interview");
+        const updated = await apiPost<Candidate>(`/candidates/${candidateId}/cancel-interview`, { reason: "Cancelled by admin" });
+        setCandidates((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+        notifySuccess("Interview cancelled. Candidate has been notified.");
+      } catch (err: any) {
+        notifyError(err instanceof ApiError ? err.detail : "Failed to cancel interview");
       }
     },
-    [API],
+    [],
   );
 
   const handleCandidateCreated = useCallback((c: Candidate) => {
@@ -361,16 +338,10 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
     async (candidateId: number) => {
       setRecomputingIds((prev) => new Set([...prev, candidateId]));
       try {
-        const res = await fetch(
-          `${API}/candidates/${candidateId}/compute-fit-score`,
-          { method: "POST" },
+        const updated = await apiPost<Candidate>(`/candidates/${candidateId}/compute-fit-score`, {});
+        setCandidates((prev) =>
+          prev.map((c) => (c.id === updated.id ? updated : c)),
         );
-        if (res.ok) {
-          const updated = await res.json();
-          setCandidates((prev) =>
-            prev.map((c) => (c.id === updated.id ? updated : c)),
-          );
-        }
       } catch {}
       finally {
         setRecomputingIds((prev) => {
@@ -380,7 +351,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
         });
       }
     },
-    [API],
+    [],
   );
 
   const copyLink = useCallback(() => {

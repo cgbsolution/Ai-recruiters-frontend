@@ -2,6 +2,7 @@
 
 import { useParams } from "next/navigation";
 import InterviewFlow from "@/components/interview/InterviewFlow";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 export default function InterviewPage() {
   const params = useParams();
@@ -15,5 +16,9 @@ export default function InterviewPage() {
     );
   }
 
-  return <InterviewFlow token={token} />;
+  return (
+    <ErrorBoundary>
+      <InterviewFlow token={token} />
+    </ErrorBoundary>
+  );
 }

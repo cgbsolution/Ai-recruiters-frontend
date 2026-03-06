@@ -4,6 +4,7 @@ import Image from "next/image";
 import Button from "@/components/ui/button/Button";
 import { CalenderIcon, MailIcon, ChatIcon, PlusIcon } from "@/components/ui/icons";
 import { Skeleton } from "@/components/ui/skeleton";
+import { api } from "@/lib/api";
 
 type Candidate = {
   id: number;
@@ -24,8 +25,6 @@ const statusColors: Record<string, string> = {
   Rejected: "bg-red-100 text-red-600",
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
-
 const CandidateCards = () => {
   const [filter, setFilter] = useState<
     "All Candidates" | "Applied" | "Interview" | "Offered" | "Rejected"
@@ -38,13 +37,11 @@ const CandidateCards = () => {
     const fetchCandidates = async () => {
       setLoading(true);
       try {
-        const url =
+        const path =
           filter === "All Candidates"
-            ? `${API_BASE}/candidates/`
-            : `${API_BASE}/candidates/?status=${filter}`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Failed to fetch candidates");
-        const data = await res.json();
+            ? "/candidates/"
+            : `/candidates/?status=${filter}`;
+        const data = await api<Candidate[]>(path);
         setCandidates(data);
       } catch (err) {
         console.error("Error fetching candidates:", err);

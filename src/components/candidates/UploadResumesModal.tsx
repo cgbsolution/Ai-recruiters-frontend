@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { X, Upload } from "lucide-react";
 import { notifySuccess, notifyError } from "@/lib/notify";
+import { apiUpload } from "@/lib/api";
 
 interface UploadResumesModalProps {
   open: boolean;
@@ -56,15 +57,7 @@ export default function UploadResumesModal({
       formData.append("job_id", String(jobId));
       files.forEach((f) => formData.append("files", f));
 
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/candidates/upload-resume`,
-        { method: "POST", body: formData }
-      );
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Upload failed");
-      }
-      const data = await res.json();
+      const data = await apiUpload<any[]>("/candidates/upload-resume", formData);
       onUploaded(data);
       notifySuccess(`${Array.isArray(data) ? data.length : 1} resume(s) uploaded and parsed successfully!`);
       setFiles([]);

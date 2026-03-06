@@ -17,6 +17,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
+import { api } from "@/lib/api";
 
 type Stat = {
   label: string;
@@ -34,11 +35,7 @@ export const JobsDataCard = () => {
     const fetchStats = async () => {
       setLoading(true);
       try {
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_BASE_URL}/jobs/stats`
-        );
-        if (!res.ok) throw new Error("Failed to fetch stats");
-        const data = await res.json();
+        const data = await api<any>("/jobs/stats");
         setStats(data);
       } catch (err) {
         console.error("Error fetching stats:", err);

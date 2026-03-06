@@ -46,7 +46,7 @@ import {
 } from "lucide-react";
 
 // --- Config
-const API_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL}`;
+import { api, apiPost, ApiError } from "@/lib/api";
 
 // --- Mandatory pre-interview fields (cannot be deleted)
 const MANDATORY_FIELD_IDS = new Set(["full_name", "phone", "email_address"]);
@@ -221,30 +221,23 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     // ── Auto-generate interview questions from the AI JD ──────────────────
     try {
       const allSkills = (jd.skill_groups ?? []).flatMap((g) => g.skills).slice(0, 10);
-      const res = await fetch(`${API_URL}/ai/generate-questions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          job_title: jd.title,
-          department: "",
-          skills: allSkills,
-          difficulty: "intermediate",
-          count: qCount,
-          mode: "TRADITIONAL",
-        }),
+      const data = await apiPost<any>("/ai/generate-questions", {
+        job_title: jd.title,
+        department: "",
+        skills: allSkills,
+        difficulty: "intermediate",
+        count: qCount,
+        mode: "TRADITIONAL",
       });
-      if (res.ok) {
-        const data = await res.json();
-        const generated = (data.questions as { text: string; category: string; difficulty: string }[]) ?? [];
-        if (generated.length > 0) {
-          setCustomQuestions(
-            generated.map((q) => ({
-              text: q.text ?? "",
-              category: q.category ?? "general",
-              difficulty: q.difficulty ?? "intermediate",
-            }))
-          );
-        }
+      const generated = (data.questions as { text: string; category: string; difficulty: string }[]) ?? [];
+      if (generated.length > 0) {
+        setCustomQuestions(
+          generated.map((q) => ({
+            text: q.text ?? "",
+            category: q.category ?? "general",
+            difficulty: q.difficulty ?? "intermediate",
+          }))
+        );
       }
     } catch {
       // Questions generation is best-effort; don't block the form
@@ -437,12 +430,9 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
   // Fetch all questions from the API
   const fetchAllQuestions = async () => {
     try {
-      const res = await fetch(`${API_URL}/questions/`);
-      if (res.ok) {
-        const data = await res.json();
-        setAvailableQuestions(data);
-        setFilteredQuestions(data);
-      }
+      const data = await api<any[]>("/questions/");
+      setAvailableQuestions(data);
+      setFilteredQuestions(data);
     } catch (error) {
       console.error("Error fetching questions:", error);
       notifyError("Failed to load questions from bank");
@@ -655,11 +645,7 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       const fetchJobData = async () => {
         try {
           setLoading(true);
-          const res = await fetch(`${API_URL}/jobs/${jobId}`);
-          if (!res.ok) {
-            throw new Error("Failed to fetch job data");
-          }
-          const jobData = await res.json();
+          const jobData = await api<any>(`/jobs/${jobId}`);
 
           // Populate form with existing data
           setTitle(jobData.title || "");
@@ -904,48 +890,20 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     };
 
     try {
-      const url = isEditMode ? `${API_URL}/jobs/${jobId}` : `${API_URL}/jobs/`;
+      const path = isEditMode ? `/jobs/${jobId}` : "/jobs/";
       const method = isEditMode ? "PUT" : "POST";
 
-      const res = await fetch(url, {
-        method: method,
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
+      await api(path, {
+        method,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => null);
-        notifyError(
-          `Failed to ${isEditMode ? "update" : "create"} job. ${res.status} ${
-            res.statusText
-          }`
-        );
-        console.error(
-          "Job operation failed:",
-          res.status,
-          res.statusText,
-          text
-        );
-        return;
-      }
-
-      const data = await res.json().catch(() => null);
       notifySuccess(`Job ${isEditMode ? "Updated" : "Created"} Successfully!`);
-      console.log(`Job ${isEditMode ? "updated" : "created"}:`, data);
-
-      // go back to home or job list
       router.push("/");
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        notifyError(`Network or CORS error: ${err.message}`);
-        console.error("Network error when operating on job:", err);
-      } else {
-        notifyError(`Network or CORS error: ${String(err)}`);
-        console.error("Network error when operating on job:", err);
-      }
+      const msg = err instanceof ApiError ? err.detail : (err instanceof Error ? err.message : String(err));
+      notifyError(`Failed to ${isEditMode ? "update" : "create"} job: ${msg}`);
     }
   };
 

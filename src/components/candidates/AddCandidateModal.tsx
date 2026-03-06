@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { notifySuccess, notifyError } from "@/lib/notify";
+import { apiPost } from "@/lib/api";
 
 interface AddCandidateModalProps {
   open: boolean;
@@ -71,14 +72,7 @@ export default function AddCandidateModal({
         status: "Applied",
       };
 
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/candidates/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) throw new Error("Failed to create candidate");
-      const data = await res.json();
+      const data = await apiPost<any>("/candidates/", payload);
       onCreated(data);
       notifySuccess("Candidate added successfully!");
       onClose();

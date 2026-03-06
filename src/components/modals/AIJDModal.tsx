@@ -10,8 +10,7 @@ import {
   SliderThumb,
 } from "@/components/ui/slider";
 import { notifyError } from "@/lib/notify";
-
-const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+import { apiPost } from "@/lib/api";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,26 +75,15 @@ export default function AIJDModal({
         ? `${jdInput}\n\nAdditional Requirements: ${extra}`
         : jdInput;
 
-      const res = await fetch(`${API_URL}/ai/generate-jd`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: inputText,
-          department: "",
-          experience_min: experienceRange[0],
-          experience_max: experienceRange[1],
-          experience_level: `${experienceRange[0]}-${experienceRange[1]} Years`,
-          job_type: "Full-time",
-          location: "",
-        }),
+      const data = await apiPost<AIGeneratedJD>("/ai/generate-jd", {
+        title: inputText,
+        department: "",
+        experience_min: experienceRange[0],
+        experience_max: experienceRange[1],
+        experience_level: `${experienceRange[0]}-${experienceRange[1]} Years`,
+        job_type: "Full-time",
+        location: "",
       });
-
-      if (!res.ok) {
-        const err = await res.text().catch(() => "");
-        throw new Error(err || `HTTP ${res.status}`);
-      }
-
-      const data: AIGeneratedJD = await res.json();
       setGeneratedJD(data);
       setScreen(2);
     } catch (err) {

@@ -48,6 +48,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { api, apiPost } from "@/lib/api";
 
 type Job = {
   id: number;
@@ -81,10 +82,7 @@ export const JobsOpeningsCard = () => {
     const fetchJobs = async () => {
       try {
         setLoading(true);
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_BASE_URL}/jobs/`
-        );
-        const data = await res.json();
+        const data = await api<Job[]>("/jobs/");
         setJobs(data);
       } catch (error) {
         console.error("Error fetching jobs:", error);
@@ -167,19 +165,8 @@ export const JobsOpeningsCard = () => {
         id: undefined,
       };
 
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/jobs/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(duplicatedJob),
-      });
-
-      if (res.ok) {
-        const newJob = await res.json();
-        setJobs((prev) => [newJob, ...prev]);
-        console.log("Job duplicated successfully:", newJob);
-      }
+      const newJob = await apiPost<Job>("/jobs/", duplicatedJob);
+      setJobs((prev) => [newJob, ...prev]);
     } catch (error) {
       console.error("Error duplicating job:", error);
     }
@@ -194,19 +181,10 @@ export const JobsOpeningsCard = () => {
     if (!jobToDelete) return;
 
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/jobs/${jobToDelete.id}`,
-        {
-          method: "DELETE",
-        }
-      );
-
-      if (res.ok) {
-        setJobs((prev) => prev.filter((job) => job.id !== jobToDelete.id));
-        console.log("Job deleted successfully");
-        setDeleteDialogOpen(false);
-        setJobToDelete(null);
-      }
+      await api(`/jobs/${jobToDelete.id}`, { method: "DELETE" });
+      setJobs((prev) => prev.filter((job) => job.id !== jobToDelete.id));
+      setDeleteDialogOpen(false);
+      setJobToDelete(null);
     } catch (error) {
       console.error("Error deleting job:", error);
     }

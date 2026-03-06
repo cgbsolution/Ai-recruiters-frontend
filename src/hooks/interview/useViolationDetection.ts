@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { API_BASE } from "@/lib/api";
 
 export type ViolationType =
   | "tab_switch"
@@ -17,7 +18,6 @@ interface ViolationDetectionHook {
 }
 
 const TERMINATE_THRESHOLD = 5;
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export function useViolationDetection(
   sessionId: number | null,
@@ -36,13 +36,18 @@ export function useViolationDetection(
     disabledRef.current = true;
   }, []);
 
+  const terminatedRef = useRef(false);
+
   const reportViolation = useCallback(
     async (type: ViolationType, details?: string) => {
-      if (!sessionId || disabledRef.current) return;
+      if (!sessionId || disabledRef.current || terminatedRef.current) return;
       setLastViolation(type);
       setViolationCount((prev) => {
         const next = prev + 1;
-        if (next >= TERMINATE_THRESHOLD) setShouldTerminate(true);
+        if (next >= TERMINATE_THRESHOLD) {
+          terminatedRef.current = true;
+          setShouldTerminate(true);
+        }
         return next;
       });
 
@@ -86,6 +91,9 @@ export function useViolationDetection(
   }, [isActive, reportViolation]);
 
   // MediaPipe face detection
+  const consecutiveMissRef = useRef(0);
+  const MISS_THRESHOLD = 3; // need 3 consecutive "no face" checks before violation
+
   useEffect(() => {
     if (!isActive || !webcamStream) return;
 
@@ -102,29 +110,44 @@ export function useViolationDetection(
 
         faceDetection.setOptions({
           model: "short",
-          minDetectionConfidence: 0.5,
+          minDetectionConfidence: 0.35,
         });
 
         faceDetection.onResults((results: any) => {
           if (!isActive || cancelled) return;
           const count = results.detections?.length ?? 0;
           if (count === 0) {
-            reportViolation("face_not_detected", "No face visible in webcam");
+            consecutiveMissRef.current += 1;
+            if (consecutiveMissRef.current >= MISS_THRESHOLD) {
+              reportViolation("face_not_detected", "No face visible in webcam");
+              consecutiveMissRef.current = 0; // reset after reporting
+            }
           } else if (count > 1) {
+            consecutiveMissRef.current = 0;
             reportViolation("multiple_faces", `${count} faces detected in frame`);
+          } else {
+            consecutiveMissRef.current = 0; // face found, reset counter
           }
         });
 
         faceDetectorRef.current = faceDetection;
 
-        // Create hidden video element to feed frames
+        // Create video element to feed frames to MediaPipe
         const video = document.createElement("video");
         video.srcObject = webcamStream;
-        video.autoplay = true;
+        video.width = 640;
+        video.height = 480;
         video.muted = true;
+        video.playsInline = true;
         videoRef.current = video;
 
-        // Run detection every 3 seconds
+        // Explicitly play and wait for it to be ready
+        await video.play();
+
+        // Wait for video to be ready + give MediaPipe model time to load
+        await new Promise((r) => setTimeout(r, 5000));
+
+        // Run detection every 4 seconds
         faceIntervalRef.current = setInterval(async () => {
           if (cancelled || !faceDetectorRef.current || video.readyState < 2) return;
           try {
@@ -132,7 +155,7 @@ export function useViolationDetection(
           } catch (e) {
             // silently ignore frame errors
           }
-        }, 3000);
+        }, 4000);
       } catch (e) {
         console.warn("MediaPipe face detection unavailable:", e);
       }

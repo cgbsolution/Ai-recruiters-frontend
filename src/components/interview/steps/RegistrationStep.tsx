@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Upload, X, CheckCircle, ArrowLeft, LogIn, UserPlus } from "lucide-react";
 import type { PreInterviewField } from "@/hooks/interview/useInterviewSession";
+import { apiUpload } from "@/lib/api";
 
 interface Props {
   preInterviewFields: PreInterviewField[];
@@ -21,8 +22,6 @@ interface Props {
   onSwitchToLogin: () => void;
   onBack: () => void;
 }
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 // Default field IDs/types that are always rendered explicitly — skip them in dynamic section
 const DEFAULT_FIELD_IDS = new Set([
@@ -79,17 +78,8 @@ export default function RegistrationStep({ preInterviewFields, jobId, onRegister
     form.append("job_id", String(jobId));
 
     try {
-      const res = await fetch(`${API_BASE}/candidates/upload-resume`, {
-        method: "POST",
-        body: form,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setResumePath(data?.[0]?.resume_path ?? "");
-      } else {
-        setErrors((p) => ({ ...p, resume: "Upload failed — please try again." }));
-        setResumeFile(null);
-      }
+      const data = await apiUpload<any[]>("/candidates/upload-resume", form);
+      setResumePath(data?.[0]?.resume_path ?? "");
     } catch {
       setErrors((p) => ({ ...p, resume: "Upload failed — please check your connection." }));
       setResumeFile(null);

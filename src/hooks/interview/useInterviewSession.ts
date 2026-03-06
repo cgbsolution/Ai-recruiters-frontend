@@ -1,11 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-
-/** Timeout for API calls during the interview (ms) */
-const API_TIMEOUT_MS = 30_000;
+import { api, apiPost, apiUpload, ApiError } from "@/lib/api";
 
 export interface PreInterviewField {
   field_id: string;
@@ -126,13 +122,11 @@ export function useInterviewSession(): InterviewSessionHook {
 
   const loadJobConfig = useCallback(async (token: string): Promise<JobConfig | null> => {
     try {
-      const res = await fetch(`${API_BASE}/interview/${token}`);
-      if (!res.ok) throw new Error("Interview link not found or expired");
-      const data: JobConfig = await res.json();
+      const data = await api<JobConfig>(`/interview/${token}`);
       setJobConfig(data);
       return data;
     } catch (e: any) {
-      setError(e.message);
+      setError(e instanceof ApiError ? e.detail : e.message);
       return null;
     }
   }, []);
@@ -147,22 +141,13 @@ export function useInterviewSession(): InterviewSessionHook {
       extraFields?: Record<string, string>
     ): Promise<true | false | null> => {
       try {
-        const res = await fetch(`${API_BASE}/interview/${token}/register`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name,
-            email,
-            phone,
-            resume_path: resumePath,
-            extra_fields: extraFields ?? null,
-          }),
+        const data = await apiPost<any>(`/interview/${token}/register`, {
+          name,
+          email,
+          phone,
+          resume_path: resumePath,
+          extra_fields: extraFields ?? null,
         });
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.detail || "Registration failed");
-        }
-        const data = await res.json();
         setSessionId(data.session_id);
         setCandidateId(data.candidate_id);
         setIsExistingUser(data.is_existing_user ?? false);
@@ -172,7 +157,7 @@ export function useInterviewSession(): InterviewSessionHook {
         if (data.already_completed) return null;
         return true;
       } catch (e: any) {
-        setError(e.message);
+        setError(e instanceof ApiError ? e.detail : e.message);
         return false;
       }
     },
@@ -182,17 +167,7 @@ export function useInterviewSession(): InterviewSessionHook {
   const loginCandidate = useCallback(
     async (token: string, email: string): Promise<"ok" | "resume" | "completed" | "not_found" | "error"> => {
       try {
-        const res = await fetch(`${API_BASE}/interview/${token}/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email }),
-        });
-        if (res.status === 404) return "not_found";
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.detail || "Login failed");
-        }
-        const data = await res.json();
+        const data = await apiPost<any>(`/interview/${token}/login`, { email });
         setSessionId(data.session_id);
         setCandidateId(data.candidate_id);
         setIsExistingUser(true);
@@ -204,7 +179,8 @@ export function useInterviewSession(): InterviewSessionHook {
         }
         return data.can_resume ? "resume" : "ok";
       } catch (e: any) {
-        setError(e.message);
+        if (e instanceof ApiError && e.status === 404) return "not_found";
+        setError(e instanceof ApiError ? e.detail : e.message);
         return "error";
       }
     },
@@ -214,9 +190,7 @@ export function useInterviewSession(): InterviewSessionHook {
   const resumeSession = useCallback(async (): Promise<boolean> => {
     if (!sessionId) return false;
     try {
-      const res = await fetch(`${API_BASE}/interview/sessions/${sessionId}/resume`);
-      if (!res.ok) throw new Error("Failed to resume session");
-      const data = await res.json();
+      const data = await api<any>(`/interview/sessions/${sessionId}/resume`);
       // Restore messages
       const restored: Message[] = data.messages.map((m: any) => ({
         role: m.role as "ai" | "candidate",
@@ -250,7 +224,7 @@ export function useInterviewSession(): InterviewSessionHook {
       setQuestionStates(qStates);
       return true;
     } catch (e: any) {
-      setError(e.message);
+      setError(e instanceof ApiError ? e.detail : e.message);
       return false;
     }
   }, [sessionId]);
@@ -280,24 +254,20 @@ export function useInterviewSession(): InterviewSessionHook {
     if (!sessionId) return;
     setIsAiThinking(true);
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-
-      const res = await fetch(`${API_BASE}/interview/sessions/${sessionId}/start`, {
+      const data = await api<any>(`/interview/sessions/${sessionId}/start`, {
         method: "POST",
-        signal: controller.signal,
+        timeout: 30_000,
       });
-      clearTimeout(timeoutId);
-
-      if (!res.ok) throw new Error("Failed to start interview");
-      const data = await res.json();
       const aiMsg: Message = { role: "ai", content: data.message, questionIndex: data.question_index };
       setMessages([aiMsg]);
       updateQuestionStates(data.message, data.question_index, data.is_complete);
       if (data.is_complete) setIsInterviewComplete(true);
     } catch (e: any) {
-      const isTimeout = e.name === "AbortError";
-      setError(isTimeout ? "Interview start timed out — please refresh and try again" : e.message);
+      if (e instanceof ApiError && e.status === 408) {
+        setError("Interview start timed out — please refresh and try again");
+      } else {
+        setError(e instanceof ApiError ? e.detail : e.message);
+      }
     } finally {
       setIsAiThinking(false);
     }
@@ -326,20 +296,7 @@ export function useInterviewSession(): InterviewSessionHook {
       setIsAiThinking(true);
 
       try {
-        // Use AbortController for timeout — prevents stuck requests
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-
-        const res = await fetch(`${API_BASE}/interview/sessions/${sessionId}/message`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: text }),
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-
-        if (!res.ok) throw new Error("Failed to send message");
-        const data = await res.json();
+        const data = await apiPost<any>(`/interview/sessions/${sessionId}/message`, { content: text }, { timeout: 30_000 });
 
         const aiMsg: Message = {
           role: "ai",
@@ -356,8 +313,8 @@ export function useInterviewSession(): InterviewSessionHook {
         }
         return data.is_complete;
       } catch (e: any) {
-        const isTimeout = e.name === "AbortError";
-        setError(isTimeout ? "Response timed out — please try again" : e.message);
+        const isTimeout = e instanceof ApiError && e.status === 408;
+        setError(isTimeout ? "Response timed out — please try again" : (e instanceof ApiError ? e.detail : e.message));
         // On timeout or error, add a varied fallback so the flow doesn't freeze
         const fallbackCount = consecutiveFallbacksRef.current;
         consecutiveFallbacksRef.current += 1;
@@ -407,23 +364,14 @@ export function useInterviewSession(): InterviewSessionHook {
       if (earlyTermination) params.set("early_termination", "true");
       if (terminationReason) params.set("termination_reason", terminationReason);
       const qs = params.toString();
-      const url = `${API_BASE}/interview/sessions/${sessionId}/complete${qs ? `?${qs}` : ""}`;
+      const path = `/interview/sessions/${sessionId}/complete${qs ? `?${qs}` : ""}`;
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60_000); // 60s for evaluation
-
-      const res = await fetch(url, {
-        method: "POST",
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      if (!res.ok) throw new Error("Failed to complete interview");
-      const data: EvaluationResult = await res.json();
+      const data = await api<EvaluationResult>(path, { method: "POST", timeout: 60_000 });
       setEvaluation(data);
       setIsInterviewComplete(true);
     } catch (e: any) {
-      setError(e.name === "AbortError" ? "Evaluation timed out" : e.message);
+      const isTimeout = e instanceof ApiError && e.status === 408;
+      setError(isTimeout ? "Evaluation timed out" : (e instanceof ApiError ? e.detail : e.message));
     } finally {
       setIsAiThinking(false);
     }
@@ -435,10 +383,7 @@ export function useInterviewSession(): InterviewSessionHook {
         const form = new FormData();
         form.append("file", blob, `interview_${sid}.webm`);
         form.append("duration", duration);
-        await fetch(`${API_BASE}/interview/sessions/${sid}/upload-recording`, {
-          method: "POST",
-          body: form,
-        });
+        await apiUpload(`/interview/sessions/${sid}/upload-recording`, form);
       } catch {
         // non-blocking — don't fail the flow if upload fails
       }
@@ -449,9 +394,7 @@ export function useInterviewSession(): InterviewSessionHook {
   const loadMeetingSlots = useCallback(async (): Promise<MeetingSlot[]> => {
     if (!sessionId) return [];
     try {
-      const res = await fetch(`${API_BASE}/interview/sessions/${sessionId}/slots`);
-      if (!res.ok) return [];
-      return await res.json();
+      return await api<MeetingSlot[]>(`/interview/sessions/${sessionId}/slots`);
     } catch {
       return [];
     }
@@ -461,15 +404,8 @@ export function useInterviewSession(): InterviewSessionHook {
     async (slotId: number): Promise<boolean> => {
       if (!sessionId) return false;
       try {
-        const res = await fetch(
-          `${API_BASE}/interview/sessions/${sessionId}/schedule-meeting`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ slot_id: slotId }),
-          }
-        );
-        return res.ok;
+        await apiPost(`/interview/sessions/${sessionId}/schedule-meeting`, { slot_id: slotId });
+        return true;
       } catch {
         return false;
       }

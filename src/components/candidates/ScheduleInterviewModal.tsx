@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import EditEmailTemplateModal, { EmailTemplateData } from "./EditEmailTemplateModal";
 import { notifySuccess, notifyError } from "@/lib/notify";
+import { apiPost } from "@/lib/api";
 
 interface ScheduleInterviewModalProps {
   open: boolean;
@@ -133,19 +134,7 @@ export default function ScheduleInterviewModal({
         }),
       };
 
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/candidates/${candidateId}/schedule-interview`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        }
-      );
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Scheduling failed");
-      }
-      const data = await res.json();
+      const data = await apiPost<any>(`/candidates/${candidateId}/schedule-interview`, payload);
       onScheduled(data);
       const notifMsg = sendWhatsapp
         ? "Interview scheduled! Email and WhatsApp notifications sent to candidate."

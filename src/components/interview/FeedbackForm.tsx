@@ -3,13 +3,12 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Star } from "lucide-react";
+import { apiPost } from "@/lib/api";
 
 interface Props {
   sessionId: number;
   onDone: () => void;
 }
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export default function FeedbackForm({ sessionId, onDone }: Props) {
   const [rating, setRating] = useState(0);
@@ -24,15 +23,11 @@ export default function FeedbackForm({ sessionId, onDone }: Props) {
     if (rating === 0) return;
     setSubmitting(true);
     try {
-      await fetch(`${API_BASE}/interview/sessions/${sessionId}/feedback`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rating,
-          experience_comment: comment || null,
-          technical_issues: technicalIssues,
-          would_recommend: wouldRecommend,
-        }),
+      await apiPost(`/interview/sessions/${sessionId}/feedback`, {
+        rating,
+        experience_comment: comment || null,
+        technical_issues: technicalIssues,
+        would_recommend: wouldRecommend,
       });
       setDone(true);
     } catch {
