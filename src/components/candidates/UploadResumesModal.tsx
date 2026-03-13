@@ -22,6 +22,7 @@ type ParseStatus = "pending" | "processing" | "completed" | "failed";
 
 interface CandidateStatus {
   id: number;
+  candidate_id?: number;
   name: string;
   email: string;
   parsing_status: ParseStatus;
