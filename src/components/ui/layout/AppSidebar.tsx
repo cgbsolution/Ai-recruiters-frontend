@@ -49,6 +49,11 @@ const navItems: NavItem[] = [
    name: "Question Bank",
     path: "/question-bank",
   },
+     {
+    icon: <TableIcon />,
+   name: "Resume Database",
+    path: "/resume-database",
+  },
        {
     icon: <SignOut />,
    name: "Log Out",

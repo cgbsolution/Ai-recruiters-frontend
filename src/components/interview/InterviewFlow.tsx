@@ -5,8 +5,8 @@ import { useInterviewSession, type JobConfig } from "@/hooks/interview/useInterv
 import { useVideoRecording } from "@/hooks/interview/useVideoRecording";
 
 import WelcomeStep from "./steps/WelcomeStep";
-import LoginStep from "./steps/LoginStep";
-import RegistrationStep from "./steps/RegistrationStep";
+import EmailVerifyStep from "./steps/EmailVerifyStep";
+import ApplyForJobStep from "./steps/ApplyForJobStep";
 import PermissionStep from "./steps/PermissionStep";
 import ScreenShareStep from "./steps/ScreenShareStep";
 import DeviceTestStep from "./steps/DeviceTestStep";
@@ -21,8 +21,8 @@ type FlowStep =
   | "LOADING"
   | "ERROR"
   | "WELCOME"
-  | "LOGIN"
-  | "REGISTER"
+  | "VERIFY_EMAIL"
+  | "APPLY"
   | "PERMISSION_CAM_MIC"
   | "PERMISSION_SCREEN"
   | "DEVICE_TEST"
@@ -36,25 +36,50 @@ type FlowStep =
 
 interface Props {
   token: string;
+  candidateEmail?: string;
 }
 
-export default function InterviewFlow({ token }: Props) {
+export default function InterviewFlow({ token, candidateEmail }: Props) {
   const [step, setStep] = useState<FlowStep>("LOADING");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
   const [jobConfig, setJobConfig] = useState<JobConfig | null>(null);
 
+  // For Apply step
+  const [applyEmail, setApplyEmail] = useState("");
+  const [applyPrefillName, setApplyPrefillName] = useState<string | undefined>();
+
   const session = useInterviewSession();
   const { startRecording, stopRecording } = useVideoRecording();
   const isCompletingRef = useRef(false);
   const isResumingRef = useRef(false);
+  const autoVerifiedRef = useRef(false);
 
   // Load job config on mount
   useEffect(() => {
-    session.loadJobConfig(token).then((config) => {
+    session.loadJobConfig(token).then(async (config) => {
       if (config) {
         setJobConfig(config);
+
+        // Auto-verify if candidateEmail is in the URL (?candidate=email)
+        if (candidateEmail && !autoVerifiedRef.current) {
+          autoVerifiedRef.current = true;
+          const result = await session.verifyAccess(token, candidateEmail);
+          if (result.access === "granted") {
+            if (result.canResume) {
+              isResumingRef.current = true;
+            }
+            setStep("PERMISSION_CAM_MIC");
+            return;
+          } else if (result.access === "completed" || result.access === "terminated") {
+            setLoadError(result.message);
+            setStep("ERROR");
+            return;
+          }
+          // access === "apply" — fall through to welcome
+        }
+
         setStep("WELCOME");
       } else {
         setLoadError("This interview link is invalid or has expired.");
@@ -62,6 +87,8 @@ export default function InterviewFlow({ token }: Props) {
       }
     });
   }, [token]);
+
+  // ── Handlers ─────────────────────────────────────────────────────────────
 
   const handlePermissionsGranted = useCallback((stream: MediaStream) => {
     setWebcamStream(stream);
@@ -73,56 +100,42 @@ export default function InterviewFlow({ token }: Props) {
     setStep("DEVICE_TEST");
   }, []);
 
-  const handleLogin = useCallback(
+  const handleVerifyAccess = useCallback(
     async (email: string) => {
-      const result = await session.loginCandidate(token, email);
-      if (result === "ok") {
-        setStep("PERMISSION_CAM_MIC");
-      } else if (result === "resume") {
-        isResumingRef.current = true;
-        setStep("PERMISSION_CAM_MIC");
-      }
-      return result;
+      return session.verifyAccess(token, email);
     },
     [token, session]
   );
 
-  const handleRegister = useCallback(
-    async (
-      name: string,
-      email: string,
-      phone: string,
-      resumePath: string,
-      extraFields: Record<string, string>
-    ) => {
-      const result = await session.registerCandidate(
-        token, name, email, phone || undefined, resumePath, extraFields
-      );
-      if (result === true) {
-        // Check if this is a returning candidate with a resumable session
-        if (session.canResume) {
-          isResumingRef.current = true;
-        }
-        setStep("PERMISSION_CAM_MIC");
-      }
-      return result;
+  const handleAccessGranted = useCallback((canResume: boolean) => {
+    if (canResume) {
+      isResumingRef.current = true;
+    }
+    setStep("PERMISSION_CAM_MIC");
+  }, []);
+
+  const handleShowApply = useCallback((email: string, name?: string) => {
+    setApplyEmail(email);
+    setApplyPrefillName(name);
+    setStep("APPLY");
+  }, []);
+
+  const handleApplyForJob = useCallback(
+    async (name: string, email: string, phone: string | undefined, resumePath: string) => {
+      return session.applyForJob(token, name, email, phone, resumePath);
     },
     [token, session]
   );
 
   const handleStartInterview = useCallback(async () => {
-    // Enter fullscreen for cheating detection
     try {
       await document.documentElement.requestFullscreen();
     } catch {
       // non-fatal
     }
-    // Start video recording
     if (webcamStream) {
       startRecording(webcamStream);
     }
-
-    // If resuming an in-progress session, load existing messages instead of starting fresh
     if (isResumingRef.current && session.sessionStatus === "in_progress") {
       await session.resumeSession();
       isResumingRef.current = false;
@@ -146,49 +159,41 @@ export default function InterviewFlow({ token }: Props) {
     [session]
   );
 
-  // Stop all streams, recording, upload, then show completion
   const handleInterviewComplete = useCallback(async () => {
-    // Guard: prevent double-call
     if (isCompletingRef.current) return;
     isCompletingRef.current = true;
 
-    // Stop recording and upload to server
     const recording = await stopRecording();
     if (recording && session.sessionId) {
       await session.uploadRecording(recording.blob, session.sessionId, recording.duration);
     }
 
-    // Stop camera + mic tracks
     if (webcamStream) {
       webcamStream.getTracks().forEach((t) => t.stop());
     }
-
-    // Stop screen share tracks
     if (screenStream) {
       screenStream.getTracks().forEach((t) => t.stop());
     }
 
-    // Exit fullscreen
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
     } catch {
       // ignore
     }
 
-    // Determine termination reason
     const earlyTermination = !session.isInterviewComplete;
     let terminationReason: string | undefined;
     if (earlyTermination) {
-      // The user clicked "End Interview" manually
       terminationReason = "ended_by_candidate";
     }
 
-    // Always generate evaluation
     if (!session.evaluation) {
       await session.completeInterview(earlyTermination, terminationReason);
     }
     setStep("COMPLETION");
   }, [session, webcamStream, screenStream, stopRecording]);
+
+  // ── Render ───────────────────────────────────────────────────────────────
 
   if (step === "LOADING") {
     return (
@@ -220,27 +225,29 @@ export default function InterviewFlow({ token }: Props) {
       return (
         <WelcomeStep
           jobConfig={jobConfig}
-          onNext={() => setStep("REGISTER")}
+          onNext={() => setStep("VERIFY_EMAIL")}
         />
       );
 
-    case "LOGIN":
+    case "VERIFY_EMAIL":
       return (
-        <LoginStep
-          onLogin={handleLogin}
-          onSwitchToRegister={() => setStep("REGISTER")}
+        <EmailVerifyStep
+          onVerify={handleVerifyAccess}
+          onAccessGranted={handleAccessGranted}
+          onShowApply={handleShowApply}
           onBack={() => setStep("WELCOME")}
         />
       );
 
-    case "REGISTER":
+    case "APPLY":
       return (
-        <RegistrationStep
-          preInterviewFields={jobConfig.pre_interview_fields}
-          jobId={jobConfig.job_id}
-          onRegister={handleRegister}
-          onSwitchToLogin={() => setStep("LOGIN")}
-          onBack={() => setStep("WELCOME")}
+        <ApplyForJobStep
+          token={token}
+          email={applyEmail}
+          prefillName={applyPrefillName}
+          jobTitle={jobConfig.title}
+          onApply={handleApplyForJob}
+          onBack={() => setStep("VERIFY_EMAIL")}
         />
       );
 

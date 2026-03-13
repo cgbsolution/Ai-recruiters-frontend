@@ -89,6 +89,14 @@ interface InterviewSessionHook {
     resumePath: string,
     extraFields?: Record<string, string>
   ) => Promise<true | false | null>;
+  verifyAccess: (token: string, email: string) => Promise<{
+    access: "granted" | "apply" | "completed" | "terminated";
+    candidateName?: string;
+    canResume: boolean;
+    message: string;
+  }>;
+  applyForJob: (token: string, name: string, email: string, phone: string | undefined, resumePath: string) => Promise<{ success: boolean; message: string }>;
+  autoRegister: (token: string, email: string) => Promise<true | false | null>;
   loginCandidate: (token: string, email: string) => Promise<"ok" | "resume" | "completed" | "not_found" | "error">;
   resumeSession: () => Promise<boolean>;
   startInterview: () => Promise<void>;
@@ -131,6 +139,45 @@ export function useInterviewSession(): InterviewSessionHook {
     }
   }, []);
 
+  const verifyAccess = useCallback(
+    async (token: string, email: string) => {
+      try {
+        const data = await apiPost<any>(`/interview/${token}/verify-access`, { email });
+        if (data.session_id) setSessionId(data.session_id);
+        if (data.candidate_id) setCandidateId(data.candidate_id);
+        setCanResume(data.can_resume ?? false);
+        setSessionStatus(data.session_status ?? null);
+        return {
+          access: data.access as "granted" | "apply" | "completed" | "terminated",
+          candidateName: data.candidate_name ?? undefined,
+          canResume: data.can_resume ?? false,
+          message: data.message,
+        };
+      } catch (e: any) {
+        setError(e instanceof ApiError ? e.detail : e.message);
+        return { access: "apply" as const, canResume: false, message: "Verification failed. Please try again." };
+      }
+    },
+    []
+  );
+
+  const applyForJob = useCallback(
+    async (token: string, name: string, email: string, phone: string | undefined, resumePath: string) => {
+      try {
+        const data = await apiPost<any>(`/interview/${token}/apply`, {
+          name,
+          email,
+          phone,
+          resume_path: resumePath,
+        });
+        return { success: data.success, message: data.message };
+      } catch (e: any) {
+        return { success: false, message: e instanceof ApiError ? e.detail : (e.message || "Application failed") };
+      }
+    },
+    []
+  );
+
   const registerCandidate = useCallback(
     async (
       token: string,
@@ -148,6 +195,29 @@ export function useInterviewSession(): InterviewSessionHook {
           resume_path: resumePath,
           extra_fields: extraFields ?? null,
         });
+        setSessionId(data.session_id);
+        setCandidateId(data.candidate_id);
+        setIsExistingUser(data.is_existing_user ?? false);
+        setAlreadyCompleted(data.already_completed ?? false);
+        setCanResume(data.can_resume ?? false);
+        setSessionStatus(data.session_status ?? null);
+        if (data.already_completed) return null;
+        return true;
+      } catch (e: any) {
+        setError(e instanceof ApiError ? e.detail : e.message);
+        return false;
+      }
+    },
+    []
+  );
+
+  const autoRegister = useCallback(
+    async (token: string, email: string): Promise<true | false | null> => {
+      try {
+        const data = await apiPost<any>(
+          `/interview/${token}/auto-register?email=${encodeURIComponent(email)}`,
+          {}
+        );
         setSessionId(data.session_id);
         setCandidateId(data.candidate_id);
         setIsExistingUser(data.is_existing_user ?? false);
@@ -428,7 +498,10 @@ export function useInterviewSession(): InterviewSessionHook {
     jobConfig,
     error,
     loadJobConfig,
+    verifyAccess,
+    applyForJob,
     registerCandidate,
+    autoRegister,
     loginCandidate,
     resumeSession,
     startInterview,

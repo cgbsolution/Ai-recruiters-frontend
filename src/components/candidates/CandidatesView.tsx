@@ -33,7 +33,10 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  Database,
+  Download,
   ExternalLink,
+  Eye,
   FileText,
   Filter,
   Link,
@@ -43,11 +46,18 @@ import {
   Users,
   X,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { notifySuccess, notifyError } from "@/lib/notify";
 import FitScoreBadge from "./FitScoreBadge";
 import AddCandidateModal from "./AddCandidateModal";
 import UploadResumesModal from "./UploadResumesModal";
 import ScheduleInterviewModal from "./ScheduleInterviewModal";
+import MatchCandidatesModal from "./MatchCandidatesModal";
 import { api, apiPost, ApiError, API_BASE } from "@/lib/api";
 
 type ResumeFitScore = "high" | "medium" | "low" | null;
@@ -83,14 +93,36 @@ interface Candidate {
   mail_contact_history: boolean | null;
 }
 
+interface SkillOut {
+  id: number;
+  skill: string;
+  skill_criteria: string;
+}
+
+interface ResponsibilityOut {
+  id: number;
+  description: string;
+}
+
 interface Job {
   id: number;
   title: string;
+  department?: string;
+  location?: string;
+  job_type?: string;
+  experience_min?: number;
+  experience_max?: number;
+  openings?: number;
+  status?: string;
   manager_name?: string;
   manager_phone?: string;
   manager_email?: string;
   interview_link?: string;
   interview_token?: string;
+  upload_jd?: string;
+  summary?: string;
+  responsibilities?: ResponsibilityOut[];
+  skills?: SkillOut[];
 }
 
 // "Candidates" is the "All" tab; the rest are stage-specific
@@ -177,9 +209,11 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
   const [scheduleCandidate, setScheduleCandidate] = useState<Candidate | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showMatchModal, setShowMatchModal] = useState(false);
   const [recomputingIds, setRecomputingIds] = useState<Set<number>>(new Set());
   const [interviewUrl, setInterviewUrl] = useState<string | null>(null);
   const [urlCopied, setUrlCopied] = useState(false);
+  const [showJdModal, setShowJdModal] = useState(false);
 
   // ── Data fetching ─────────────────────────────────────────────────────────
   const fetchJob = useCallback(async () => {
@@ -331,7 +365,18 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
   }, []);
 
   const handleResumesUploaded = useCallback((newCandidates: Candidate[]) => {
-    setCandidates((prev) => [...newCandidates, ...prev]);
+    setCandidates((prev) => {
+      const merged = [...prev];
+      for (const nc of newCandidates) {
+        const idx = merged.findIndex((c) => c.id === nc.id);
+        if (idx >= 0) {
+          merged[idx] = nc; // update existing
+        } else {
+          merged.unshift(nc); // add new at top
+        }
+      }
+      return merged;
+    });
   }, []);
 
   const handleRecomputeFit = useCallback(
@@ -360,6 +405,56 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
     setUrlCopied(true);
     setTimeout(() => setUrlCopied(false), 2000);
   }, [interviewUrl]);
+
+  // ── Export candidates to Excel (CSV) ──────────────────────────────────────
+  const handleExportCandidates = useCallback(() => {
+    if (candidates.length === 0) return;
+
+    const staticBase = API_BASE.replace(/\/api$/, "");
+    const headers = [
+      "Name", "Email", "Phone", "Role", "Location", "Stage",
+      "Interview Status", "Interview Date", "Score", "Trust Score",
+      "AI Cheating Score", "Fit Score", "Resume Link", "Recording Link",
+    ];
+
+    const rows = candidates.map((c) => [
+      c.name,
+      c.email,
+      c.phone || "",
+      c.role || "",
+      c.location || "",
+      c.candidate_stage || "",
+      c.interview_status || "",
+      c.interview_date || "",
+      c.score ?? "",
+      c.trust_score ?? "",
+      c.ai_cheating_score ?? "",
+      c.resume_fit_score || "",
+      c.resume_path ? `${staticBase}/${c.resume_path}` : "",
+      c.recording_link ? `${staticBase}/${c.recording_link}` : "",
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) =>
+        row.map((cell) => {
+          const str = String(cell);
+          return str.includes(",") || str.includes('"') || str.includes("\n")
+            ? `"${str.replace(/"/g, '""')}"`
+            : str;
+        }).join(",")
+      ),
+    ].join("\n");
+
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${job?.title || "Candidates"} - Candidates.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    notifySuccess("Candidates exported successfully!");
+  }, [candidates, job]);
 
   // ── Promote stage options — exclude current stage ─────────────────────────
   const getPromoteOptions = (currentStage: string) =>
@@ -427,6 +522,14 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
           >
             <Upload className="w-4 h-4" /> Upload Resumes
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1 bg-purple-600 hover:bg-purple-700 text-white border-purple-600"
+            onClick={() => setShowMatchModal(true)}
+          >
+            <Database className="w-4 h-4" /> Match From Database
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon">
@@ -434,8 +537,19 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem>Export Candidates</DropdownMenuItem>
-              <DropdownMenuItem>Job Settings</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowJdModal(true)}>
+                <Eye className="w-4 h-4 mr-2" /> View Job Description
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  window.open(`${API_BASE}/jobs/${jobId}/download-jd`, "_blank");
+                }}
+              >
+                <Download className="w-4 h-4 mr-2" /> Download JD (Word)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportCandidates}>
+                <FileText className="w-4 h-4 mr-2" /> Export Candidates (Excel)
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -497,6 +611,24 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
           />
         </div>
       </div>
+
+      {/* ── Auto-match suggestion banner ────────────────────────────────── */}
+      {!loading && candidates.length === 0 && (
+        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+          <Database className="w-5 h-5 text-blue-600 flex-shrink-0" />
+          <p className="text-sm text-blue-800 flex-1">
+            No candidates yet. You can quickly find matching candidates from the resume database.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-blue-300 text-blue-700 hover:bg-blue-100 gap-1 flex-shrink-0"
+            onClick={() => setShowMatchModal(true)}
+          >
+            <Database className="w-4 h-4" /> Match From Database
+          </Button>
+        </div>
+      )}
 
       {/* ── Table ─────────────────────────────────────────────────────────── */}
       <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
@@ -767,8 +899,9 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                                   size="sm"
                                   className="h-7 text-xs bg-blue-500 hover:bg-blue-600 text-white gap-1 whitespace-nowrap"
                                   onClick={() => {
-                                    navigator.clipboard.writeText(interviewUrl);
-                                    notifySuccess("Interview link copied!");
+                                    const candidateLink = `${interviewUrl}?candidate=${encodeURIComponent(c.email)}`;
+                                    navigator.clipboard.writeText(candidateLink);
+                                    notifySuccess("Interview link copied (no registration required)!");
                                   }}
                                 >
                                   <Link className="w-3 h-3" /> Share Link
@@ -895,6 +1028,12 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
         jobId={jobId}
         onUploaded={handleResumesUploaded}
       />
+      <MatchCandidatesModal
+        open={showMatchModal}
+        onClose={() => setShowMatchModal(false)}
+        jobId={jobId}
+        onAdded={fetchCandidates}
+      />
       {scheduleCandidate && (
         <ScheduleInterviewModal
           open={!!scheduleCandidate}
@@ -912,6 +1051,117 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
           onScheduled={handleScheduled}
         />
       )}
+
+      {/* ── JD Viewer Modal ──────────────────────────────────────────────── */}
+      <Dialog open={showJdModal} onOpenChange={setShowJdModal}>
+        <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold flex items-center gap-2">
+              <FileText className="w-5 h-5 text-blue-500" />
+              Job Description
+            </DialogTitle>
+          </DialogHeader>
+          {job ? (
+            <div className="overflow-y-auto flex-1 pr-1 space-y-6">
+              {/* Title & Meta */}
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">{job.title}</h2>
+                <div className="flex flex-wrap gap-3 mt-2 text-sm text-gray-500">
+                  {job.department && <span>{job.department}</span>}
+                  {job.location && <span>• {job.location}</span>}
+                  {job.job_type && <span>• {job.job_type}</span>}
+                  {(job.experience_min != null || job.experience_max != null) && (
+                    <span>• {job.experience_min ?? 0}–{job.experience_max ?? "?"} yrs experience</span>
+                  )}
+                  {job.openings != null && <span>• {job.openings} opening(s)</span>}
+                </div>
+              </div>
+
+              {/* Summary */}
+              {job.summary && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">Job Summary</h3>
+                  <p className="text-sm text-gray-600 leading-relaxed">{job.summary}</p>
+                </div>
+              )}
+
+              {/* Skills */}
+              {job.skills && job.skills.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">Required Skills</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {job.skills.map((s) => (
+                      <span
+                        key={s.id}
+                        className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                          s.skill_criteria === "All Mandatory"
+                            ? "bg-red-50 text-red-700 border border-red-200"
+                            : s.skill_criteria === "At Least One"
+                            ? "bg-yellow-50 text-yellow-700 border border-yellow-200"
+                            : "bg-gray-50 text-gray-600 border border-gray-200"
+                        }`}
+                      >
+                        {s.skill}
+                        {s.skill_criteria === "All Mandatory" && (
+                          <span className="ml-1 text-[10px] opacity-60">mandatory</span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Responsibilities */}
+              {job.responsibilities && job.responsibilities.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">Responsibilities</h3>
+                  <ul className="space-y-1.5">
+                    {job.responsibilities.map((r) => (
+                      <li key={r.id} className="flex items-start gap-2 text-sm text-gray-600">
+                        <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
+                        {r.description}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Manager Info */}
+              {(job.manager_name || job.manager_email || job.manager_phone) && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">Hiring Manager</h3>
+                  <div className="text-sm text-gray-600 space-y-0.5">
+                    {job.manager_name && <p>{job.manager_name}</p>}
+                    {job.manager_email && <p className="text-blue-600">{job.manager_email}</p>}
+                    {job.manager_phone && <p>{job.manager_phone}</p>}
+                  </div>
+                </div>
+              )}
+
+              {/* Download JD */}
+              {job.upload_jd && (
+                <div className="pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => {
+                      window.open(`${API_BASE}/jobs/${jobId}/download-jd`, "_blank");
+                    }}
+                  >
+                    <Download className="w-4 h-4" />
+                    Download Original JD File
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-12 text-gray-400">
+              Loading...
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

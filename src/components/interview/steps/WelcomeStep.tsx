@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Briefcase, Clock, MapPin, UserPlus } from "lucide-react";
+import { ArrowRight, Briefcase, Clock, MapPin } from "lucide-react";
 import type { JobConfig } from "@/hooks/interview/useInterviewSession";
 
 interface Props {
@@ -50,8 +50,8 @@ export default function WelcomeStep({ jobConfig, onNext }: Props) {
           onClick={onNext}
           className="w-full h-14 text-lg bg-blue-600 hover:bg-blue-700 gap-3"
         >
-          <UserPlus className="w-5 h-5" />
-          Start New Interview
+          Continue
+          <ArrowRight className="w-5 h-5" />
         </Button>
       </div>
     </div>

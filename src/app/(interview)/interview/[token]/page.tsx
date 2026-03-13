@@ -1,12 +1,14 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import InterviewFlow from "@/components/interview/InterviewFlow";
 import ErrorBoundary from "@/components/ErrorBoundary";
 
 export default function InterviewPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const token = params?.token as string;
+  const candidateEmail = searchParams?.get("candidate") || undefined;
 
   if (!token) {
     return (
@@ -18,7 +20,7 @@ export default function InterviewPage() {
 
   return (
     <ErrorBoundary>
-      <InterviewFlow token={token} />
+      <InterviewFlow token={token} candidateEmail={candidateEmail} />
     </ErrorBoundary>
   );
 }
