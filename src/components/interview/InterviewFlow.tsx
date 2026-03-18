@@ -50,11 +50,47 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   const [applyEmail, setApplyEmail] = useState("");
   const [applyPrefillName, setApplyPrefillName] = useState<string | undefined>();
 
+  // Scheduling enforcement state
+  const [schedulingInfo, setSchedulingInfo] = useState<{
+    interviewDate?: string;
+    interviewTimezone?: string;
+    joiningFlexibility?: string;
+    allowJoiningEarly?: boolean;
+  } | null>(null);
+
   const session = useInterviewSession();
   const { startRecording, stopRecording } = useVideoRecording();
   const isCompletingRef = useRef(false);
   const isResumingRef = useRef(false);
   const autoVerifiedRef = useRef(false);
+
+  /**
+   * Check if the candidate is allowed to join now based on scheduling settings.
+   * Returns null if allowed, or an error message if not.
+   */
+  const checkJoiningAllowed = useCallback((info: typeof schedulingInfo): string | null => {
+    if (!info || !info.interviewDate || info.joiningFlexibility === "anytime") {
+      return null; // "anytime" or no date set → always allowed
+    }
+    const scheduled = new Date(info.interviewDate);
+    const now = new Date();
+    const diffMs = scheduled.getTime() - now.getTime();
+    const diffMin = diffMs / (1000 * 60);
+
+    // If scheduled time is in the past → always allow
+    if (diffMin <= 0) return null;
+
+    // Allow 10 min early if setting is on
+    if (info.allowJoiningEarly && diffMin <= 10) return null;
+
+    // Not yet time
+    const hours = Math.floor(diffMin / 60);
+    const mins = Math.round(diffMin % 60);
+    if (hours > 0) {
+      return `Your interview is scheduled for ${scheduled.toLocaleString()}. Please come back in ${hours}h ${mins}m.`;
+    }
+    return `Your interview is scheduled for ${scheduled.toLocaleString()}. Please come back in ${mins} minutes.`;
+  }, []);
 
   // Load job config on mount
   useEffect(() => {
@@ -67,6 +103,23 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
           autoVerifiedRef.current = true;
           const result = await session.verifyAccess(token, candidateEmail);
           if (result.access === "granted") {
+            // Store scheduling settings for enforcement
+            const sInfo = {
+              interviewDate: result.interviewDate,
+              interviewTimezone: result.interviewTimezone,
+              joiningFlexibility: result.joiningFlexibility,
+              allowJoiningEarly: result.allowJoiningEarly,
+            };
+            setSchedulingInfo(sInfo);
+
+            // Check if candidate is allowed to join now
+            const blockMsg = checkJoiningAllowed(sInfo);
+            if (blockMsg) {
+              setLoadError(blockMsg);
+              setStep("ERROR");
+              return;
+            }
+
             if (result.canResume) {
               isResumingRef.current = true;
             }
@@ -107,12 +160,26 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     [token, session]
   );
 
-  const handleAccessGranted = useCallback((canResume: boolean) => {
+  const handleAccessGranted = useCallback((canResume: boolean, scheduling?: {
+    interviewDate?: string;
+    interviewTimezone?: string;
+    joiningFlexibility?: string;
+    allowJoiningEarly?: boolean;
+  }) => {
+    if (scheduling) {
+      setSchedulingInfo(scheduling);
+      const blockMsg = checkJoiningAllowed(scheduling);
+      if (blockMsg) {
+        setLoadError(blockMsg);
+        setStep("ERROR");
+        return;
+      }
+    }
     if (canResume) {
       isResumingRef.current = true;
     }
     setStep("PERMISSION_CAM_MIC");
-  }, []);
+  }, [checkJoiningAllowed]);
 
   const handleShowApply = useCallback((email: string, name?: string) => {
     setApplyEmail(email);

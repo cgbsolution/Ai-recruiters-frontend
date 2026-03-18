@@ -142,6 +142,9 @@ export default function ScheduleInterviewModal({
       const [h, m] = selectedTime.split(":").map(Number);
       const isoDate = new Date(calYear, calMonth, selectedDay, h, m).toISOString();
 
+      // Build candidate-specific interview link
+      const candidateInterviewUrl = interviewUrl || "";
+
       const payload = {
         interview_date: isoDate,
         interview_timezone: tzValue,
@@ -149,6 +152,7 @@ export default function ScheduleInterviewModal({
         allow_candidate_reschedule: allowReschedule,
         allow_joining_early: joinBefore,
         send_whatsapp: sendWhatsapp,
+        interview_url: candidateInterviewUrl,
         link_expiry: linkExpiry === "custom" ? { value: expiryValue, unit: expiryUnit } : null,
         ...(emailTemplate && {
           email_subject: emailTemplate.subject,

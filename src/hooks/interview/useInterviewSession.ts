@@ -103,6 +103,10 @@ interface InterviewSessionHook {
     candidateName?: string;
     canResume: boolean;
     message: string;
+    interviewDate?: string;
+    interviewTimezone?: string;
+    joiningFlexibility?: string;
+    allowJoiningEarly?: boolean;
   }>;
   applyForJob: (token: string, name: string, email: string, phone: string | undefined, resumePath: string) => Promise<{ success: boolean; message: string }>;
   autoRegister: (token: string, email: string) => Promise<true | false | null>;
@@ -161,6 +165,10 @@ export function useInterviewSession(): InterviewSessionHook {
           candidateName: data.candidate_name ?? undefined,
           canResume: data.can_resume ?? false,
           message: data.message,
+          interviewDate: data.interview_date ?? undefined,
+          interviewTimezone: data.interview_timezone ?? undefined,
+          joiningFlexibility: data.joining_flexibility ?? undefined,
+          allowJoiningEarly: data.allow_joining_early ?? undefined,
         };
       } catch (e: any) {
         setError(e instanceof ApiError ? e.detail : e.message);

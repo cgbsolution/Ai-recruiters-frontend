@@ -11,11 +11,20 @@ interface VerifyResult {
   candidateName?: string;
   canResume: boolean;
   message: string;
+  interviewDate?: string;
+  interviewTimezone?: string;
+  joiningFlexibility?: string;
+  allowJoiningEarly?: boolean;
 }
 
 interface Props {
   onVerify: (email: string) => Promise<VerifyResult>;
-  onAccessGranted: (canResume: boolean) => void;
+  onAccessGranted: (canResume: boolean, scheduling?: {
+    interviewDate?: string;
+    interviewTimezone?: string;
+    joiningFlexibility?: string;
+    allowJoiningEarly?: boolean;
+  }) => void;
   onShowApply: (email: string, name?: string) => void;
   onBack: () => void;
 }
@@ -41,7 +50,12 @@ export default function EmailVerifyStep({
 
     switch (result.access) {
       case "granted":
-        onAccessGranted(result.canResume);
+        onAccessGranted(result.canResume, {
+          interviewDate: result.interviewDate,
+          interviewTimezone: result.interviewTimezone,
+          joiningFlexibility: result.joiningFlexibility,
+          allowJoiningEarly: result.allowJoiningEarly,
+        });
         break;
       case "apply":
         onShowApply(email.trim().toLowerCase(), result.candidateName);
