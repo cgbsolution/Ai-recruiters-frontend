@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Star } from "lucide-react";
 import { apiPost } from "@/lib/api";
 
@@ -60,29 +63,31 @@ export default function FeedbackForm({ sessionId, onDone }: Props) {
         {/* Star rating */}
         <div className="flex justify-center gap-3 mb-8">
           {[1, 2, 3, 4, 5].map((star) => (
-            <button
+            <Button
               key={star}
+              variant="ghost"
+              size="icon"
               onMouseEnter={() => setHovered(star)}
               onMouseLeave={() => setHovered(0)}
               onClick={() => setRating(star)}
-              className="transition-transform hover:scale-110"
+              className="transition-transform hover:scale-110 hover:bg-transparent"
             >
               <Star
                 className="w-10 h-10 transition-colors"
                 fill={(hovered || rating) >= star ? "#facc15" : "none"}
                 stroke={(hovered || rating) >= star ? "#facc15" : "#4b5563"}
               />
-            </button>
+            </Button>
           ))}
         </div>
 
         <div className="space-y-4 mb-8">
           {/* Comment */}
           <div>
-            <label className="block text-gray-300 text-sm font-medium mb-1">
+            <Label className="block text-gray-300 text-sm font-medium mb-1">
               Any comments? (optional)
-            </label>
-            <textarea
+            </Label>
+            <Textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               rows={3}
@@ -92,26 +97,28 @@ export default function FeedbackForm({ sessionId, onDone }: Props) {
           </div>
 
           {/* Technical issues */}
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
+          <div className="flex items-center gap-3">
+            <Checkbox
+              id="technical-issues"
               checked={technicalIssues}
-              onChange={(e) => setTechnicalIssues(e.target.checked)}
-              className="w-4 h-4 accent-blue-500"
+              onCheckedChange={(checked) => setTechnicalIssues(checked === true)}
             />
-            <span className="text-gray-300 text-sm">I experienced technical issues</span>
-          </label>
+            <Label htmlFor="technical-issues" className="text-gray-300 text-sm cursor-pointer">
+              I experienced technical issues
+            </Label>
+          </div>
 
           {/* Would recommend */}
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
+          <div className="flex items-center gap-3">
+            <Checkbox
+              id="would-recommend"
               checked={wouldRecommend}
-              onChange={(e) => setWouldRecommend(e.target.checked)}
-              className="w-4 h-4 accent-blue-500"
+              onCheckedChange={(checked) => setWouldRecommend(checked === true)}
             />
-            <span className="text-gray-300 text-sm">I would recommend this platform to others</span>
-          </label>
+            <Label htmlFor="would-recommend" className="text-gray-300 text-sm cursor-pointer">
+              I would recommend this platform to others
+            </Label>
+          </div>
         </div>
 
         <Button
@@ -122,12 +129,13 @@ export default function FeedbackForm({ sessionId, onDone }: Props) {
           {submitting ? "Submitting..." : "Submit Feedback"}
         </Button>
 
-        <button
+        <Button
+          variant="ghost"
           onClick={onDone}
           className="w-full mt-3 text-gray-500 text-sm hover:text-gray-300 transition-colors"
         >
           Skip
-        </button>
+        </Button>
       </div>
     </div>
   );

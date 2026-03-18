@@ -10,10 +10,19 @@ export interface PreInterviewField {
   is_default: boolean;
 }
 
+export interface CodingQuestion {
+  title: string;
+  description: string;
+  test_cases: { input: string; expected_output: string; description: string }[];
+  time_limit: number;
+  difficulty: "easy" | "medium" | "hard";
+}
+
 export interface Message {
   role: "ai" | "candidate";
   content: string;
   questionIndex?: number;
+  codingQuestion?: CodingQuestion;
 }
 
 export interface QuestionState {
@@ -328,7 +337,7 @@ export function useInterviewSession(): InterviewSessionHook {
         method: "POST",
         timeout: 30_000,
       });
-      const aiMsg: Message = { role: "ai", content: data.message, questionIndex: data.question_index };
+      const aiMsg: Message = { role: "ai", content: data.message, questionIndex: data.question_index, codingQuestion: data.coding_question || undefined };
       setMessages([aiMsg]);
       updateQuestionStates(data.message, data.question_index, data.is_complete);
       if (data.is_complete) setIsInterviewComplete(true);
@@ -372,6 +381,7 @@ export function useInterviewSession(): InterviewSessionHook {
           role: "ai",
           content: data.message,
           questionIndex: data.question_index,
+          codingQuestion: data.coding_question || undefined,
         };
         setMessages((prev) => [...prev, aiMsg]);
         updateQuestionStates(data.message, data.question_index, data.is_complete);

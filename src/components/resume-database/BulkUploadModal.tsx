@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -7,14 +7,38 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { X, Upload, CheckCircle, Loader2, AlertCircle, FolderOpen } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import {
+  X,
+  Upload,
+  CheckCircle,
+  Loader2,
+  AlertCircle,
+  FolderOpen,
+  FolderUp,
+  FileText,
+  Download,
+  Sparkles,
+  Zap,
+} from "lucide-react";
 import { notifySuccess, notifyError } from "@/lib/notify";
-import { api, apiUpload } from "@/lib/api";
+import { api, apiUpload, API_BASE } from "@/lib/api";
+
+const BATCH_SIZE = 100;
+
+type ParseMode = "fast" | "ai";
 
 interface BulkUploadModalProps {
   open: boolean;
   onClose: () => void;
   onDone: () => void;
+}
+
+interface BatchProgress {
+  total: number;
+  completed: number;
+  failed: number;
+  status: string;
 }
 
 export default function BulkUploadModal({
@@ -25,14 +49,18 @@ export default function BulkUploadModal({
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [batchId, setBatchId] = useState<string | null>(null);
-  const [progress, setProgress] = useState<{
-    total: number;
-    completed: number;
-    failed: number;
-    status: string;
-  } | null>(null);
-  const pollRef = useRef<NodeJS.Timeout | null>(null);
+  const [parseMode, setParseMode] = useState<ParseMode>("ai");
+
+  // Multi-batch tracking
+  const [totalBatches, setTotalBatches] = useState(0);
+  const [currentBatch, setCurrentBatch] = useState(0);
+  const [totalFiles, setTotalFiles] = useState(0);
+  const [parsed, setParsed] = useState(0);
+  const [failed, setFailed] = useState(0);
+  const [isComplete, setIsComplete] = useState(false);
+  const [showProgress, setShowProgress] = useState(false);
+
+  const abortRef = useRef(false);
 
   const addFiles = (newFiles: FileList | null) => {
     if (!newFiles) return;
@@ -56,90 +84,105 @@ export default function BulkUploadModal({
     addFiles(e.dataTransfer.files);
   }, []);
 
-  // Poll batch progress
-  useEffect(() => {
-    if (!batchId) return;
-
-    const interval = setInterval(async () => {
-      try {
-        const data = await api<{
-          total: number;
-          completed: number;
-          failed: number;
-          status: string;
-        }>(`/resume-database/batch/${batchId}`);
-        setProgress(data);
-
-        if (data.status === "completed") {
-          clearInterval(interval);
-          notifySuccess(
-            `Batch complete! ${data.completed} parsed, ${data.failed} failed out of ${data.total}.`
-          );
-        }
-      } catch {
-        // silent
-      }
-    }, 2000);
-
-    pollRef.current = interval;
-    return () => clearInterval(interval);
-  }, [batchId]);
-
   const handleUpload = async () => {
     if (files.length === 0) return;
 
-    // Limit per batch to 200
-    if (files.length > 200) {
-      notifyError("Maximum 200 files per batch. Please upload in smaller batches.");
-      return;
-    }
-
+    abortRef.current = false;
     setUploading(true);
-    setProgress(null);
-    setBatchId(null);
+    setShowProgress(true);
+    setParsed(0);
+    setFailed(0);
+    setIsComplete(false);
+    setTotalFiles(files.length);
 
-    try {
-      const formData = new FormData();
-      files.forEach((f) => formData.append("files", f));
-
-      const data = await apiUpload<{
-        batch_id: string;
-        queued: number;
-        total_files: number;
-        message: string;
-      }>("/resume-database/upload", formData);
-
-      setBatchId(data.batch_id);
-      setProgress({
-        total: data.queued,
-        completed: 0,
-        failed: 0,
-        status: "processing",
-      });
-      setFiles([]);
-      notifySuccess(`${data.queued} resume(s) queued for parsing!`);
-    } catch (err: any) {
-      notifyError(err.message || "Upload failed");
-    } finally {
-      setUploading(false);
+    const batches: File[][] = [];
+    for (let i = 0; i < files.length; i += BATCH_SIZE) {
+      batches.push(files.slice(i, i + BATCH_SIZE));
     }
+
+    setTotalBatches(batches.length);
+    setCurrentBatch(0);
+    setFiles([]);
+
+    let totalParsed = 0;
+    let totalFailed = 0;
+
+    for (let i = 0; i < batches.length; i++) {
+      if (abortRef.current) break;
+      setCurrentBatch(i + 1);
+
+      try {
+        const formData = new FormData();
+        batches[i].forEach((f) => formData.append("files", f));
+
+        const data = await apiUpload<{
+          batch_id: string;
+          queued: number;
+          total_files: number;
+          message: string;
+        }>(`/resume-database/upload?parse_mode=${parseMode}`, formData);
+
+        // Poll this batch — update live counts every 2s
+        await new Promise<void>((resolve) => {
+          let resolved = false;
+          const check = setInterval(() => {
+            if (resolved) return;
+            api<BatchProgress>(`/resume-database/batch/${data.batch_id}`)
+              .then((bp) => {
+                if (resolved) return;
+
+                setParsed(totalParsed + bp.completed);
+                setFailed(totalFailed + bp.failed);
+
+                if (bp.status === "completed") {
+                  resolved = true;
+                  clearInterval(check);
+                  totalParsed += bp.completed;
+                  totalFailed += bp.failed;
+                  setParsed(totalParsed);
+                  setFailed(totalFailed);
+                  resolve();
+                }
+              })
+              .catch(() => {});
+          }, 2000);
+        });
+      } catch (err: any) {
+        notifyError(
+          `Batch ${i + 1}/${batches.length} failed: ${err.message || "Upload error"}`
+        );
+        totalFailed += batches[i].length;
+        setFailed(totalFailed);
+      }
+    }
+
+    setIsComplete(true);
+    setUploading(false);
+    notifySuccess(
+      `Done! ${totalParsed} parsed, ${totalFailed} failed out of ${files.length || totalParsed + totalFailed}.`
+    );
   };
 
   const handleClose = () => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    setBatchId(null);
-    setProgress(null);
+    abortRef.current = true;
+    setShowProgress(false);
+    setParsed(0);
+    setFailed(0);
+    setIsComplete(false);
     setFiles([]);
+    setTotalBatches(0);
+    setCurrentBatch(0);
+    setTotalFiles(0);
     onDone();
   };
 
-  const isComplete = progress?.status === "completed";
-  const processed = progress
-    ? progress.completed + progress.failed
-    : 0;
-  const progressPercent = progress && progress.total > 0
-    ? Math.round((processed / progress.total) * 100)
-    : 0;
+  const handleDownloadFailed = () => {
+    window.open(`${API_BASE}/resume-database/failed/download`, "_blank");
+  };
+
+  const processed = parsed + failed;
+  const progressPercent =
+    totalFiles > 0 ? Math.min(100, Math.round((processed / totalFiles) * 100)) : 0;
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -152,63 +195,131 @@ export default function BulkUploadModal({
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Progress view */}
-          {progress ? (
+          {showProgress ? (
             <div className="space-y-4">
+              {/* Live counts */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+                  <FileText className="w-5 h-5 text-blue-500 mx-auto mb-1" />
+                  <p className="text-xl font-bold text-blue-700">{totalFiles}</p>
+                  <p className="text-xs text-blue-500">Total Files</p>
+                </div>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                  <CheckCircle className="w-5 h-5 text-green-500 mx-auto mb-1" />
+                  <p className="text-xl font-bold text-green-700">{parsed}</p>
+                  <p className="text-xs text-green-500">Parsed</p>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
+                  <AlertCircle className="w-5 h-5 text-red-500 mx-auto mb-1" />
+                  <p className="text-xl font-bold text-red-700">{failed}</p>
+                  <p className="text-xs text-red-500">Failed</p>
+                </div>
+              </div>
+
+              {/* Status */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-600">
-                    {isComplete ? "Processing complete!" : "Processing resumes..."}
+                    {isComplete
+                      ? "All processing complete!"
+                      : `Processing batch ${currentBatch} of ${totalBatches}...`}
                   </span>
                   <span className="font-medium text-gray-800">
-                    {processed} / {progress.total}
+                    {processed} / {totalFiles}
                   </span>
                 </div>
 
                 {/* Progress bar */}
-                <div className="w-full bg-gray-200 rounded-full h-3">
-                  <div
-                    className={`h-3 rounded-full transition-all duration-500 ${
-                      isComplete ? "bg-green-500" : "bg-blue-500"
-                    }`}
-                    style={{ width: `${progressPercent}%` }}
-                  />
-                </div>
+                <Progress
+                  value={progressPercent}
+                  className={`h-3 ${isComplete ? "[&>[data-slot=progress-indicator]]:bg-green-500" : "[&>[data-slot=progress-indicator]]:bg-blue-500"}`}
+                />
 
-                <div className="flex gap-4 text-xs text-gray-500">
-                  <span className="flex items-center gap-1">
-                    <CheckCircle className="w-3 h-3 text-green-500" />
-                    {progress.completed} parsed
-                  </span>
-                  {progress.failed > 0 && (
-                    <span className="flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3 text-red-500" />
-                      {progress.failed} failed
+                {!isComplete && (
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
+                    <span>{totalFiles - processed} remaining</span>
+                    <span className="ml-auto text-blue-600">
+                      {parseMode === "ai" ? "AI Parsing" : "Fast Parsing"}
+                      {totalBatches > 1 && ` | Batch ${currentBatch}/${totalBatches}`}
                     </span>
-                  )}
-                  {!isComplete && (
-                    <span className="flex items-center gap-1">
-                      <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
-                      {progress.total - processed} remaining
-                    </span>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
 
               <p className="text-xs text-gray-400">
                 {isComplete
                   ? "All resumes have been processed. You can close this dialog."
-                  : "Resumes are parsed using fast extraction (no AI). Each takes less than 1 second. You can close this dialog — processing continues in the background."}
+                  : parseMode === "ai"
+                    ? "Resumes are parsed using Claude AI for high accuracy. Each takes ~3 seconds."
+                    : "Resumes are parsed using fast regex extraction. Each takes less than 1 second."}
               </p>
 
               {isComplete && (
-                <Button className="w-full" onClick={handleClose}>
-                  Done
-                </Button>
+                <div className="flex gap-2">
+                  {failed > 0 && (
+                    <Button
+                      variant="outline"
+                      className="flex-1 gap-2 text-red-600 border-red-200 hover:bg-red-50"
+                      onClick={handleDownloadFailed}
+                    >
+                      <Download className="w-4 h-4" />
+                      Download Failed ({failed})
+                    </Button>
+                  )}
+                  <Button className={failed > 0 ? "flex-1" : "w-full"} onClick={handleClose}>
+                    Done
+                  </Button>
+                </div>
               )}
             </div>
           ) : (
             <>
+              {/* Parsing mode toggle */}
+              <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
+                <Button
+                  variant="ghost"
+                  onClick={() => setParseMode("ai")}
+                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                    parseMode === "ai"
+                      ? "bg-white text-violet-700 shadow-sm border border-violet-200"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  AI Parsing
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                    parseMode === "ai" ? "bg-violet-100 text-violet-600" : "bg-gray-200 text-gray-500"
+                  }`}>
+                    99%
+                  </span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => setParseMode("fast")}
+                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                    parseMode === "fast"
+                      ? "bg-white text-blue-700 shadow-sm border border-blue-200"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  <Zap className="w-4 h-4" />
+                  Fast Parsing
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                    parseMode === "fast" ? "bg-blue-100 text-blue-600" : "bg-gray-200 text-gray-500"
+                  }`}>
+                    ~85%
+                  </span>
+                </Button>
+              </div>
+
+              {/* Mode description */}
+              <p className="text-xs text-gray-400 -mt-2 px-1">
+                {parseMode === "ai"
+                  ? "Uses Claude AI for near-perfect name, skills, and experience extraction. ~3s per resume."
+                  : "Uses regex patterns — fast but may misidentify names or miss fields. < 1s per resume."}
+              </p>
+
               {/* Drop zone */}
               <div
                 onDragOver={(e) => {
@@ -235,7 +346,7 @@ export default function BulkUploadModal({
                   Browse files
                 </span>
                 <p className="text-xs text-gray-400 mt-3">
-                  PDF, DOC, DOCX — up to 200 files per batch
+                  PDF, DOC, DOCX — no limit (auto-batched in groups of {BATCH_SIZE})
                 </p>
                 <input
                   id="bulk-resume-file-input"
@@ -247,36 +358,73 @@ export default function BulkUploadModal({
                 />
               </div>
 
+              {/* Upload folder button */}
+              <Button
+                variant="outline"
+                className="w-full gap-2"
+                onClick={() =>
+                  document.getElementById("bulk-resume-folder-input")?.click()
+                }
+              >
+                <FolderUp className="w-4 h-4" />
+                Select Entire Folder
+              </Button>
+              <input
+                id="bulk-resume-folder-input"
+                type="file"
+                multiple
+                accept=".pdf,.doc,.docx"
+                className="hidden"
+                // @ts-expect-error webkitdirectory is not typed
+                webkitdirectory=""
+                onChange={(e) => addFiles(e.target.files)}
+              />
+
               {/* File list */}
               {files.length > 0 && (
-                <div className="space-y-1 max-h-48 overflow-y-auto">
+                <div className="space-y-1">
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-gray-600 font-medium">
                       {files.length} file(s) selected
+                      {files.length > BATCH_SIZE && (
+                        <span className="text-xs text-blue-500 ml-2">
+                          ({Math.ceil(files.length / BATCH_SIZE)} batches)
+                        </span>
+                      )}
                     </p>
-                    <button
+                    <Button
+                      variant="link"
                       onClick={() => setFiles([])}
-                      className="text-xs text-red-500 hover:text-red-700"
+                      className="text-xs text-red-500 hover:text-red-700 h-auto p-0"
                     >
                       Clear all
-                    </button>
+                    </Button>
                   </div>
-                  {files.map((file, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded px-3 py-1.5"
-                    >
-                      <span className="text-sm text-gray-700 truncate max-w-[400px]">
-                        {file.name}
-                      </span>
-                      <button
-                        onClick={() => removeFile(idx)}
-                        className="text-gray-400 hover:text-gray-600 ml-2"
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {files.slice(0, 50).map((file, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded px-3 py-1.5"
                       >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
+                        <span className="text-sm text-gray-700 truncate max-w-[400px]">
+                          {file.name}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeFile(idx)}
+                          className="text-gray-400 hover:text-gray-600 ml-2 h-6 w-6"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
+                    {files.length > 50 && (
+                      <p className="text-xs text-gray-400 text-center py-1">
+                        ...and {files.length - 50} more files
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 

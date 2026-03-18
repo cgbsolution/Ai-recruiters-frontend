@@ -9,6 +9,13 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Slider,
+  SliderTrack,
+  SliderRange,
+  SliderThumb,
+} from "@/components/ui/slider";
 
 interface Props {
   src: string;
@@ -59,9 +66,8 @@ export default function VideoPlayer({ src }: Props) {
   }, [video]);
 
   const handleVolumeChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    ([v]: number[]) => {
       if (!video) return;
-      const v = parseFloat(e.target.value);
       video.volume = v;
       setVolume(v);
       if (v === 0) {
@@ -202,23 +208,27 @@ export default function VideoPlayer({ src }: Props) {
 
         <div className="flex items-center gap-2">
           {/* Play / Pause */}
-          <button onClick={togglePlay} className="text-white hover:text-blue-400 transition-colors p-1">
+          <Button variant="ghost" size="icon" onClick={togglePlay} className="text-white hover:text-blue-400 transition-colors size-8">
             {playing ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-          </button>
+          </Button>
 
           {/* Volume */}
-          <button onClick={toggleMute} className="text-white hover:text-blue-400 transition-colors p-1">
+          <Button variant="ghost" size="icon" onClick={toggleMute} className="text-white hover:text-blue-400 transition-colors size-8">
             {muted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-          </button>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={muted ? 0 : volume}
-            onChange={handleVolumeChange}
-            className="w-16 h-1 accent-blue-500 cursor-pointer"
-          />
+          </Button>
+          <Slider
+            value={[muted ? 0 : volume]}
+            min={0}
+            max={1}
+            step={0.05}
+            onValueChange={handleVolumeChange}
+            className="w-16 cursor-pointer"
+          >
+            <SliderTrack className="h-1 bg-white/25">
+              <SliderRange className="bg-blue-500" />
+            </SliderTrack>
+            <SliderThumb className="size-3 border-blue-500" />
+          </Slider>
 
           {/* Time */}
           <span className="text-white/80 text-xs tabular-nums ml-1">
@@ -229,41 +239,45 @@ export default function VideoPlayer({ src }: Props) {
 
           {/* Speed */}
           <div className="relative">
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={(e) => {
                 e.stopPropagation();
                 setShowSpeedMenu((p) => !p);
               }}
-              className="text-white/80 hover:text-white text-xs font-medium px-2 py-0.5 rounded border border-white/20 hover:border-white/40 transition-colors"
+              className="text-white/80 hover:text-white text-xs font-medium h-6 w-auto px-2 rounded border border-white/20 hover:border-white/40 transition-colors"
             >
               {speed}x
-            </button>
+            </Button>
             {showSpeedMenu && (
               <div className="absolute bottom-full right-0 mb-1 bg-gray-900 border border-gray-700 rounded-lg py-1 shadow-xl z-10">
                 {SPEEDS.map((s) => (
-                  <button
+                  <Button
                     key={s}
+                    variant="ghost"
+                    size="sm"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleSpeed(s);
                     }}
-                    className={`block w-full text-left px-4 py-1.5 text-xs whitespace-nowrap transition-colors ${
+                    className={`block w-full justify-start rounded-none px-4 py-1.5 text-xs whitespace-nowrap transition-colors ${
                       s === speed
                         ? "text-blue-400 bg-blue-500/10"
                         : "text-white/80 hover:bg-white/10"
                     }`}
                   >
                     {s}x
-                  </button>
+                  </Button>
                 ))}
               </div>
             )}
           </div>
 
           {/* Fullscreen */}
-          <button onClick={toggleFullscreen} className="text-white hover:text-blue-400 transition-colors p-1">
+          <Button variant="ghost" size="icon" onClick={toggleFullscreen} className="text-white hover:text-blue-400 transition-colors size-8">
             {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -50,30 +50,34 @@ export default function LoginStep({ onLogin, onSwitchToRegister, onBack }: Props
       <div className="w-full max-w-md">
         {/* Go Back */}
         {onBack && (
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={onBack}
-            className="flex items-center gap-1.5 text-gray-400 hover:text-white text-sm mb-6 transition-colors"
+            className="flex items-center gap-1.5 text-gray-400 hover:text-white text-sm mb-6 transition-colors px-0"
           >
             <ArrowLeft className="w-4 h-4" />
             Go Back
-          </button>
+          </Button>
         )}
 
         {/* Register / Login toggle — same style as RegistrationStep */}
         <div className="bg-gray-900 rounded-xl p-4 mb-8 space-y-3">
           <div className="flex gap-3">
-            <button
+            <Button
               type="button"
+              variant="ghost"
               onClick={onSwitchToRegister}
-              className="flex-1 rounded-lg border border-gray-700 hover:border-gray-500 p-3 text-left transition-colors"
+              className="flex-1 rounded-lg border border-gray-700 hover:border-gray-500 p-3 h-auto text-left transition-colors"
             >
-              <div className="flex items-center gap-2 mb-1">
-                <UserPlus className="w-4 h-4 text-gray-400" />
-                <span className="text-sm font-medium text-gray-300">New Interview</span>
+              <div className="w-full">
+                <div className="flex items-center gap-2 mb-1">
+                  <UserPlus className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm font-medium text-gray-300">New Interview</span>
+                </div>
+                <p className="text-xs text-gray-500">Fill in the form to start</p>
               </div>
-              <p className="text-xs text-gray-500">Fill in the form to start</p>
-            </button>
+            </Button>
             <div className="flex-1 rounded-lg bg-blue-600/20 border border-blue-500/40 p-3">
               <div className="flex items-center gap-2 mb-1">
                 <LogIn className="w-4 h-4 text-blue-400" />

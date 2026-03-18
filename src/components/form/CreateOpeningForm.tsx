@@ -1007,9 +1007,9 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
 
             {/* Title */}
             <div>
-              <label className="block text-sm font-medium mb-2">
+              <Label className="block text-sm font-medium mb-2">
                 Job Title <span className="text-red-500">*</span>
-              </label>
+              </Label>
               <Input
                 placeholder="Enter Job Title"
                 value={title}
@@ -1021,9 +1021,9 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
             {/* Department & Location & Job Type */}
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-2">
+                <Label className="block text-sm font-medium mb-2">
                   Department <span className="text-red-500">*</span>
-                </label>
+                </Label>
                 <Input
                   placeholder="Department"
                   value={department}
@@ -1033,9 +1033,9 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">
+                <Label className="block text-sm font-medium mb-2">
                   Location <span className="text-red-500">*</span>
-                </label>
+                </Label>
                 <Input
                   placeholder="Location"
                   value={location}
@@ -1045,9 +1045,9 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">
+                <Label className="block text-sm font-medium mb-2">
                   Job Type
-                </label>
+                </Label>
                 <Select value={jobType} onValueChange={setJobType}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select Job Type" />
@@ -1063,10 +1063,10 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
 
             {/* Experience */}
             <div>
-              <label className="block text-sm font-medium mb-2">
+              <Label className="block text-sm font-medium mb-2">
                 Experience Level ({experienceRange[0]} - {experienceRange[1]}{" "}
                 Years)
-              </label>
+              </Label>
               <div className="py-4">
                 <Slider
                   value={experienceRange}
@@ -1091,9 +1091,9 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
             {/* Openings & Employment Type */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-2">
+                <Label className="block text-sm font-medium mb-2">
                   Openings
-                </label>
+                </Label>
                 <Input
                   type="number"
                   min={1}
@@ -1102,9 +1102,9 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">
+                <Label className="block text-sm font-medium mb-2">
                   Employment Type
-                </label>
+                </Label>
                 <Select value={empType} onValueChange={setEmpType}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select Employment Type" />
@@ -1361,9 +1361,9 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
 
                   {/* Number Input for Max Questions */}
                   <div>
-                    <label className="text-sm block">
+                    <Label className="text-sm block">
                       Max Number of Questions to Ask
-                    </label>
+                    </Label>
                     <Input
                       type="number"
                       min={1}
@@ -1375,9 +1375,9 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
                   </div>
                 </div>
                 <div className="mt-4">
-                  <label className="block text-sm font-medium mb-2">
+                  <Label className="block text-sm font-medium mb-2">
                     Auto Skip Timeout (mm:ss): {formatMmSs(autoSkipSeconds)}
-                  </label>
+                  </Label>
                   <Slider
                     value={[autoSkipSeconds]}
                     onValueChange={(v: number[]) => setAutoSkipSeconds(v[0])}
@@ -1401,9 +1401,9 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
                 </div>
 
                 <div className="mt-4">
-                  <label className="block text-sm font-medium mb-2">
+                  <Label className="block text-sm font-medium mb-2">
                     Special Instructions
-                  </label>
+                  </Label>
                   <Textarea
                     placeholder="Input your more Details"
                     value={specialInstructions}
@@ -2014,45 +2014,53 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
                     <div className="flex items-center gap-2 ml-4">
                       {/* Edit icon */}
                       {isDefault ? (
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           title="Default field — not editable"
-                          className="p-2 rounded hover:bg-slate-100"
+                          className="h-8 w-8"
                           // intentionally no onClick
                         >
                           <span aria-hidden>
                             {" "}
                             <PencilIcon className="w-4 h-4 text-gray-400" />
                           </span>
-                        </button>
+                        </Button>
                       ) : (
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           title="Edit field"
                           onClick={() => startEditField(f.id, f.label)}
-                          className="p-2 rounded hover:bg-slate-100"
+                          className="h-8 w-8"
                         >
                           <span aria-hidden>
                             {" "}
                             <PencilIcon className="w-4 h-4 text-gray-400" />
                           </span>
-                        </button>
+                        </Button>
                       )}
 
                       {/* Delete icon */}
                       {isDefault ? (
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           title="Default field — not removable"
-                          className="p-2 rounded hover:bg-slate-100"
+                          className="h-8 w-8"
                         >
                           <TrashIcon className="w-4 h-4 text-gray-400" />
-                        </button>
+                        </Button>
                       ) : (
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           title="Delete field"
                           onClick={() => deleteCustomField(f.id)}
-                          className="p-2 rounded hover:bg-slate-100"
+                          className="h-8 w-8"
                         >
                           <TrashIcon className="w-4 h-4 text-red-500" />
-                        </button>
+                        </Button>
                       )}
                     </div>
                   </div>

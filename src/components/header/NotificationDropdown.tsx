@@ -4,6 +4,7 @@ import Link from "next/link";
 import React, { useState } from "react";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
+import { Button } from "@/components/ui/button";
 
 export default function NotificationDropdown() {
   const [isOpen, setIsOpen] = useState(false);
@@ -23,7 +24,9 @@ export default function NotificationDropdown() {
   };
   return (
     <div className="relative">
-      <button
+      <Button
+        variant="ghost"
+        size="icon"
         className="relative dropdown-toggle flex items-center justify-center text-gray-500 transition-colors bg-white border border-gray-200 rounded-full hover:text-gray-700 h-11 w-11 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
         onClick={handleClick}
       >
@@ -48,7 +51,7 @@ export default function NotificationDropdown() {
             fill="currentColor"
           />
         </svg>
-      </button>
+      </Button>
       <Dropdown
         isOpen={isOpen}
         onClose={closeDropdown}
@@ -58,7 +61,9 @@ export default function NotificationDropdown() {
           <h5 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
             Notification
           </h5>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={toggleDropdown}
             className="text-gray-500 transition dropdown-toggle dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
           >
@@ -76,7 +81,7 @@ export default function NotificationDropdown() {
                 fill="currentColor"
               />
             </svg>
-          </button>
+          </Button>
         </div>
         <ul className="flex flex-col h-auto overflow-y-auto custom-scrollbar">
           {/* Example notification items */}

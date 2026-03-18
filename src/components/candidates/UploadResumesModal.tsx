@@ -285,12 +285,14 @@ export default function UploadResumesModal({
                   <span className="text-sm text-gray-700 truncate max-w-[380px]">
                     {file.name}
                   </span>
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => removeFile(idx)}
                     className="text-gray-400 hover:text-gray-600 ml-2"
                   >
                     <X className="w-4 h-4" />
-                  </button>
+                  </Button>
                 </div>
               ))}
 

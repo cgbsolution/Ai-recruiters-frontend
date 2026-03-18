@@ -42,6 +42,8 @@ import {
   Link,
   MoreVertical,
   Plus,
+  RefreshCw,
+  Trash2,
   Upload,
   Users,
   X,
@@ -59,6 +61,7 @@ import UploadResumesModal from "./UploadResumesModal";
 import ScheduleInterviewModal from "./ScheduleInterviewModal";
 import MatchCandidatesModal from "./MatchCandidatesModal";
 import { api, apiPost, ApiError, API_BASE } from "@/lib/api";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type ResumeFitScore = "high" | "medium" | "low" | null;
 
@@ -209,8 +212,11 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
   const [scheduleCandidate, setScheduleCandidate] = useState<Candidate | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState<number | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<number | null>(null);
   const [showMatchModal, setShowMatchModal] = useState(false);
   const [recomputingIds, setRecomputingIds] = useState<Set<number>>(new Set());
+  const [refreshingAll, setRefreshingAll] = useState(false);
   const [interviewUrl, setInterviewUrl] = useState<string | null>(null);
   const [urlCopied, setUrlCopied] = useState(false);
   const [showJdModal, setShowJdModal] = useState(false);
@@ -346,15 +352,27 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
 
   const handleCancelInterview = useCallback(
     async (candidateId: number) => {
-      if (!window.confirm("Are you sure you want to cancel this interview? The candidate will be notified.")) {
-        return;
-      }
       try {
         const updated = await apiPost<Candidate>(`/candidates/${candidateId}/cancel-interview`, { reason: "Cancelled by admin" });
         setCandidates((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+        setCancelTarget(null);
         notifySuccess("Interview cancelled. Candidate has been notified.");
       } catch (err: any) {
         notifyError(err instanceof ApiError ? err.detail : "Failed to cancel interview");
+      }
+    },
+    [],
+  );
+
+  const handleRemoveCandidate = useCallback(
+    async (candidateId: number) => {
+      try {
+        await api(`/candidates/${candidateId}`, { method: "DELETE" });
+        setCandidates((prev) => prev.filter((c) => c.id !== candidateId));
+        setRemoveTarget(null);
+        notifySuccess("Candidate removed from job");
+      } catch (err: any) {
+        notifyError(err instanceof ApiError ? err.detail : "Failed to remove candidate");
       }
     },
     [],
@@ -398,6 +416,45 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
     },
     [],
   );
+
+  const handleRefreshAllFitScores = useCallback(async () => {
+    const toRefresh = candidates.filter((c) => c.job_id !== null);
+    if (toRefresh.length === 0) return;
+    setRefreshingAll(true);
+    const allIds = new Set(toRefresh.map((c) => c.id));
+    setRecomputingIds((prev) => new Set([...prev, ...allIds]));
+    try {
+      // Process in batches of 5 to avoid overloading
+      for (let i = 0; i < toRefresh.length; i += 5) {
+        const batch = toRefresh.slice(i, i + 5);
+        const results = await Promise.allSettled(
+          batch.map((c) =>
+            apiPost<Candidate>(`/candidates/${c.id}/compute-fit-score`, {})
+          )
+        );
+        setCandidates((prev) =>
+          prev.map((c) => {
+            const idx = batch.findIndex((b) => b.id === c.id);
+            if (idx === -1) return c;
+            const r = results[idx];
+            return r.status === "fulfilled" ? r.value : c;
+          })
+        );
+        // Remove completed batch from recomputing
+        setRecomputingIds((prev) => {
+          const next = new Set(prev);
+          batch.forEach((b) => next.delete(b.id));
+          return next;
+        });
+      }
+      notifySuccess("All fit scores updated");
+    } catch {
+      notifyError("Failed to refresh some scores");
+    } finally {
+      setRefreshingAll(false);
+      setRecomputingIds(new Set());
+    }
+  }, [candidates]);
 
   const copyLink = useCallback(() => {
     if (!interviewUrl) return;
@@ -486,17 +543,19 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
               <span className="text-sm text-blue-700 truncate flex-1 font-mono">
                 {interviewUrl}
               </span>
-              <button
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={copyLink}
                 title={urlCopied ? "Copied!" : "Copy link"}
-                className="shrink-0 p-1 rounded hover:bg-blue-100 transition-colors"
+                className="shrink-0 h-7 w-7 hover:bg-blue-100"
               >
                 {urlCopied ? (
                   <Check className="w-4 h-4 text-green-600" />
                 ) : (
                   <Copy className="w-4 h-4 text-blue-500" />
                 )}
-              </button>
+              </Button>
               <a
                 href={interviewUrl}
                 target="_blank"
@@ -559,10 +618,12 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
       <div className="border-b border-gray-200">
         <div className="flex items-center gap-0">
           {STAGES.map((stage) => (
-            <button
+            <Button
               key={stage}
+              variant="ghost"
+              size="sm"
               onClick={() => handleTabChange(stage)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
+              className={`rounded-none px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
                 ${activeTab === stage
                   ? "border-blue-600 text-blue-600"
                   : "border-transparent text-gray-500 hover:text-gray-700"}`}
@@ -572,7 +633,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
               <span className="ml-1 text-xs text-gray-400">
                 ({tabCounts[stage] ?? 0})
               </span>
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -655,13 +716,28 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
 
                 {isCandidatesTab && <TableHead className="px-3 text-xs font-medium text-gray-600">TRUST SCORE</TableHead>}
 
-                <TableHead className="px-3 text-xs font-medium text-gray-600">CANDIDATE FIT SCORE</TableHead>
+                <TableHead className="px-3 text-xs font-medium text-gray-600">
+                  <div className="flex items-center gap-1.5">
+                    CANDIDATE FIT SCORE
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleRefreshAllFitScores}
+                      disabled={refreshingAll}
+                      title="Refresh all fit scores"
+                      className="h-5 w-5 p-0.5 hover:bg-gray-200 disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${refreshingAll ? "animate-spin text-brand-500" : "text-gray-500 hover:text-gray-700"}`} />
+                    </Button>
+                  </div>
+                </TableHead>
                 <TableHead className="px-3 text-xs font-medium text-gray-600">INTERVIEW STATUS</TableHead>
                 <TableHead className="px-3 text-xs font-medium text-gray-600">VIEW REPORT</TableHead>
                 <TableHead className="px-3 text-xs font-medium text-gray-600">RESUME</TableHead>
                 <TableHead className="px-3 text-xs font-medium text-gray-600">INTERVIEW SCHEDULE</TableHead>
                 <TableHead className="px-3 text-xs font-medium text-gray-600">RECORDING</TableHead>
                 <TableHead className="px-3 text-xs font-medium text-gray-600">VIDEO DURATION</TableHead>
+                <TableHead className="px-3 text-xs font-medium text-gray-600 w-16"></TableHead>
 
                 {/* Detail score columns shown only on stage-specific tabs */}
                 {!isCandidatesTab && <TableHead className="px-3 text-xs font-medium text-gray-600">PRONUNCIATION</TableHead>}
@@ -822,13 +898,15 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                               {scheduleLabel}
                             </span>
                             {isScheduled && (
-                              <button
-                                className="text-gray-400 hover:text-red-500"
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-5 w-5 text-gray-400 hover:text-red-500"
                                 title="Cancel scheduled interview"
-                                onClick={() => handleCancelInterview(c.id)}
+                                onClick={() => setCancelTarget(c.id)}
                               >
                                 <X className="w-3 h-3" />
-                              </button>
+                              </Button>
                             )}
                           </div>
                         ) : (
@@ -951,6 +1029,19 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                         {c.video_duration ?? <span className="text-gray-400">N/A</span>}
                       </TableCell>
 
+                      {/* Remove from job */}
+                      <TableCell className="px-3">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setRemoveTarget(c.id)}
+                          className="h-7 w-7 text-gray-400 hover:text-red-600"
+                          title="Remove candidate from job"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+
                       {/* Detail scores — stage-specific tabs only */}
                       {!isCandidatesTab && (
                         <>
@@ -1048,6 +1139,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                 } or via email ${job.manager_email || ""}`
               : undefined
           }
+          interviewUrl={interviewUrl || undefined}
           onScheduled={handleScheduled}
         />
       )}
@@ -1162,6 +1254,28 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Cancel Interview Confirmation */}
+      <ConfirmDialog
+        open={cancelTarget !== null}
+        onOpenChange={(open) => { if (!open) setCancelTarget(null); }}
+        title="Cancel Interview"
+        description="Are you sure you want to cancel this interview? The candidate will be notified."
+        confirmLabel="Cancel Interview"
+        variant="warning"
+        onConfirm={() => { if (cancelTarget !== null) handleCancelInterview(cancelTarget); }}
+      />
+
+      {/* Remove Candidate Confirmation */}
+      <ConfirmDialog
+        open={removeTarget !== null}
+        onOpenChange={(open) => { if (!open) setRemoveTarget(null); }}
+        title="Remove Candidate"
+        description="Are you sure you want to remove this candidate from this job? This action cannot be undone."
+        confirmLabel="Remove"
+        variant="danger"
+        onConfirm={() => { if (removeTarget !== null) handleRemoveCandidate(removeTarget); }}
+      />
     </div>
   );
 }

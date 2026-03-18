@@ -1,26 +1,34 @@
 "use client";
 import React from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 
 type FitLevel = "high" | "medium" | "low" | null | undefined;
 
+interface BreakdownItem {
+  score: number;
+  weight: number;
+  contribution: number;
+}
+
 interface FitScoreReasoning {
+  fit_percentage?: number;
+  fit_level?: string;
   summary?: string;
-  percentage?: number;
+  // New metadata-comparison format
   key_matching_skills?: string[];
+  missing_skills?: string[];
+  breakdown?: Record<string, BreakdownItem>;
+  // Legacy AI format (still supported)
+  percentage?: number;
   relevant_experience_summary?: string;
   missing_weak_areas?: string[];
-  breakdown?: {
-    experience_match?: string;
-    skills_match?: string;
-    tech_stack_alignment?: string;
-    role_alignment?: string;
-  };
 }
 
 interface FitScoreBadgeProps {
@@ -55,6 +63,22 @@ const FIT_CONFIG = {
   },
 };
 
+// Friendly labels for breakdown dimensions
+const DIMENSION_LABELS: Record<string, string> = {
+  skills_overlap: "Skills Match",
+  skills_tfidf: "Skills Similarity",
+  title_similarity: "Job Title Match",
+  experience_fit: "Experience Fit",
+  education_match: "Education",
+  certification_match: "Certifications",
+  keyword_overlap: "Keyword Match",
+  tech_stack_align: "Tech Stack",
+  industry_relevance: "Industry",
+  seniority_match: "Seniority Level",
+  location_match: "Location",
+  text_similarity: "Resume–JD Similarity",
+};
+
 export default function FitScoreBadge({
   fitLevel,
   reasoning,
@@ -62,21 +86,24 @@ export default function FitScoreBadge({
   recomputing,
 }: FitScoreBadgeProps) {
   let parsed: FitScoreReasoning | null = null;
-
   try {
     if (reasoning) parsed = JSON.parse(reasoning);
   } catch {}
 
-  // Treat 0 as "not computed" — LLM defaults to 0 on parse failure
-  const rawPct = parsed?.percentage;
+  // Support both new (fit_percentage) and legacy (percentage) format
+  const rawPct = parsed?.fit_percentage ?? parsed?.percentage;
   const percentage =
     rawPct !== undefined && rawPct !== null && rawPct > 0 ? rawPct : null;
+
+  const matchedSkills = parsed?.key_matching_skills ?? [];
+  const missingSkills = parsed?.missing_skills ?? parsed?.missing_weak_areas ?? [];
+  const breakdown = parsed?.breakdown;
 
   const hasRichData =
     parsed !== null &&
     (percentage !== null ||
-      (parsed.key_matching_skills && parsed.key_matching_skills.length > 0) ||
-      !!parsed.relevant_experience_summary ||
+      matchedSkills.length > 0 ||
+      missingSkills.length > 0 ||
       !!parsed.summary);
 
   if (!fitLevel) {
@@ -92,6 +119,14 @@ export default function FitScoreBadge({
   const pct = percentage ?? 0;
   const badgeLabel =
     percentage !== null ? `${percentage}% – ${cfg.label}` : cfg.label;
+
+  // Top breakdown dimensions to show (sorted by contribution, top 5)
+  const topDimensions = breakdown
+    ? Object.entries(breakdown)
+        .map(([key, val]) => ({ key, ...val }))
+        .sort((a, b) => b.contribution - a.contribution)
+        .slice(0, 5)
+    : [];
 
   const TooltipBody = (
     <div className="w-80 text-sm space-y-3 p-1">
@@ -118,21 +153,14 @@ export default function FitScoreBadge({
           </span>
         </div>
 
-        <div className="h-2 bg-gray-600 rounded-full overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all duration-500 ${cfg.bar}`}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
+        <Progress value={pct} className="h-2" />
 
-        {percentage !== null && (
-          <p className="text-xs text-gray-400 mt-1">
-            {pct}% match against job requirements
-          </p>
+        {parsed?.summary && (
+          <p className="text-xs text-gray-400 mt-1.5">{parsed.summary}</p>
         )}
       </div>
 
-      {/* ── Match score not available ── */}
+      {/* ── Score not available ── */}
       {!hasRichData && (
         <>
           <div className="border-t border-gray-600" />
@@ -141,34 +169,57 @@ export default function FitScoreBadge({
               Match score not available
             </p>
             {onRecompute && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRecompute();
-                }}
+              <Button
+                variant="link"
+                size="sm"
+                onClick={(e) => { e.stopPropagation(); onRecompute(); }}
                 disabled={recomputing}
-                className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 underline disabled:opacity-50 transition-colors"
+                className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 underline disabled:opacity-50 transition-colors h-auto p-0"
               >
-                <RefreshCw
-                  className={`w-3 h-3 ${recomputing ? "animate-spin" : ""}`}
-                />
+                <RefreshCw className={`w-3 h-3 ${recomputing ? "animate-spin" : ""}`} />
                 {recomputing ? "Computing…" : "Recompute score"}
-              </button>
+              </Button>
             )}
           </div>
         </>
       )}
 
-      {/* ── Key Matching Skills ── */}
-      {parsed?.key_matching_skills && parsed.key_matching_skills.length > 0 && (
+      {/* ── Top Score Breakdown ── */}
+      {topDimensions.length > 0 && (
         <>
           <div className="border-t border-gray-600" />
           <div>
-            <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide mb-1.5">
-              Key Matching Skills
+            <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide mb-2">
+              Score Breakdown
+            </p>
+            <div className="space-y-1.5">
+              {topDimensions.map((dim) => (
+                <div key={dim.key} className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400 w-28 truncate">
+                    {DIMENSION_LABELS[dim.key] || dim.key}
+                  </span>
+                  <Progress value={dim.score} className="h-1.5 flex-1" />
+                  <span className="text-xs text-gray-400 w-8 text-right font-mono">
+                    {dim.score}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Key Matching Skills ── */}
+      {matchedSkills.length > 0 && (
+        <>
+          <div className="border-t border-gray-600" />
+          <div>
+            <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3 text-green-400" />
+              Matching Skills ({matchedSkills.length})
             </p>
             <div className="flex flex-wrap gap-1">
-              {parsed.key_matching_skills.map((skill, i) => (
+              {matchedSkills.map((skill, i) => (
                 <span
                   key={i}
                   className="px-1.5 py-0.5 rounded bg-green-900/60 text-green-300 text-xs border border-green-700"
@@ -181,7 +232,30 @@ export default function FitScoreBadge({
         </>
       )}
 
-      {/* ── Relevant Experience Summary ── */}
+      {/* ── Missing Skills ── */}
+      {missingSkills.length > 0 && (
+        <>
+          <div className="border-t border-gray-600" />
+          <div>
+            <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+              <XCircle className="w-3 h-3 text-red-400" />
+              Missing Skills ({missingSkills.length})
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {missingSkills.map((skill, i) => (
+                <span
+                  key={i}
+                  className="px-1.5 py-0.5 rounded bg-red-900/40 text-red-300 text-xs border border-red-800"
+                >
+                  {skill}
+                </span>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Legacy: Relevant Experience Summary ── */}
       {parsed?.relevant_experience_summary && (
         <>
           <div className="border-t border-gray-600" />
@@ -196,44 +270,21 @@ export default function FitScoreBadge({
         </>
       )}
 
-      {/* ── Missing / Weak Areas ── */}
-      {parsed?.missing_weak_areas && parsed.missing_weak_areas.length > 0 && (
-        <>
-          <div className="border-t border-gray-600" />
-          <div>
-            <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide mb-1">
-              Missing / Weak Areas
-            </p>
-            <ul className="space-y-0.5">
-              {parsed.missing_weak_areas.map((area, i) => (
-                <li key={i} className="flex gap-1.5 text-xs text-red-300">
-                  <span className="mt-0.5 shrink-0">✕</span>
-                  <span>{area}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </>
-      )}
-
-      {/* ── Refresh score (when rich data exists) ── */}
+      {/* ── Refresh score ── */}
       {hasRichData && onRecompute && (
         <>
           <div className="border-t border-gray-600" />
           <div className="flex justify-end">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onRecompute();
-              }}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => { e.stopPropagation(); onRecompute(); }}
               disabled={recomputing}
-              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 disabled:opacity-50 transition-colors"
+              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 disabled:opacity-50 transition-colors h-auto p-0"
             >
-              <RefreshCw
-                className={`w-3 h-3 ${recomputing ? "animate-spin" : ""}`}
-              />
+              <RefreshCw className={`w-3 h-3 ${recomputing ? "animate-spin" : ""}`} />
               {recomputing ? "Recomputing…" : "Refresh score"}
-            </button>
+            </Button>
           </div>
         </>
       )}

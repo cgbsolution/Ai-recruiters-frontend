@@ -3,13 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PhoneOff, Mic, MicOff, GripVertical, SkipForward, Monitor } from "lucide-react";
+import dynamic from "next/dynamic";
 import AvatarScene from "./AvatarScene";
 import TranscriptPanel from "./TranscriptPanel";
 import ViolationModal from "./ViolationModal";
 import { useSpeechRecognition } from "@/hooks/interview/useSpeechRecognition";
 import { useSpeechSynthesis } from "@/hooks/interview/useSpeechSynthesis";
 import { useViolationDetection } from "@/hooks/interview/useViolationDetection";
-import type { Message, JobConfig, QuestionState } from "@/hooks/interview/useInterviewSession";
+import type { Message, JobConfig, QuestionState, CodingQuestion } from "@/hooks/interview/useInterviewSession";
+import { API_BASE } from "@/lib/api";
+
+const CodeEditor = dynamic(() => import("./CodeEditor"), { ssr: false });
 
 /* ─────────────────────── Types & Constants ─────────────────────── */
 
@@ -109,6 +113,9 @@ export default function InterviewRoom({
   const [showScreenShareModal, setShowScreenShareModal] = useState(false);
   const [silenceProgress, setSilenceProgress] = useState(0);
   const [answeredCount, setAnsweredCount] = useState(0);
+
+  /* ── Coding Mode State ── */
+  const [activeCodingQuestion, setActiveCodingQuestion] = useState<CodingQuestion | null>(null);
 
   /* ── Refs ── */
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -234,6 +241,12 @@ export default function InterviewRoom({
       processingStartRef.current = null;
       setPhase("SPEAKING");
       speak(aiMsgs[latestIdx].content);
+
+      // Check if this AI message includes a coding question
+      const latestAiMsg = aiMsgs[latestIdx];
+      if (latestAiMsg.codingQuestion) {
+        setActiveCodingQuestion(latestAiMsg.codingQuestion);
+      }
     }
   }, [messages, speak, stop, cancelSilenceAnim]);
 
@@ -246,6 +259,12 @@ export default function InterviewRoom({
     if (isSpeaking || isThinking) return;
     if (isInterviewComplete) return;
 
+    // When coding mode is active, go to IDLE instead of LISTENING (no STT needed)
+    if (activeCodingQuestion) {
+      setPhase("IDLE");
+      return;
+    }
+
     const timer = setTimeout(() => {
       if (phaseRef.current === "SPEAKING") {
         setPhase("LISTENING");
@@ -255,7 +274,7 @@ export default function InterviewRoom({
     }, POST_SPEECH_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [phase, isSpeaking, isThinking, isInterviewComplete, reset, start]);
+  }, [phase, isSpeaking, isThinking, isInterviewComplete, activeCodingQuestion, reset, start]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  EFFECT 3: Silence detection — ChatGPT voice mode style        */
@@ -265,6 +284,12 @@ export default function InterviewRoom({
 
   useEffect(() => {
     if (phase !== "LISTENING") {
+      cancelSilenceAnim();
+      return;
+    }
+
+    // Pause silence detection during coding mode — candidate is typing, not speaking
+    if (activeCodingQuestion) {
       cancelSilenceAnim();
       return;
     }
@@ -418,6 +443,24 @@ export default function InterviewRoom({
     return `${m}:${sec}`;
   };
 
+  /* ── Code submission handler ── */
+  const handleCodeSubmit = useCallback(
+    async (code: string, language: string, testResult: { passed: number; total: number }) => {
+      setActiveCodingQuestion(null); // Close editor
+      // Submit code + get AI response
+      const codeContext =
+        `[CODE SUBMISSION] Language: ${language} | ` +
+        `Tests: ${testResult.passed}/${testResult.total} passed\n` +
+        `\`\`\`${language}\n${code}\n\`\`\``;
+      await onSendMessage(codeContext);
+    },
+    [onSendMessage]
+  );
+
+  const handleCodeClose = useCallback(() => {
+    setActiveCodingQuestion(null);
+  }, []);
+
   const handleEndInterview = useCallback(() => {
     setPhase("IDLE");
     disableViolations();
@@ -537,10 +580,12 @@ export default function InterviewRoom({
         </div>
       </div>
 
-      {/* ── Main Content: Avatar Left | Chat Right ── */}
+      {/* ── Main Content: Avatar Left | Chat/Code Right ── */}
       <div id="interview-main" className="flex flex-1 overflow-hidden relative">
-        {/* ── Left: Avatar Panel ── */}
-        <div className="w-[45%] flex flex-col bg-gradient-to-b from-gray-900 via-gray-925 to-gray-950 border-r border-gray-800">
+        {/* ── Left: Avatar Panel (shrinks when coding) ── */}
+        <div className={`flex flex-col bg-gradient-to-b from-gray-900 via-gray-925 to-gray-950 border-r border-gray-800 transition-all duration-300 ${
+          activeCodingQuestion ? "w-[25%]" : "w-[45%]"
+        }`}>
           <div className="flex-1 relative">
             <AvatarScene isSpeaking={isSpeaking} isThinking={isThinking} />
 
@@ -581,60 +626,72 @@ export default function InterviewRoom({
           </div>
         </div>
 
-        {/* ── Right: Chat Panel ── */}
-        <div className="flex-1 flex flex-col bg-gray-950 min-w-0">
-          {/* Chat header */}
-          <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between shrink-0">
-            <div>
-              <h3 className="text-white text-sm font-semibold">Interview Chat</h3>
-              <p className="text-gray-500 text-[11px]">Live conversation transcript</p>
-            </div>
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs ${
-              phase === "LISTENING"
-                ? "bg-green-950/50 border border-green-800/50 text-green-400"
-                : "bg-gray-800/50 border border-gray-700/50 text-gray-500"
-            }`}>
-              {phase === "LISTENING" ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
-              {phase === "LISTENING" ? "Mic Active" : "Mic Off"}
-            </div>
-          </div>
-
-          {/* Messages area */}
-          <div className="flex-1 overflow-hidden px-4 py-3 min-h-0">
-            <TranscriptPanel
-              messages={messages}
-              isThinking={isThinking}
-              liveTranscript={liveText}
+        {/* ── Right: Code Editor (when coding question active) OR Chat Panel ── */}
+        {activeCodingQuestion ? (
+          <div className="flex-1 flex flex-col min-w-0">
+            <CodeEditor
+              question={activeCodingQuestion}
+              sessionId={sessionId}
+              onSubmit={handleCodeSubmit}
+              onClose={handleCodeClose}
+              apiBase={API_BASE}
             />
           </div>
-
-          {/* Silence countdown progress bar */}
-          {phase === "LISTENING" && silenceProgress > 0 && (
-            <div className="mx-4 mb-1 h-1 bg-gray-800 rounded-full overflow-hidden shrink-0">
-              <div
-                className="h-full bg-amber-500 rounded-full"
-                style={{ width: `${silenceProgress}%`, transition: "width 100ms linear" }}
-              />
-            </div>
-          )}
-
-          {/* Live transcript bar */}
-          {phase === "LISTENING" && liveText && (
-            <div className="mx-4 mb-3 px-4 py-2.5 bg-gray-800/60 border border-gray-700/50 rounded-xl shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse shrink-0" />
-                <p className="text-gray-300 text-sm truncate">{liveText}</p>
+        ) : (
+          <div className="flex-1 flex flex-col bg-gray-950 min-w-0">
+            {/* Chat header */}
+            <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between shrink-0">
+              <div>
+                <h3 className="text-white text-sm font-semibold">Interview Chat</h3>
+                <p className="text-gray-500 text-[11px]">Live conversation transcript</p>
+              </div>
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs ${
+                phase === "LISTENING"
+                  ? "bg-green-950/50 border border-green-800/50 text-green-400"
+                  : "bg-gray-800/50 border border-gray-700/50 text-gray-500"
+              }`}>
+                {phase === "LISTENING" ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
+                {phase === "LISTENING" ? "Mic Active" : "Mic Off"}
               </div>
             </div>
-          )}
 
-          {/* Voice not supported warning */}
-          {!isSupported && (
-            <div className="mx-4 mb-3 px-3 py-2 bg-yellow-950/30 border border-yellow-800/30 rounded-lg shrink-0">
-              <p className="text-yellow-400 text-xs">Voice recognition not supported in this browser.</p>
+            {/* Messages area */}
+            <div className="flex-1 overflow-hidden px-4 py-3 min-h-0">
+              <TranscriptPanel
+                messages={messages}
+                isThinking={isThinking}
+                liveTranscript={liveText}
+              />
             </div>
-          )}
-        </div>
+
+            {/* Silence countdown progress bar */}
+            {phase === "LISTENING" && silenceProgress > 0 && (
+              <div className="mx-4 mb-1 h-1 bg-gray-800 rounded-full overflow-hidden shrink-0">
+                <div
+                  className="h-full bg-amber-500 rounded-full"
+                  style={{ width: `${silenceProgress}%`, transition: "width 100ms linear" }}
+                />
+              </div>
+            )}
+
+            {/* Live transcript bar */}
+            {phase === "LISTENING" && liveText && (
+              <div className="mx-4 mb-3 px-4 py-2.5 bg-gray-800/60 border border-gray-700/50 rounded-xl shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse shrink-0" />
+                  <p className="text-gray-300 text-sm truncate">{liveText}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Voice not supported warning */}
+            {!isSupported && (
+              <div className="mx-4 mb-3 px-3 py-2 bg-yellow-950/30 border border-yellow-800/30 rounded-lg shrink-0">
+                <p className="text-yellow-400 text-xs">Voice recognition not supported in this browser.</p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Draggable Webcam PIP ── */}
         {webcamStream && (

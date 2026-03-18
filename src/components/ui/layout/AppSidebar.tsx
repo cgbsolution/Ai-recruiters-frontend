@@ -104,7 +104,7 @@ const othersItems: NavItem[] = [
 ];
 
 const AppSidebar: React.FC = () => {
-  const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
+  const { isExpanded, isMobileOpen, isHovered, setIsHovered, toggleMobileSidebar } = useSidebar();
   const pathname = usePathname();
 
   const renderMenuItems = (
@@ -154,6 +154,7 @@ const AppSidebar: React.FC = () => {
             nav.path && (
               <Link
                 href={nav.path}
+                onClick={handleLinkClick}
                 className={`menu-item group ${
                   isActive(nav.path) ? "menu-item-active" : "menu-item-inactive"
                 }`}
@@ -191,6 +192,7 @@ const AppSidebar: React.FC = () => {
                   <li key={subItem.name}>
                     <Link
                       href={subItem.path}
+                      onClick={handleLinkClick}
                       className={`menu-dropdown-item ${
                         isActive(subItem.path)
                           ? "menu-dropdown-item-active"
@@ -244,6 +246,12 @@ const AppSidebar: React.FC = () => {
 
   // const isActive = (path: string) => path === pathname;
    const isActive = useCallback((path: string) => path === pathname, [pathname]);
+
+  const handleLinkClick = useCallback(() => {
+    if (isMobileOpen) {
+      toggleMobileSidebar();
+    }
+  }, [isMobileOpen, toggleMobileSidebar]);
 
   useEffect(() => {
     // Check if the current path matches any submenu item
@@ -317,7 +325,7 @@ const AppSidebar: React.FC = () => {
           !isExpanded && !isHovered ? "lg:justify-center" : "justify-start"
         }`}
       >
-        <Link href="/">
+        <Link href="/" onClick={handleLinkClick}>
           {isExpanded || isHovered || isMobileOpen ? (
             <>
               <Image

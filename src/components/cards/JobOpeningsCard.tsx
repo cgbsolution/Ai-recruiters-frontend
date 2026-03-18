@@ -304,21 +304,21 @@ export const JobsOpeningsCard = () => {
                     <div className="flex items-center gap-4">
                       <Send className="w-5 h-5 text-gray-500" /> Application Sent
                     </div>
-                    <span>{job.applications ?? 200}</span>
+                    <span>{job.applications ?? 0}</span>
                   </div>
 
                   <div className="flex items-center justify-between text-sm text-gray-700">
                     <div className="flex items-center gap-4">
                       <CheckCircle2 className="w-5 h-5 text-gray-500" /> Interview Completed
                     </div>
-                    <span>{job.interviews ?? 100}</span>
+                    <span>{job.interviews ?? 0}</span>
                   </div>
 
                   <div className="flex items-center justify-between text-sm text-gray-700">
                     <div className="flex items-center gap-4">
                       <Users className="w-5 h-5 text-gray-500" /> Top Candidate Identified
                     </div>
-                    <span>{job.candidates ?? 50}</span>
+                    <span>{job.candidates ?? 0}</span>
                   </div>
                 </CardContent>
                 {/* Footer */}

@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   ArrowLeft,
@@ -48,11 +49,13 @@ interface EvaluationData {
     level: string | null;
     reasoning: {
       summary?: string;
+      fit_percentage?: number;
       percentage?: number;
       key_matching_skills?: string[];
+      missing_skills?: string[];
       relevant_experience_summary?: string;
       missing_weak_areas?: string[];
-      breakdown?: Record<string, string>;
+      breakdown?: Record<string, { score: number; weight: number; contribution: number } | string>;
     } | null;
     details: string[] | null;
   };
@@ -198,10 +201,9 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div>
-        <button onClick={() => router.back()}
-          className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-2">
+        <Button variant="outline" size="sm" onClick={() => router.back()}>
           <ArrowLeft className="w-4 h-4" /> Back
-        </button>
+        </Button>
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-800">{candidate.name}</h1>
@@ -218,7 +220,7 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
               )}
             </div>
           </div>
-          <FitScoreCard level={fit_score.level} percentage={(fit_score.reasoning as any)?.percentage ?? null} />
+          <FitScoreCard level={fit_score.level} percentage={(fit_score.reasoning as any)?.fit_percentage ?? (fit_score.reasoning as any)?.percentage ?? null} />
         </div>
       </div>
 
@@ -244,7 +246,7 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
             <h2 className="font-semibold text-gray-800">Resume–JD Match Analysis</h2>
             {fit_score.level ? (() => {
               const r = fit_score.reasoning;
-              const pct = r?.percentage ?? null;
+              const pct = r?.fit_percentage ?? r?.percentage ?? null;
               const barColor = pct != null ? pct >= 75 ? "bg-green-500" : pct >= 40 ? "bg-yellow-400" : "bg-red-500" : "bg-gray-300";
               const pctColor = pct != null ? pct >= 75 ? "text-green-700" : pct >= 40 ? "text-yellow-700" : "text-red-700" : "text-gray-400";
               return (
@@ -275,11 +277,11 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
                       <p className="text-sm text-gray-600 leading-relaxed bg-gray-50 rounded-lg p-3 border border-gray-100">{r.relevant_experience_summary}</p>
                     </div>
                   )}
-                  {r?.missing_weak_areas && r.missing_weak_areas.length > 0 && (
+                  {((r?.missing_skills && r.missing_skills.length > 0) || (r?.missing_weak_areas && r.missing_weak_areas.length > 0)) && (
                     <div>
                       <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Missing / Weak Areas</h3>
                       <ul className="space-y-1">
-                        {r.missing_weak_areas.map((a, i) => (
+                        {(r.missing_skills ?? r.missing_weak_areas ?? []).map((a, i) => (
                           <li key={i} className="flex items-start gap-2 text-sm text-red-600">
                             <XCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />{a}
                           </li>
@@ -287,16 +289,29 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
                       </ul>
                     </div>
                   )}
-                  {r?.breakdown && Object.values(r.breakdown).some(Boolean) && (
+                  {r?.breakdown && Object.keys(r.breakdown).length > 0 && (
                     <div>
                       <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Detailed Breakdown</h3>
                       <div className="grid grid-cols-2 gap-3">
-                        {Object.entries(r.breakdown).map(([k, v]) => v ? (
-                          <div key={k} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
-                            <p className="text-xs font-semibold text-gray-500 uppercase mb-1">{k.replace(/_/g, " ")}</p>
-                            <p className="text-sm text-gray-700">{v}</p>
-                          </div>
-                        ) : null)}
+                        {Object.entries(r.breakdown).map(([k, v]) => {
+                          if (!v) return null;
+                          const isObj = typeof v === "object" && v !== null;
+                          const score = isObj ? (v as { score: number }).score : null;
+                          const label = k.replace(/_/g, " ");
+                          return (
+                            <div key={k} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                              <p className="text-xs font-semibold text-gray-500 uppercase mb-1">{label}</p>
+                              {score !== null ? (
+                                <div className="flex items-center gap-2">
+                                  <Progress value={score} className="h-2 flex-1" />
+                                  <span className="text-sm font-semibold text-gray-700">{score}%</span>
+                                </div>
+                              ) : (
+                                <p className="text-sm text-gray-700">{String(v)}</p>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

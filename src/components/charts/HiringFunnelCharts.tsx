@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/chart";
 import { BarChart, Bar, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 
 export default function HiringFunnelCharts() {
   const [isOpen, setIsOpen] = useState(false);
@@ -69,9 +70,9 @@ export default function HiringFunnelCharts() {
           </p>
         </div>
         <div className="relative inline-block">
-          <button onClick={toggleDropdown} className="dropdown-toggle">
+          <Button onClick={toggleDropdown} variant="ghost" size="icon" className="dropdown-toggle">
             <MoreDotIcon className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-300" />
-          </button>
+          </Button>
           <Dropdown
             isOpen={isOpen}
             onClose={closeDropdown}

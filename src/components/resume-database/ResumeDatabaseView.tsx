@@ -21,10 +21,15 @@ import {
   FileText,
   Trash2,
   Sparkles,
+  Trash,
+  Pencil,
+  RefreshCw,
 } from "lucide-react";
 import { api, apiPost, apiUpload, API_BASE } from "@/lib/api";
 import { notifySuccess, notifyError } from "@/lib/notify";
 import BulkUploadModal from "./BulkUploadModal";
+import EditResumeModal from "./EditResumeModal";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface ResumeItem {
   id: number;
@@ -36,6 +41,7 @@ interface ResumeItem {
   skills: string[];
   education: string[];
   location: string | null;
+  annual_package: number | null;
   parsing_status: string;
   parsed_at: string | null;
   created_at: string | null;
@@ -68,6 +74,11 @@ export default function ResumeDatabaseView() {
   const [searchInput, setSearchInput] = useState("");
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [showUpload, setShowUpload] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+  const [showClearAll, setShowClearAll] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [editTarget, setEditTarget] = useState<ResumeItem | null>(null);
+  const [reparsingIds, setReparsingIds] = useState<Set<number>>(new Set());
 
   const fetchResumes = useCallback(async () => {
     setLoading(true);
@@ -121,10 +132,10 @@ export default function ResumeDatabaseView() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Delete this resume record? This cannot be undone.")) return;
     try {
       await api(`/resume-database/${id}`, { method: "DELETE" });
       notifySuccess("Resume deleted");
+      setDeleteTarget(null);
       fetchResumes();
       fetchStats();
     } catch (err: any) {
@@ -136,6 +147,41 @@ export default function ResumeDatabaseView() {
     setShowUpload(false);
     fetchResumes();
     fetchStats();
+  };
+
+  const handleClearAll = async () => {
+    setClearing(true);
+    try {
+      const result = await api<{ deleted: number; message: string }>(
+        "/resume-database/clear-all",
+        { method: "DELETE" }
+      );
+      notifySuccess(result.message);
+      setShowClearAll(false);
+      fetchResumes();
+      fetchStats();
+    } catch (err: any) {
+      notifyError(err.message || "Failed to clear database");
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  const handleReparse = async (id: number) => {
+    setReparsingIds((prev) => new Set([...prev, id]));
+    try {
+      const updated = await apiPost<ResumeItem>(`/resume-database/${id}/reparse`, {});
+      setItems((prev) => prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)));
+      notifySuccess("Resume re-parsed successfully");
+    } catch (err: any) {
+      notifyError(err.message || "Re-parse failed");
+    } finally {
+      setReparsingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   };
 
   const handleCleanup = async () => {
@@ -199,6 +245,12 @@ export default function ResumeDatabaseView() {
           </p>
         </div>
         <div className="flex gap-2">
+          {stats && stats.total > 0 && (
+            <Button variant="outline" onClick={() => setShowClearAll(true)} className="gap-2 text-red-600 border-red-200 hover:bg-red-50">
+              <Trash className="w-4 h-4" />
+              Clear All
+            </Button>
+          )}
           {stats && stats.failed > 0 && (
             <Button variant="outline" onClick={handleCleanup} className="gap-2">
               <Sparkles className="w-4 h-4" />
@@ -246,12 +298,14 @@ export default function ResumeDatabaseView() {
             className="pl-9"
           />
           {search && (
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={handleClearSearch}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              className="absolute right-3 top-1/2 -translate-y-1/2 h-7 w-7 text-gray-400 hover:text-gray-600"
             >
               <X className="w-4 h-4" />
-            </button>
+            </Button>
           )}
         </div>
         <Button variant="outline" onClick={handleSearch}>
@@ -308,8 +362,9 @@ export default function ResumeDatabaseView() {
                   <TableHead className="px-4 text-xs font-medium text-gray-600">EXPERIENCE</TableHead>
                   <TableHead className="px-4 text-xs font-medium text-gray-600">SKILLS</TableHead>
                   <TableHead className="px-4 text-xs font-medium text-gray-600">LOCATION</TableHead>
+                  <TableHead className="px-4 text-xs font-medium text-gray-600">ANNUAL PACKAGE</TableHead>
                   <TableHead className="px-4 text-xs font-medium text-gray-600">STATUS</TableHead>
-                  <TableHead className="px-4 text-xs font-medium text-gray-600 w-20">ACTIONS</TableHead>
+                  <TableHead className="px-4 text-xs font-medium text-gray-600 w-24">ACTIONS</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -353,11 +408,35 @@ export default function ResumeDatabaseView() {
                     <TableCell className="px-4 text-sm text-gray-600">
                       {item.location || "—"}
                     </TableCell>
+                    <TableCell className="px-4 text-sm text-gray-600">
+                      {item.annual_package != null
+                        ? `${item.annual_package} LPA`
+                        : "—"}
+                    </TableCell>
                     <TableCell className="px-4">
                       {statusBadge(item.parsing_status)}
                     </TableCell>
                     <TableCell className="px-4">
                       <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setEditTarget(item)}
+                          className="h-7 w-7 text-gray-400 hover:text-blue-600"
+                          title="Edit"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleReparse(item.id)}
+                          disabled={reparsingIds.has(item.id)}
+                          className="h-7 w-7 text-gray-400 hover:text-green-600 disabled:opacity-50"
+                          title="Re-parse resume"
+                        >
+                          <RefreshCw className={`w-4 h-4 ${reparsingIds.has(item.id) ? "animate-spin" : ""}`} />
+                        </Button>
                         {item.resume_file_path && (
                           <a
                             href={`${API_BASE.replace(/\/api$/, "")}/${item.resume_file_path.replace(/\\/g, "/")}`}
@@ -369,13 +448,15 @@ export default function ResumeDatabaseView() {
                             <FileText className="w-4 h-4" />
                           </a>
                         )}
-                        <button
-                          onClick={() => handleDelete(item.id)}
-                          className="text-gray-400 hover:text-red-600 p-1"
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDeleteTarget(item.id)}
+                          className="h-7 w-7 text-gray-400 hover:text-red-600"
                           title="Delete"
                         >
                           <Trash2 className="w-4 h-4" />
-                        </button>
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -420,6 +501,41 @@ export default function ResumeDatabaseView() {
         open={showUpload}
         onClose={() => setShowUpload(false)}
         onDone={handleUploadDone}
+      />
+
+      {/* Delete single resume confirmation */}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="Delete Resume"
+        description="This will permanently delete this resume record. This action cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={() => { if (deleteTarget !== null) handleDelete(deleteTarget); }}
+      />
+
+      {/* Clear all confirmation */}
+      <ConfirmDialog
+        open={showClearAll}
+        onOpenChange={setShowClearAll}
+        title="Delete All Resumes"
+        description="This will permanently remove all resume records and files from the database. This action cannot be undone."
+        confirmLabel="Delete All"
+        variant="danger"
+        onConfirm={handleClearAll}
+        loading={clearing}
+      />
+
+      {/* Edit Resume Modal */}
+      <EditResumeModal
+        open={editTarget !== null}
+        onClose={() => setEditTarget(null)}
+        resume={editTarget}
+        onUpdated={(updated) => {
+          setItems((prev) =>
+            prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item))
+          );
+        }}
       />
     </div>
   );

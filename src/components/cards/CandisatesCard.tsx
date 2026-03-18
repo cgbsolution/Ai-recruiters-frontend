@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import Button from "@/components/ui/button/Button";
+import { Button as ShadButton } from "@/components/ui/button";
 import { CalenderIcon, MailIcon, ChatIcon } from "@/components/ui/icons";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -286,9 +287,11 @@ const CandidateCards = () => {
       {/* Tabs */}
       <div className="flex gap-4 border-b border-gray-200 mb-6 overflow-x-auto">
         {tabs.map((tab) => (
-          <button
+          <ShadButton
             key={tab}
-            className={`whitespace-nowrap pb-2 text-sm font-medium ${
+            variant="ghost"
+            size="sm"
+            className={`whitespace-nowrap rounded-none pb-2 text-sm font-medium ${
               filter === tab
                 ? "text-indigo-600 border-b-2 border-indigo-600"
                 : "text-gray-500 hover:text-gray-800"
@@ -296,7 +299,7 @@ const CandidateCards = () => {
             onClick={() => setFilter(tab)}
           >
             {tab}
-          </button>
+          </ShadButton>
         ))}
       </div>
 
@@ -443,20 +446,24 @@ const CandidateCards = () => {
           ) : (
             <div className="max-h-64 overflow-y-auto space-y-2">
               {jobs.map((job) => (
-                <button
+                <ShadButton
                   key={job.id}
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setSelectedJobId(job.id)}
-                  className={`w-full text-left rounded-md border p-3 transition-colors ${
+                  className={`w-full text-left justify-start h-auto rounded-md border p-3 transition-colors ${
                     selectedJobId === job.id
                       ? "border-indigo-500 bg-indigo-50"
                       : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
                   }`}
                 >
-                  <p className={`text-sm font-medium ${selectedJobId === job.id ? "text-indigo-700" : "text-gray-800"}`}>
-                    {job.title}
-                  </p>
-                  {job.department && <p className="text-xs text-gray-500">{job.department}</p>}
-                </button>
+                  <div>
+                    <p className={`text-sm font-medium ${selectedJobId === job.id ? "text-indigo-700" : "text-gray-800"}`}>
+                      {job.title}
+                    </p>
+                    {job.department && <p className="text-xs text-gray-500">{job.department}</p>}
+                  </div>
+                </ShadButton>
               ))}
             </div>
           )}

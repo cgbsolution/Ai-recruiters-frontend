@@ -3,6 +3,8 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Upload, X, CheckCircle, ArrowLeft, LogIn, UserPlus } from "lucide-react";
 import type { PreInterviewField } from "@/hooks/interview/useInterviewSession";
@@ -126,14 +128,15 @@ export default function RegistrationStep({ preInterviewFields, jobId, onRegister
     <div className="flex flex-col items-center justify-center min-h-screen px-6 py-10">
       <div className="w-full max-w-md">
         {/* Go Back */}
-        <button
+        <Button
           type="button"
+          variant="ghost"
           onClick={onBack}
-          className="flex items-center gap-1.5 text-gray-400 hover:text-white text-sm mb-6 transition-colors"
+          className="flex items-center gap-1.5 text-gray-400 hover:text-white text-sm mb-6 transition-colors px-0"
         >
           <ArrowLeft className="w-4 h-4" />
           Go Back
-        </button>
+        </Button>
 
         {/* Continue / New toggle */}
         <div className="bg-gray-900 rounded-xl p-4 mb-8 space-y-3">
@@ -145,17 +148,20 @@ export default function RegistrationStep({ preInterviewFields, jobId, onRegister
               </div>
               <p className="text-xs text-gray-400">Fill in the form below to start</p>
             </div>
-            <button
+            <Button
               type="button"
+              variant="ghost"
               onClick={onSwitchToLogin}
-              className="flex-1 rounded-lg border border-gray-700 hover:border-gray-500 p-3 text-left transition-colors"
+              className="flex-1 rounded-lg border border-gray-700 hover:border-gray-500 p-3 h-auto text-left transition-colors"
             >
-              <div className="flex items-center gap-2 mb-1">
-                <LogIn className="w-4 h-4 text-gray-400" />
-                <span className="text-sm font-medium text-gray-300">Continue Existing</span>
+              <div className="w-full">
+                <div className="flex items-center gap-2 mb-1">
+                  <LogIn className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm font-medium text-gray-300">Continue Existing</span>
+                </div>
+                <p className="text-xs text-gray-500">Resume where you left off</p>
               </div>
-              <p className="text-xs text-gray-500">Resume where you left off</p>
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -222,7 +228,7 @@ export default function RegistrationStep({ preInterviewFields, jobId, onRegister
             <div key={field.field_id}>
               <Label className="text-gray-300">{field.label}</Label>
               {field.type === "textarea" ? (
-                <textarea
+                <Textarea
                   className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none"
                   rows={3}
                   placeholder={field.label}
@@ -232,20 +238,19 @@ export default function RegistrationStep({ preInterviewFields, jobId, onRegister
                   }
                 />
               ) : field.type === "checkbox" ? (
-                <label className="flex items-center gap-2 mt-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="w-4 h-4 accent-blue-500"
+                <div className="flex items-center gap-2 mt-2">
+                  <Checkbox
+                    id={`field-${field.field_id}`}
                     checked={extraFields[field.field_id] === "true"}
-                    onChange={(e) =>
+                    onCheckedChange={(checked) =>
                       setExtraFields((prev) => ({
                         ...prev,
-                        [field.field_id]: e.target.checked ? "true" : "false",
+                        [field.field_id]: checked === true ? "true" : "false",
                       }))
                     }
                   />
-                  <span className="text-gray-300 text-sm">{field.label}</span>
-                </label>
+                  <Label htmlFor={`field-${field.field_id}`} className="text-gray-300 text-sm cursor-pointer">{field.label}</Label>
+                </div>
               ) : field.type === "date" ? (
                 <Input
                   type="date"
@@ -313,16 +318,19 @@ export default function RegistrationStep({ preInterviewFields, jobId, onRegister
                       {resumeFile.name}
                     </span>
                   </div>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon"
                     onClick={(e) => {
                       e.stopPropagation();
                       setResumeFile(null);
                       setResumePath("");
                     }}
+                    className="h-6 w-6"
                   >
                     <X className="w-4 h-4 text-gray-400 hover:text-white" />
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 <div className="flex flex-col items-center text-gray-500 text-sm gap-1">

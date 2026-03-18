@@ -4,6 +4,7 @@ import Link from "next/link";
 import React, { useState } from "react";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
+import { Button } from "@/components/ui/button";
 
 export default function UserDropdown() {
   const [isOpen, setIsOpen] = useState(false);
@@ -18,8 +19,9 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
   }
   return (
     <div className="relative">
-      <button
-        onClick={toggleDropdown} 
+      <Button
+        variant="ghost"
+        onClick={toggleDropdown}
         className="flex items-center text-gray-700 dark:text-gray-400 dropdown-toggle"
       >
         <span className="mr-3 overflow-hidden rounded-full h-11 w-11">
@@ -51,7 +53,7 @@ function toggleDropdown(e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
             strokeLinejoin="round"
           />
         </svg>
-      </button>
+      </Button>
 
       <Dropdown
         isOpen={isOpen}

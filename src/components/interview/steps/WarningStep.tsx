@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { AlertTriangle, Eye, Monitor, Shield, Tablet } from "lucide-react";
 
 interface Props {
@@ -59,17 +61,17 @@ export default function WarningStep({ onConfirm }: Props) {
           </p>
         </div>
 
-        <label className="flex items-start gap-3 cursor-pointer mb-6">
-          <input
-            type="checkbox"
+        <div className="flex items-start gap-3 mb-6">
+          <Checkbox
+            id="confirm-policy"
             checked={confirmed}
-            onChange={(e) => setConfirmed(e.target.checked)}
-            className="mt-1 w-4 h-4 accent-blue-500"
+            onCheckedChange={(checked) => setConfirmed(checked === true)}
+            className="mt-1"
           />
-          <span className="text-gray-300 text-sm">
+          <Label htmlFor="confirm-policy" className="text-gray-300 text-sm cursor-pointer">
             I understand the anti-cheating policy and agree to conduct this interview honestly and fairly.
-          </span>
-        </label>
+          </Label>
+        </div>
 
         <Button
           onClick={onConfirm}

@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Select,
   SelectContent,
@@ -47,6 +48,7 @@ const QuestionsBank: React.FC = () => {
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(
     null
   );
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
 
   // Fetch questions
   const fetchQuestions = async () => {
@@ -139,10 +141,10 @@ const QuestionsBank: React.FC = () => {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this question?")) return;
     try {
       await api(`/questions/${id}`, { method: "DELETE" });
       setQuestions((prev) => prev.filter((q) => q.id !== id));
+      setDeleteTarget(null);
       notifySuccess("Question deleted successfully!");
     } catch (err: any) {
       notifyError("Network error deleting question");
@@ -218,7 +220,7 @@ const QuestionsBank: React.FC = () => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => handleDelete(q.id)}
+                  onClick={() => setDeleteTarget(q.id)}
                 >
                   <TrashIcon className="w-4 h-4 text-red-500" />
                 </Button>
@@ -307,6 +309,16 @@ const QuestionsBank: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="Delete Question"
+        description="Are you sure you want to delete this question? This action cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={() => { if (deleteTarget !== null) handleDelete(deleteTarget); }}
+      />
     </div>
   );
 };

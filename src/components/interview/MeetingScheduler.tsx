@@ -85,10 +85,11 @@ export default function MeetingScheduler({ onLoadSlots, onSchedule, onDone }: Pr
               const { dateStr, timeStr } = formatSlot(slot);
               const isSelected = selectedSlot === slot.id;
               return (
-                <button
+                <Button
                   key={slot.id}
+                  variant="ghost"
                   onClick={() => setSelectedSlot(slot.id)}
-                  className={`w-full flex items-center justify-between px-5 py-4 rounded-xl border transition-all ${
+                  className={`w-full flex items-center justify-between px-5 py-4 h-auto rounded-xl border transition-all ${
                     isSelected
                       ? "bg-blue-900/30 border-blue-600 text-white"
                       : "bg-gray-900 border-gray-800 text-gray-300 hover:border-gray-600"
@@ -99,7 +100,7 @@ export default function MeetingScheduler({ onLoadSlots, onSchedule, onDone }: Pr
                     <p className="text-xs text-gray-400 mt-0.5">{timeStr}</p>
                   </div>
                   {isSelected && <CheckCircle className="w-5 h-5 text-blue-400 flex-shrink-0" />}
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -115,12 +116,13 @@ export default function MeetingScheduler({ onLoadSlots, onSchedule, onDone }: Pr
               {scheduling ? "Scheduling..." : "Confirm Meeting"}
             </Button>
           )}
-          <button
+          <Button
+            variant="ghost"
             onClick={onDone}
             className="w-full text-gray-500 text-sm hover:text-gray-300 transition-colors py-2"
           >
             Skip for now
-          </button>
+          </Button>
         </div>
       </div>
     </div>
