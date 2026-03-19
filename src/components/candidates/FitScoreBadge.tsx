@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 
-type FitLevel = "high" | "medium" | "low" | null | undefined;
+type FitLevel = "high" | "medium" | "low" | string | null | undefined;
 
 interface BreakdownItem {
   score: number;
@@ -29,6 +29,19 @@ interface FitScoreReasoning {
   percentage?: number;
   relevant_experience_summary?: string;
   missing_weak_areas?: string[];
+  // AI 6-dimension scorer
+  verdict?: string;
+  reasoning_points?: string[];
+}
+
+interface FitScoreDetails {
+  score_breakdown?: Record<string, number>;
+  strength_mapping?: {
+    strong_matches?: string[];
+    partial_matches?: string[];
+    gaps?: string[];
+  };
+  breakdown?: Record<string, string>;
 }
 
 interface FitScoreBadgeProps {
@@ -65,6 +78,7 @@ const FIT_CONFIG = {
 
 // Friendly labels for breakdown dimensions
 const DIMENSION_LABELS: Record<string, string> = {
+  // Algorithmic scorer dimensions
   skills_overlap: "Skills Match",
   skills_tfidf: "Skills Similarity",
   title_similarity: "Job Title Match",
@@ -77,17 +91,28 @@ const DIMENSION_LABELS: Record<string, string> = {
   seniority_match: "Seniority Level",
   location_match: "Location",
   text_similarity: "Resume–JD Similarity",
+  // AI 6-dimension scorer
+  core_skills: "Core Skills",
+  responsibility_match: "Responsibilities",
+  tools_technology: "Tools & Tech",
+  leadership_ownership: "Leadership",
+  compliance_domain: "Compliance",
 };
 
 export default function FitScoreBadge({
   fitLevel,
   reasoning,
+  details,
   onRecompute,
   recomputing,
 }: FitScoreBadgeProps) {
   let parsed: FitScoreReasoning | null = null;
+  let parsedDetails: FitScoreDetails | null = null;
   try {
     if (reasoning) parsed = JSON.parse(reasoning);
+  } catch {}
+  try {
+    if (details) parsedDetails = JSON.parse(details);
   } catch {}
 
   // Support both new (fit_percentage) and legacy (percentage) format
@@ -99,9 +124,30 @@ export default function FitScoreBadge({
   const missingSkills = parsed?.missing_skills ?? parsed?.missing_weak_areas ?? [];
   const breakdown = parsed?.breakdown;
 
+  // AI 6-dimension score breakdown
+  const aiScoreBreakdown = parsedDetails?.score_breakdown;
+  const strengthMapping = parsedDetails?.strength_mapping;
+
+  // Support fitLevel as "78%" or "high"/"medium"/"low"
+  const pctFromLevel = fitLevel && fitLevel.endsWith("%")
+    ? parseInt(fitLevel.replace("%", ""), 10)
+    : null;
+
+  // Use percentage from reasoning first, then from fitLevel string
+  const resolvedPct = percentage ?? pctFromLevel;
+
+  // Determine the actual fit level category
+  const resolvedLevel: "high" | "medium" | "low" = (() => {
+    if (fitLevel === "high" || fitLevel === "medium" || fitLevel === "low") return fitLevel;
+    const pctVal = pctFromLevel ?? percentage ?? 0;
+    if (pctVal >= 75) return "high";
+    if (pctVal >= 45) return "medium";
+    return "low";
+  })();
+
   const hasRichData =
     parsed !== null &&
-    (percentage !== null ||
+    (resolvedPct !== null ||
       matchedSkills.length > 0 ||
       missingSkills.length > 0 ||
       !!parsed.summary);
@@ -115,10 +161,10 @@ export default function FitScoreBadge({
     );
   }
 
-  const cfg = FIT_CONFIG[fitLevel] ?? FIT_CONFIG.low;
-  const pct = percentage ?? 0;
+  const cfg = FIT_CONFIG[resolvedLevel] ?? FIT_CONFIG.low;
+  const pct = resolvedPct ?? 0;
   const badgeLabel =
-    percentage !== null ? `${percentage}% – ${cfg.label}` : cfg.label;
+    resolvedPct !== null ? `${resolvedPct}% – ${cfg.label}` : cfg.label;
 
   // Top breakdown dimensions to show (sorted by contribution, top 5)
   const topDimensions = breakdown
@@ -140,10 +186,10 @@ export default function FitScoreBadge({
             </p>
             <span
               className={`text-3xl font-extrabold ${
-                percentage !== null ? "text-white" : "text-gray-500"
+                resolvedPct !== null ? "text-white" : "text-gray-500"
               }`}
             >
-              {percentage !== null ? `${percentage}%` : "—"}
+              {resolvedPct !== null ? `${resolvedPct}%` : "—"}
             </span>
           </div>
           <span
@@ -206,6 +252,90 @@ export default function FitScoreBadge({
               ))}
             </div>
           </div>
+        </>
+      )}
+
+      {/* ── AI 6-Dimension Score Breakdown ── */}
+      {aiScoreBreakdown && Object.keys(aiScoreBreakdown).length > 0 && (
+        <>
+          <div className="border-t border-gray-600" />
+          <div>
+            <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide mb-2">
+              AI Score Breakdown
+            </p>
+            <div className="space-y-1.5">
+              {Object.entries(aiScoreBreakdown).map(([key, score]) => {
+                const maxScore = key === "core_skills" ? 40
+                  : key === "experience_fit" || key === "responsibility_match" ? 15
+                  : 10;
+                const pctValue = Math.round((Number(score) / maxScore) * 100);
+                return (
+                  <div key={key} className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400 w-32 truncate">
+                      {DIMENSION_LABELS[key] || key}
+                    </span>
+                    <Progress value={pctValue} className="h-1.5 flex-1" />
+                    <span className="text-xs text-gray-400 w-12 text-right font-mono">
+                      {score}/{maxScore}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Strength Mapping ── */}
+      {strengthMapping && (strengthMapping.strong_matches?.length || strengthMapping.partial_matches?.length || strengthMapping.gaps?.length) ? (
+        <>
+          <div className="border-t border-gray-600" />
+          <div className="space-y-2">
+            {strengthMapping.strong_matches && strengthMapping.strong_matches.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-green-400 mb-1 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> Strong Matches
+                </p>
+                <ul className="text-xs text-gray-300 space-y-0.5 pl-4 list-disc">
+                  {strengthMapping.strong_matches.slice(0, 4).map((m, i) => (
+                    <li key={i}>{m}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {strengthMapping.partial_matches && strengthMapping.partial_matches.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-yellow-400 mb-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" /> Partial Matches
+                </p>
+                <ul className="text-xs text-gray-300 space-y-0.5 pl-4 list-disc">
+                  {strengthMapping.partial_matches.slice(0, 3).map((m, i) => (
+                    <li key={i}>{m}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {strengthMapping.gaps && strengthMapping.gaps.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-red-400 mb-1 flex items-center gap-1">
+                  <XCircle className="w-3 h-3" /> Gaps
+                </p>
+                <ul className="text-xs text-gray-300 space-y-0.5 pl-4 list-disc">
+                  {strengthMapping.gaps.slice(0, 3).map((m, i) => (
+                    <li key={i}>{m}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </>
+      ) : null}
+
+      {/* ── Verdict ── */}
+      {parsed?.verdict && (
+        <>
+          <div className="border-t border-gray-600" />
+          <p className="text-xs text-gray-300 italic">{parsed.verdict}</p>
         </>
       )}
 

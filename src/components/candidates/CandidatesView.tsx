@@ -63,7 +63,7 @@ import MatchCandidatesModal from "./MatchCandidatesModal";
 import { api, apiPost, ApiError, API_BASE } from "@/lib/api";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
-type ResumeFitScore = "high" | "medium" | "low" | null;
+type ResumeFitScore = string | null;
 
 interface Candidate {
   id: number;
@@ -418,36 +418,20 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
   );
 
   const handleRefreshAllFitScores = useCallback(async () => {
+    if (!jobId) return;
     const toRefresh = candidates.filter((c) => c.job_id !== null);
     if (toRefresh.length === 0) return;
     setRefreshingAll(true);
     const allIds = new Set(toRefresh.map((c) => c.id));
     setRecomputingIds((prev) => new Set([...prev, ...allIds]));
     try {
-      // Process in batches of 5 to avoid overloading
-      for (let i = 0; i < toRefresh.length; i += 5) {
-        const batch = toRefresh.slice(i, i + 5);
-        const results = await Promise.allSettled(
-          batch.map((c) =>
-            apiPost<Candidate>(`/candidates/${c.id}/compute-fit-score`, {})
-          )
-        );
-        setCandidates((prev) =>
-          prev.map((c) => {
-            const idx = batch.findIndex((b) => b.id === c.id);
-            if (idx === -1) return c;
-            const r = results[idx];
-            return r.status === "fulfilled" ? r.value : c;
-          })
-        );
-        // Remove completed batch from recomputing
-        setRecomputingIds((prev) => {
-          const next = new Set(prev);
-          batch.forEach((b) => next.delete(b.id));
-          return next;
-        });
-      }
-      notifySuccess("All fit scores updated");
+      // Use batch endpoint for faster AI scoring
+      await apiPost<any>(`/candidates/batch-recompute-scores?job_id=${jobId}`, {});
+      // Reload all candidates to get updated scores
+      const updated = await api<Candidate[]>(`/candidates/?job_id=${jobId}`);
+      setCandidates(updated);
+      setRecomputingIds(new Set());
+      notifySuccess("All fit scores updated with AI scoring");
     } catch {
       notifyError("Failed to refresh some scores");
     } finally {
