@@ -114,6 +114,11 @@ export default function InterviewRoom({
   const [silenceProgress, setSilenceProgress] = useState(0);
   const [answeredCount, setAnsweredCount] = useState(0);
 
+  /* ── Per-question auto-skip timer state ── */
+  const [questionTimeLeft, setQuestionTimeLeft] = useState<number>(0);
+  const questionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoSkipTimeout = jobConfig.auto_skip_timeout || 0; // seconds, 0 = off
+
   /* ── Coding Mode State ── */
   const [activeCodingQuestion, setActiveCodingQuestion] = useState<CodingQuestion | null>(null);
 
@@ -136,7 +141,7 @@ export default function InterviewRoom({
   /* ── Hooks ── */
   const { transcript, interimTranscript, isListening, isSupported, lastFinalAt, start, stop, reset } = useSpeechRecognition();
   const { speak, cancel, isSpeaking } = useSpeechSynthesis();
-  const { violationCount, lastViolation, shouldTerminate, disable: disableViolations } = useViolationDetection(sessionId, true, webcamStream);
+  const { violationCount, lastViolation, shouldTerminate, disable: disableViolations } = useViolationDetection(sessionId, true, webcamStream, jobConfig.face_match);
 
   /* ── Keep transcriptRef in sync ── */
   useEffect(() => {
@@ -242,9 +247,9 @@ export default function InterviewRoom({
       setPhase("SPEAKING");
       speak(aiMsgs[latestIdx].content);
 
-      // Check if this AI message includes a coding question
+      // Check if this AI message includes a coding question (only if code editor is enabled)
       const latestAiMsg = aiMsgs[latestIdx];
-      if (latestAiMsg.codingQuestion) {
+      if (latestAiMsg.codingQuestion && jobConfig.code_editor_required) {
         setActiveCodingQuestion(latestAiMsg.codingQuestion);
       }
     }
@@ -359,6 +364,7 @@ export default function InterviewRoom({
     cancel();
     stop();
     if (timerRef.current) clearInterval(timerRef.current);
+    if (questionTimerRef.current) { clearInterval(questionTimerRef.current); questionTimerRef.current = null; }
     cancelSilenceAnim();
     processingStartRef.current = null;
     const t = setTimeout(() => onComplete(), 800);
@@ -404,6 +410,90 @@ export default function InterviewRoom({
       lastQuestionIndexRef.current = qi;
     }
   }, [messages]);
+
+  /* ═══════════════════════════════════════════════════════════════ */
+  /*  EFFECT: Per-question auto-skip countdown timer                */
+  /*  Resets when question index changes; auto-skips on expiry.     */
+  /* ═══════════════════════════════════════════════════════════════ */
+
+  useEffect(() => {
+    // Clear existing timer
+    if (questionTimerRef.current) {
+      clearInterval(questionTimerRef.current);
+      questionTimerRef.current = null;
+    }
+
+    // Only activate when auto_skip_timeout > 0 and we're past the intro (question 0)
+    if (autoSkipTimeout <= 0 || currentQuestionIndex <= 0) {
+      setQuestionTimeLeft(0);
+      return;
+    }
+
+    // Reset countdown for this new question
+    setQuestionTimeLeft(autoSkipTimeout);
+
+    questionTimerRef.current = setInterval(() => {
+      setQuestionTimeLeft((prev) => {
+        if (prev <= 1) {
+          // Time's up — auto-skip
+          if (questionTimerRef.current) clearInterval(questionTimerRef.current);
+          questionTimerRef.current = null;
+          // Trigger skip (must be async, fire-and-forget from interval)
+          if (phaseRef.current === "LISTENING") {
+            // Use setTimeout(0) to avoid calling setState during render cycle
+            setTimeout(() => {
+              if (phaseRef.current === "LISTENING" && !isSubmittingRef.current) {
+                handleSkip();
+              }
+            }, 0);
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (questionTimerRef.current) {
+        clearInterval(questionTimerRef.current);
+        questionTimerRef.current = null;
+      }
+    };
+  }, [currentQuestionIndex, autoSkipTimeout, handleSkip]);
+
+  // Pause question timer during SPEAKING/PROCESSING, resume during LISTENING
+  useEffect(() => {
+    if (autoSkipTimeout <= 0 || currentQuestionIndex <= 0) return;
+
+    if (phase === "SPEAKING" || phase === "PROCESSING") {
+      // Pause: clear interval but keep questionTimeLeft
+      if (questionTimerRef.current) {
+        clearInterval(questionTimerRef.current);
+        questionTimerRef.current = null;
+      }
+    } else if (phase === "LISTENING" && !questionTimerRef.current && questionTimeLeft > 0) {
+      // Resume countdown
+      questionTimerRef.current = setInterval(() => {
+        setQuestionTimeLeft((prev) => {
+          if (prev <= 1) {
+            if (questionTimerRef.current) clearInterval(questionTimerRef.current);
+            questionTimerRef.current = null;
+            setTimeout(() => {
+              if (phaseRef.current === "LISTENING" && !isSubmittingRef.current) {
+                handleSkip();
+              }
+            }, 0);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      // Don't clear on unmount here — the main effect handles full cleanup
+    };
+  }, [phase, autoSkipTimeout, currentQuestionIndex, questionTimeLeft, handleSkip]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  Violation modal                                               */
@@ -468,6 +558,7 @@ export default function InterviewRoom({
     stop();
     cancelSilenceAnim();
     if (timerRef.current) clearInterval(timerRef.current);
+    if (questionTimerRef.current) { clearInterval(questionTimerRef.current); questionTimerRef.current = null; }
     setShowEndConfirm(false);
     onComplete();
   }, [disableViolations, cancel, stop, cancelSilenceAnim, onComplete]);
@@ -549,6 +640,20 @@ export default function InterviewRoom({
             <span className="text-gray-500 text-[10px] ml-1 uppercase tracking-wide">Questions</span>
           </div>
 
+          {/* Per-question countdown timer */}
+          {autoSkipTimeout > 0 && questionTimeLeft > 0 && currentQuestionIndex > 0 && (
+            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono ${
+              questionTimeLeft <= 10
+                ? "bg-red-950/50 border border-red-900/50 text-red-400"
+                : questionTimeLeft <= 30
+                ? "bg-amber-950/50 border border-amber-900/50 text-amber-400"
+                : "bg-gray-800/80 text-gray-300"
+            }`}>
+              <span className="font-bold">{formatTime(questionTimeLeft)}</span>
+              <span className="text-[10px] uppercase tracking-wide opacity-70">left</span>
+            </div>
+          )}
+
           {violationCount > 0 && (
             <div className="flex items-center gap-1 text-red-400 text-xs bg-red-950/50 border border-red-900/50 px-2.5 py-1 rounded-lg">
               <span className="font-semibold">{violationCount}</span>
@@ -587,7 +692,15 @@ export default function InterviewRoom({
           activeCodingQuestion ? "w-[25%]" : "w-[45%]"
         }`}>
           <div className="flex-1 relative">
-            <AvatarScene isSpeaking={isSpeaking} isThinking={isThinking} />
+            {jobConfig.virtual_avatar ? (
+              <AvatarScene isSpeaking={isSpeaking} isThinking={isThinking} />
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <div className="w-24 h-24 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-3xl">
+                  AI
+                </div>
+              </div>
+            )}
 
             {/* AI Status overlay at bottom */}
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-gray-950/90 to-transparent pt-10 pb-4 px-5">
@@ -663,6 +776,26 @@ export default function InterviewRoom({
                 liveTranscript={liveText}
               />
             </div>
+
+            {/* Per-question timeout progress bar */}
+            {autoSkipTimeout > 0 && questionTimeLeft > 0 && currentQuestionIndex > 0 && phase === "LISTENING" && (
+              <div className="mx-4 mb-1 shrink-0">
+                <div className="flex items-center justify-between mb-0.5">
+                  <span className="text-[10px] text-gray-500">Time remaining</span>
+                  <span className={`text-[10px] font-mono ${questionTimeLeft <= 10 ? "text-red-400" : "text-gray-400"}`}>
+                    {formatTime(questionTimeLeft)}
+                  </span>
+                </div>
+                <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-1000 linear ${
+                      questionTimeLeft <= 10 ? "bg-red-500" : questionTimeLeft <= 30 ? "bg-amber-500" : "bg-blue-500"
+                    }`}
+                    style={{ width: `${(questionTimeLeft / autoSkipTimeout) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Silence countdown progress bar */}
             {phase === "LISTENING" && silenceProgress > 0 && (

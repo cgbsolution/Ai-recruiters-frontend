@@ -39,34 +39,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { notifyError, notifySuccess } from "@/lib/notify";
 import {
   TrashIcon,
-  PencilIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   PlusIcon,
+  Info,
 } from "lucide-react";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 // --- Config
-import { api, apiPost, ApiError } from "@/lib/api";
-
-// --- Mandatory pre-interview fields (cannot be deleted)
-const MANDATORY_FIELD_IDS = new Set(["full_name", "phone", "email_address"]);
-
-// --- Default pre-interview fields shown on new job creation
-const DEFAULT_PREINTERVIEW_FIELDS = [
-  { id: "full_name", label: "Full Name", type: "text" },
-  { id: "dob", label: "Date of Birth", type: "date" },
-  { id: "phone", label: "Phone Number", type: "phone" },
-  { id: "experience_years", label: "Experience in Years", type: "number" },
-  { id: "email_address", label: "Email Address", type: "email" },
-  { id: "country", label: "Country", type: "text" },
-] as const;
-
-type PreInterviewField = {
-  id: string;
-  label: string;
-  type: string;
-  isDefault?: boolean;
-};
+import { api, apiPost, apiUpload, ApiError } from "@/lib/api";
 
 type SkillGroup = {
   id: string;
@@ -88,7 +69,7 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
   // AI JD modal
   const [aiJDModalOpen, setAiJDModalOpen] = useState(false);
 
-  // Step (0..3)
+  // Step (0..2)
   const [step, setStep] = useState<number>(0);
   const [loading, setLoading] = useState(isEditMode);
 
@@ -109,13 +90,13 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
 
   // ---------- STEP 3 (Interview Setup + bottom: Skills & Criteria) ----------
   const [interviewSettings, setInterviewSettings] = useState({
-    codeEditor: false,
+    codeEditor: true,
     allowFromMobile: false,
-    enableVirtualAvatar: false,
-    resumeBased: false,
+    enableVirtualAvatar: true,
+    resumeBased: true,
     manualInterview: false,
     faceMatchRequired: false,
-    webCamRequired: false,
+    webCamRequired: true,
     secondaryCamVerification: false,
     allowCandidateContact: false,
   });
@@ -140,17 +121,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
 
   const [skillGroups, setSkillGroups] = useState<SkillGroup[]>([]);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-
-  // ---------- STEP 4 (Pre-Interview Form) ----------
-  const [customPreInterviewFields, setCustomPreInterviewFields] = useState<
-    PreInterviewField[]
-  >([]);
-  const [removedDefaultIds, setRemovedDefaultIds] = useState<Set<string>>(new Set());
-  const [addingField, setAddingField] = useState<boolean>(false);
-  const [newFieldLabel, setNewFieldLabel] = useState<string>("");
-  const [newFieldType, setNewFieldType] = useState<string>("text");
-  const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
-  const [editingFieldLabel, setEditingFieldLabel] = useState<string>("");
 
   // ---------- Question Bank State ----------
   const [showQuestionBank, setShowQuestionBank] = useState<boolean>(false);
@@ -359,73 +329,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
   const deleteCustomQuestion = (i: number) =>
     setCustomQuestions((p) => p.filter((_, idx) => idx !== i));
 
-  // Pre-interview custom fields handlers
-  const startAddField = () => {
-    setAddingField(true);
-    setNewFieldLabel("");
-    setNewFieldType("text");
-  };
-
-  const confirmAddField = () => {
-    const label =
-      newFieldLabel.trim() ||
-      `Custom Field ${customPreInterviewFields.length + 1}`;
-    const id = `custom_${Date.now()}`;
-    setCustomPreInterviewFields((p) => [
-      ...p,
-      { id, label, type: newFieldType, isDefault: false },
-    ]);
-    setAddingField(false);
-    setNewFieldLabel("");
-    setNewFieldType("text");
-  };
-
-  const cancelAddField = () => {
-    setAddingField(false);
-    setNewFieldLabel("");
-    setNewFieldType("text");
-  };
-
-  const startEditField = (id: string, currentLabel: string) => {
-    setEditingFieldId(id);
-    setEditingFieldLabel(currentLabel);
-  };
-  const confirmEditField = (id: string) => {
-    setCustomPreInterviewFields((p) =>
-      p.map((f) =>
-        f.id === id ? { ...f, label: editingFieldLabel || f.label } : f
-      )
-    );
-    setEditingFieldId(null);
-    setEditingFieldLabel("");
-  };
-  const cancelEditField = () => {
-    setEditingFieldId(null);
-    setEditingFieldLabel("");
-  };
-  const deleteCustomField = (id: string) => {
-    // Check if it's an optional default field
-    const isOptionalDefault = DEFAULT_PREINTERVIEW_FIELDS.some(
-      (d) => d.id === id && !MANDATORY_FIELD_IDS.has(d.id)
-    );
-    if (isOptionalDefault) {
-      setRemovedDefaultIds((prev) => new Set([...prev, id]));
-    } else {
-      setCustomPreInterviewFields((p) => p.filter((f) => f.id !== id));
-    }
-  };
-
-  // Pre-interview fields to display: defaults (minus removed) + custom
-  const allPreInterviewFields: PreInterviewField[] = [
-    ...DEFAULT_PREINTERVIEW_FIELDS
-      .filter((d) => !removedDefaultIds.has(d.id))
-      .map((d) => ({
-        ...d,
-        isDefault: MANDATORY_FIELD_IDS.has(d.id),
-      })),
-    ...customPreInterviewFields,
-  ];
-
   // ---------- Question Bank Functions ----------
   // Fetch all questions from the API
   const fetchAllQuestions = async () => {
@@ -516,7 +419,7 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     fetchAllQuestions();
   };
 
-  // ---------- Enhanced Validation / step completion (4 steps) ----------
+  // ---------- Enhanced Validation / step completion (3 steps) ----------
   const stepCompleted = useMemo(() => {
     const s0 =
       title.trim().length > 0 &&
@@ -524,9 +427,9 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       location.trim().length > 0 &&
       openings > 0 &&
       empType.trim().length > 0;
-    
+
     const s1 = responsibilities.filter((r) => r.trim().length > 0).length > 0;
-    
+
     const s2 =
       (Object.values(interviewSettings).some(Boolean) ||
       manager.name.trim().length > 0 ||
@@ -537,9 +440,8 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       ) ||
       specialInstructions.trim().length > 0) &&
       manager.name.trim().length > 0; // Manager name is required
-    
-    const s3 = allPreInterviewFields.length >= 3; // at least mandatory fields present
-    return [s0, s1, s2, s3];
+
+    return [s0, s1, s2];
   }, [
     title,
     department,
@@ -597,12 +499,19 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
   };
 
   const tryGoToStep = (target: number) => {
-    const allPrevDone = stepCompleted.slice(0, target).every(Boolean);
-    if (allPrevDone && checkStepRequirements(target)) {
+    // Allow going backward freely
+    if (target <= step) {
       setStep(target);
-    } else {
-      notifyError("Please complete all required fields before proceeding.");
+      return;
     }
+    // For forward navigation, validate all steps before the target
+    for (let s = 0; s < target; s++) {
+      if (!stepCompleted[s]) {
+        checkStepRequirements(s);
+        return;
+      }
+    }
+    setStep(target);
   };
 
   const handleNext = () => {
@@ -614,7 +523,7 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       notifyError("Please fill required fields in this step before proceeding.");
       return;
     }
-    setStep((s) => Math.min(3, s + 1));
+    setStep((s) => Math.min(2, s + 1));
   };
 
   const handleBack = () => setStep((s) => Math.max(0, s - 1));
@@ -629,15 +538,30 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     return `${mm}:${ss}`;
   };
 
-  const handleUpload = () => {
-    if (uploadJD) {
-      // Handle API upload or pass back to parent
-      notifySuccess(`JD file "${uploadJD.name}" uploaded successfully`);
+  const [uploadingJD, setUploadingJD] = useState(false);
+
+  const handleUpload = async () => {
+    if (!uploadJD) return;
+
+    setUploadingJD(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", uploadJD);
+
+      const parsed = await apiUpload<AIGeneratedJD>("/ai/parse-jd-file", formData);
       setOpen(false);
+      notifySuccess(`JD file "${uploadJD.name}" parsed and populated successfully`);
+      handleJDGenerated(parsed);
+    } catch (err: unknown) {
+      const msg = err instanceof ApiError ? err.detail : (err instanceof Error ? err.message : String(err));
+      notifyError(`Failed to parse JD file: ${msg}`);
+    } finally {
+      setUploadingJD(false);
     }
   };
 
-  const progressPercent = Math.round((step / 3) * 100);
+  const progressPercent = Math.round(((step + 1) / 3) * 100);
 
   // Fetch job data for edit mode
   useEffect(() => {
@@ -751,31 +675,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
             );
           }
 
-          // Set pre-interview fields
-          if (jobData.pre_interview_fields) {
-            const savedIds = new Set(
-              jobData.pre_interview_fields.map((f: any) => f.id)
-            );
-            // Find optional defaults that were removed
-            const removed = new Set<string>();
-            for (const d of DEFAULT_PREINTERVIEW_FIELDS) {
-              if (!MANDATORY_FIELD_IDS.has(d.id) && !savedIds.has(d.id)) {
-                removed.add(d.id);
-              }
-            }
-            setRemovedDefaultIds(removed);
-
-            const customFields = jobData.pre_interview_fields
-              .filter((field: any) => !MANDATORY_FIELD_IDS.has(field.id) &&
-                !DEFAULT_PREINTERVIEW_FIELDS.some((d) => d.id === field.id))
-              .map((field: any) => ({
-                id: field.id,
-                label: field.label,
-                type: field.type,
-                isDefault: false,
-              }));
-            setCustomPreInterviewFields(customFields);
-          }
         } catch (error) {
           console.error("Error fetching job data:", error);
           notifyError("Failed to load job data");
@@ -854,14 +753,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
         }))
     );
 
-    // Pre-interview fields payload (defaults + custom)
-    const preInterviewFieldsPayload = allPreInterviewFields.map((f) => ({
-      id: f.id,
-      label: f.label,
-      type: f.type,
-      is_default: MANDATORY_FIELD_IDS.has(f.id),
-    }));
-
     const payload = {
       title: title,
       department: department,
@@ -885,7 +776,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       mix_of_questions: customQuestionsMode === "mix" ? "MIX" : "ONLY",
       questions: customQuestions, // Now includes category and difficulty
       allow_to_contact: interviewSettings.allowCandidateContact,
-      pre_interview_fields: preInterviewFieldsPayload,
       upload_jd: uploadJD ? uploadJD.name : "",
     };
 
@@ -945,7 +835,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
             <TabsTrigger value="0">Basic Info</TabsTrigger>
             <TabsTrigger value="1">Responsibilities</TabsTrigger>
             <TabsTrigger value="2">Interview Setup</TabsTrigger>
-            <TabsTrigger value="3">Candidate Pre Interview form</TabsTrigger>
           </TabsList>
         </Tabs>
 
@@ -965,7 +854,7 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
             <div className="flex items-center justify-between">
               <div className="flex gap-2 items-center">
                 {/* Upload JD Button with Dialog */}
-                <Dialog open={open} onOpenChange={setOpen}>
+                <Dialog open={open} onOpenChange={(v) => { if (!uploadingJD) setOpen(v); }}>
                   <DialogTrigger asChild>
                     <Button variant="outline">Upload Job Description ⬆️</Button>
                   </DialogTrigger>
@@ -981,15 +870,21 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
                         id="jd-file"
                         type="file"
                         accept=".pdf,.doc,.docx"
+                        disabled={uploadingJD}
                         onChange={(e) =>
                           setUploadJD(e.target.files ? e.target.files[0] : null)
                         }
                       />
+                      {uploadingJD && (
+                        <p className="text-sm text-blue-600">
+                          Scanning and extracting data from your file… This may take a few seconds.
+                        </p>
+                      )}
                     </div>
 
                     <DialogFooter>
-                      <Button onClick={handleUpload} disabled={!uploadJD}>
-                        Upload
+                      <Button onClick={handleUpload} disabled={!uploadJD || uploadingJD}>
+                        {uploadingJD ? "Parsing…" : "Upload"}
                       </Button>
                     </DialogFooter>
                   </DialogContent>
@@ -1335,29 +1230,42 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
 
                 <div className="mt-2 flex items-center gap-6">
                   {/* Tabs for Question Type */}
-                  <Tabs
-                    value={questionType}
-                    onValueChange={(val) =>
-                      setQuestionType(val as "traditional" | "scenario")
-                    }
-                    className="w-auto"
-                  >
-                    <TabsList className="bg-gray-100 rounded-full p-1 flex space-x-1">
-                      <TabsTrigger
-                        value="traditional"
-                        className="text-gray-500 hover:text-gray-900 data-[state=active]:bg-[#465fff] data-[state=active]:text-white rounded-full px-3 py-1"
-                      >
-                        Traditional
-                      </TabsTrigger>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm">Interview Mode:</Label>
+                    <Tabs
+                      value={questionType}
+                      onValueChange={(val) =>
+                        setQuestionType(val as "traditional" | "scenario")
+                      }
+                      className="w-auto"
+                    >
+                      <TabsList className="bg-gray-100 rounded-full p-1 flex space-x-1">
+                        <TabsTrigger
+                          value="traditional"
+                          className="text-gray-500 hover:text-gray-900 data-[state=active]:bg-[#465fff] data-[state=active]:text-white rounded-full px-3 py-1"
+                        >
+                          Traditional
+                        </TabsTrigger>
 
-                      <TabsTrigger
-                        value="scenario"
-                        className="text-gray-500 hover:text-gray-900 data-[state=active]:bg-[#465fff] data-[state=active]:text-white rounded-full px-3 py-1"
-                      >
-                        Scenario Based
-                      </TabsTrigger>
-                    </TabsList>
-                  </Tabs>
+                        <TabsTrigger
+                          value="scenario"
+                          className="text-gray-500 hover:text-gray-900 data-[state=active]:bg-[#465fff] data-[state=active]:text-white rounded-full px-3 py-1"
+                        >
+                          Scenario Based
+                        </TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="w-4 h-4 text-gray-400 cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                        {questionType === "traditional"
+                          ? "This mode presents standard, direct questions focused on a candidate's experience, technical knowledge, and problem-solving approach. These are typically used in structured interviews and assess how well candidates understand key concepts, tools, and past project situations. Ideal for evaluating fundamental competency, communication clarity, and practical awareness."
+                          : "This mode presents in-depth, real-world scenarios to evaluate how candidates approach complex, open-ended situations in practical settings. Each question is framed within a realistic context to simulate challenges one might face on the job. It is designed to assess critical thinking, structured problem-solving, and the ability to navigate ambiguity. Interviews in this mode typically take 15\u201320 minutes longer than the traditional format due to the depth and detail involved."}
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
 
                   {/* Number Input for Max Questions */}
                   <div>
@@ -1375,9 +1283,19 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
                   </div>
                 </div>
                 <div className="mt-4">
-                  <Label className="block text-sm font-medium mb-2">
-                    Auto Skip Timeout (mm:ss): {formatMmSs(autoSkipSeconds)}
-                  </Label>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Label className="text-sm font-medium">
+                      Auto Skip Timeout (mm:ss): {formatMmSs(autoSkipSeconds)}
+                    </Label>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="w-4 h-4 text-gray-400 cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                        Set the time the AI will wait for the candidate to answer before automatically skipping to the next question. If set to &quot;Off&quot;, the candidate can take unlimited time per question.
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
                   <Slider
                     value={[autoSkipSeconds]}
                     onValueChange={(v: number[]) => setAutoSkipSeconds(v[0])}
@@ -1391,19 +1309,26 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
                     <SliderThumb value={autoSkipSeconds} />
                   </Slider>
                   <div className="flex justify-between text-xs text-gray-500 mt-2">
-                    <span>Off</span>
-                    <span>00:30</span>
-                    <span>00:45</span>
-                    <span>01:00</span>
-                    <span>01:15</span>
-                    <span>01:30</span>
+                    {[0, 15, 30, 45, 60, 75, 90].map((v) => (
+                      <span key={v}>{v === 0 ? "Off" : formatMmSs(v)}</span>
+                    ))}
                   </div>
                 </div>
 
                 <div className="mt-4">
-                  <Label className="block text-sm font-medium mb-2">
-                    Special Instructions
-                  </Label>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Label className="text-sm font-medium">
+                      Special Instructions
+                    </Label>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="w-4 h-4 text-gray-400 cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-sm text-xs leading-relaxed">
+                        Use this field to input any additional guidelines or focus areas for the AI when crafting questions. For example, you can specify the industry domain relevant to the job position, or highlight particular aspects of the job description that should be emphasized. This information helps tailor the AI&apos;s questioning to better align with the job&apos;s specific requirements and the candidate&apos;s background. It ensures a more targeted and relevant assessment by directing the AI to consider these special instructions alongside the skills and experience levels mentioned in the candidate&apos;s form.
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
                   <Textarea
                     placeholder="Input your more Details"
                     value={specialInstructions}
@@ -1915,189 +1840,24 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
         </Card>
       )}
 
-      {/* ---------- STEP 4 - PRE-INTERVIEW FORM (DESIGN UPDATED) ---------- */}
-      {step === 3 && (
-        <Card className="mt-6">
-          <CardContent className="space-y-6 p-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <h2 className="text-xl font-semibold">
-                  Candidate Pre-Interview Form
-                </h2>
-                <p className="text-sm text-gray-600 mt-2 max-w-2xl">
-                  Customize the pre-interview form by adding the fields you'd
-                  like candidates to fill out before their interview.
-                </p>
-              </div>
+      {/* Bottom Navigation */}
+      <div className="flex justify-between mt-6">
+        <Button variant="outline" onClick={handleBack} disabled={step === 0}>
+          Back
+        </Button>
 
-              <div>
-                <Button variant="outline" onClick={startAddField}>
-                  Add Custom Field
-                </Button>
-              </div>
-            </div>
-
-            {/* Add custom field inline */}
-            {addingField && (
-              <div className="bg-slate-50 p-4 rounded-md border mt-2">
-                <div className="grid grid-cols-3 gap-3">
-                  <Input
-                    placeholder="Label (e.g. Portfolio URL)"
-                    value={newFieldLabel}
-                    onChange={(e) => setNewFieldLabel(e.target.value)}
-                  />
-                  <Select value={newFieldType} onValueChange={setNewFieldType}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="text">Text</SelectItem>
-                      <SelectItem value="number">Number</SelectItem>
-                      <SelectItem value="email">Email</SelectItem>
-                      <SelectItem value="date">Date</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                  <div className="flex items-center gap-2">
-                    <Button variant="primary" onClick={confirmAddField}>
-                      Add
-                    </Button>
-                    <Button variant="ghost" onClick={cancelAddField}>
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Fields grid (pills) */}
-            <div className="grid grid-cols-2 gap-4 mt-4">
-              {allPreInterviewFields.map((f) => {
-                const isDefault = Boolean((f as any).isDefault);
-                const isEditing = editingFieldId === f.id;
-                return (
-                  <div
-                    key={f.id}
-                    className="flex items-center justify-between bg-slate-50 rounded-lg p-4 border"
-                  >
-                    <div className="flex-1">
-                      {isEditing ? (
-                        <div className="flex gap-2">
-                          <Input
-                            value={editingFieldLabel}
-                            onChange={(e) =>
-                              setEditingFieldLabel(e.target.value)
-                            }
-                          />
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="primary"
-                              onClick={() => confirmEditField(f.id)}
-                            >
-                              Save
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={cancelEditField}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="text-sm font-medium">{f.label}</div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2 ml-4">
-                      {/* Edit icon */}
-                      {isDefault ? (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Default field — not editable"
-                          className="h-8 w-8"
-                          // intentionally no onClick
-                        >
-                          <span aria-hidden>
-                            {" "}
-                            <PencilIcon className="w-4 h-4 text-gray-400" />
-                          </span>
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Edit field"
-                          onClick={() => startEditField(f.id, f.label)}
-                          className="h-8 w-8"
-                        >
-                          <span aria-hidden>
-                            {" "}
-                            <PencilIcon className="w-4 h-4 text-gray-400" />
-                          </span>
-                        </Button>
-                      )}
-
-                      {/* Delete icon */}
-                      {isDefault ? (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Default field — not removable"
-                          className="h-8 w-8"
-                        >
-                          <TrashIcon className="w-4 h-4 text-gray-400" />
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Delete field"
-                          onClick={() => deleteCustomField(f.id)}
-                          className="h-8 w-8"
-                        >
-                          <TrashIcon className="w-4 h-4 text-red-500" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Bottom buttons for Step 4 (Back + Save & Done) */}
-            <div className="flex items-center gap-4 mt-4">
-              <Button variant="outline" onClick={handleBack}>
-                Back
-              </Button>
-
-              <div className="ml-auto">
-                <Button variant="primary" onClick={handleSubmit}>
-                  {isEditMode ? "Update Job" : "Save & Done"}
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Bottom Navigation (common for steps 0..2) - Removed standalone 'Save' button per request */}
-      {step !== 3 && (
-        <div className="flex justify-between mt-6">
-          <Button variant="outline" onClick={handleBack} disabled={step === 0}>
-            Back
-          </Button>
-
-          <div className="flex gap-2">
+        <div className="flex gap-2">
+          {step === 2 ? (
+            <Button variant="primary" onClick={handleSubmit}>
+              {isEditMode ? "Update Job" : "Save & Done"}
+            </Button>
+          ) : (
             <Button variant="primary" onClick={handleNext}>
               Next
             </Button>
-          </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* AI JD Generation Modal */}
       <AIJDModal

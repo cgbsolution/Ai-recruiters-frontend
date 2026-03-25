@@ -98,6 +98,17 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
       if (config) {
         setJobConfig(config);
 
+        // Block mobile devices if allow_mobile is disabled
+        if (!config.allow_mobile) {
+          const ua = navigator.userAgent || "";
+          const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+          if (isMobile) {
+            setLoadError("Please join using a desktop or laptop. Mobile devices are not supported for this interview.");
+            setStep("ERROR");
+            return;
+          }
+        }
+
         // Auto-verify if candidateEmail is in the URL (?candidate=email)
         if (candidateEmail && !autoVerifiedRef.current) {
           autoVerifiedRef.current = true;
@@ -145,6 +156,12 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
 
   const handlePermissionsGranted = useCallback((stream: MediaStream) => {
     setWebcamStream(stream);
+    setStep("PERMISSION_SCREEN");
+  }, []);
+
+  // When webcam is not required, request mic-only and skip device test
+  const handleMicOnlyGranted = useCallback((stream: MediaStream) => {
+    // No webcam stream — mic-only
     setStep("PERMISSION_SCREEN");
   }, []);
 
@@ -319,15 +336,24 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
       );
 
     case "PERMISSION_CAM_MIC":
-      return <PermissionStep onPermissionsGranted={handlePermissionsGranted} />;
+      return jobConfig.webcam_required ? (
+        <PermissionStep onPermissionsGranted={handlePermissionsGranted} />
+      ) : (
+        <PermissionStep micOnly onPermissionsGranted={handleMicOnlyGranted} />
+      );
 
     case "PERMISSION_SCREEN":
       return <ScreenShareStep onNext={handleScreenShare} required={true} />;
 
     case "DEVICE_TEST":
-      return webcamStream ? (
+      if (!webcamStream) {
+        // No webcam — skip device test
+        setStep("INSTRUCTIONS");
+        return null;
+      }
+      return (
         <DeviceTestStep stream={webcamStream} onNext={() => setStep("INSTRUCTIONS")} />
-      ) : null;
+      );
 
     case "INSTRUCTIONS":
       return <InstructionsStep jobConfig={jobConfig} onNext={() => setStep("WARNING")} />;
@@ -336,6 +362,21 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
       return <WarningStep onConfirm={handleWarningConfirm} />;
 
     case "INTERVIEW":
+      if (jobConfig.manual_interview) {
+        return (
+          <div className="flex flex-col items-center justify-center min-h-screen px-6 text-center">
+            <div className="text-5xl mb-6">📹</div>
+            <h2 className="text-2xl font-bold text-white mb-3">Manual Interview</h2>
+            <p className="text-gray-400 max-w-md mb-6">
+              This interview will be conducted by a human recruiter via video call.
+              A meeting link has been sent to your email. Please check your inbox and join the meeting at the scheduled time.
+            </p>
+            <p className="text-gray-500 text-sm">
+              If you haven&apos;t received the link, please contact the recruiter directly.
+            </p>
+          </div>
+        );
+      }
       return session.sessionId ? (
         <InterviewRoom
           sessionId={session.sessionId}

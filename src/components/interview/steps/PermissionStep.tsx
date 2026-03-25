@@ -6,40 +6,45 @@ import { Camera, CheckCircle, Mic, XCircle } from "lucide-react";
 
 interface Props {
   onPermissionsGranted: (stream: MediaStream) => void;
+  micOnly?: boolean;
 }
 
-export default function PermissionStep({ onPermissionsGranted }: Props) {
-  const [camStatus, setCamStatus] = useState<"idle" | "granted" | "denied">("idle");
+export default function PermissionStep({ onPermissionsGranted, micOnly = false }: Props) {
+  const [camStatus, setCamStatus] = useState<"idle" | "granted" | "denied">(micOnly ? "granted" : "idle");
   const [micStatus, setMicStatus] = useState<"idle" | "granted" | "denied">("idle");
   const [loading, setLoading] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
 
   const requestPermissions = async () => {
     setLoading(true);
-    setCamStatus("idle");
     setMicStatus("idle");
+    if (!micOnly) setCamStatus("idle");
 
     try {
-      const s = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, aspectRatio: { ideal: 4 / 3 }, facingMode: "user" },
-        audio: true,
-      });
+      const constraints: MediaStreamConstraints = micOnly
+        ? { audio: true }
+        : {
+            video: { width: { ideal: 640 }, height: { ideal: 480 }, aspectRatio: { ideal: 4 / 3 }, facingMode: "user" },
+            audio: true,
+          };
+      const s = await navigator.mediaDevices.getUserMedia(constraints);
       setStream(s);
-      setCamStatus("granted");
+      if (!micOnly) setCamStatus("granted");
       setMicStatus("granted");
     } catch (err: any) {
       if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-        setCamStatus("denied");
+        if (!micOnly) setCamStatus("denied");
         setMicStatus("denied");
       } else {
-        // Try audio only
+        // Try audio only as fallback
         try {
-          await navigator.mediaDevices.getUserMedia({ audio: true });
+          const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          setStream(audioStream);
           setMicStatus("granted");
-          setCamStatus("denied");
+          if (!micOnly) setCamStatus("denied");
         } catch {
           setMicStatus("denied");
-          setCamStatus("denied");
+          if (!micOnly) setCamStatus("denied");
         }
       }
     } finally {
@@ -47,21 +52,29 @@ export default function PermissionStep({ onPermissionsGranted }: Props) {
     }
   };
 
-  const allGranted = camStatus === "granted" && micStatus === "granted";
+  const allGranted = micOnly
+    ? micStatus === "granted"
+    : camStatus === "granted" && micStatus === "granted";
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen px-6 text-center">
-      <h2 className="text-3xl font-bold text-white mb-2">Camera & Microphone</h2>
+      <h2 className="text-3xl font-bold text-white mb-2">
+        {micOnly ? "Microphone Access" : "Camera & Microphone"}
+      </h2>
       <p className="text-gray-400 mb-10 max-w-sm">
-        We need access to your camera and microphone to conduct the interview.
+        {micOnly
+          ? "We need access to your microphone to conduct the interview."
+          : "We need access to your camera and microphone to conduct the interview."}
       </p>
 
       <div className="space-y-4 w-full max-w-sm mb-10">
-        <PermissionRow
-          icon={<Camera className="w-5 h-5" />}
-          label="Camera"
-          status={camStatus}
-        />
+        {!micOnly && (
+          <PermissionRow
+            icon={<Camera className="w-5 h-5" />}
+            label="Camera"
+            status={camStatus}
+          />
+        )}
         <PermissionRow
           icon={<Mic className="w-5 h-5" />}
           label="Microphone"

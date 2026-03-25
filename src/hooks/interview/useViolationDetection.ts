@@ -22,7 +22,8 @@ const TERMINATE_THRESHOLD = 5;
 export function useViolationDetection(
   sessionId: number | null,
   isActive: boolean,
-  webcamStream: MediaStream | null
+  webcamStream: MediaStream | null,
+  faceMatchEnabled: boolean = true
 ): ViolationDetectionHook {
   const [violationCount, setViolationCount] = useState(0);
   const [lastViolation, setLastViolation] = useState<ViolationType | null>(null);
@@ -90,12 +91,12 @@ export function useViolationDetection(
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, [isActive, reportViolation]);
 
-  // MediaPipe face detection
+  // MediaPipe face detection (only when face_match is enabled)
   const consecutiveMissRef = useRef(0);
   const MISS_THRESHOLD = 3; // need 3 consecutive "no face" checks before violation
 
   useEffect(() => {
-    if (!isActive || !webcamStream) return;
+    if (!isActive || !webcamStream || !faceMatchEnabled) return;
 
     let cancelled = false;
 
@@ -167,7 +168,7 @@ export function useViolationDetection(
       cancelled = true;
       if (faceIntervalRef.current) clearInterval(faceIntervalRef.current);
     };
-  }, [isActive, webcamStream, reportViolation]);
+  }, [isActive, webcamStream, faceMatchEnabled, reportViolation]);
 
   const resetViolations = useCallback(() => {
     setViolationCount(0);

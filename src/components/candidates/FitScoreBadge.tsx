@@ -175,7 +175,7 @@ export default function FitScoreBadge({
     : [];
 
   const TooltipBody = (
-    <div className="w-80 text-sm space-y-3 p-1">
+    <div className="w-80 max-h-[70vh] overflow-y-auto text-sm space-y-3 p-1 scrollbar-thin" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.15) transparent' }}>
 
       {/* ── Hero: Match percentage ── */}
       <div>

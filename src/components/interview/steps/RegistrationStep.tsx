@@ -3,42 +3,24 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Upload, X, CheckCircle, ArrowLeft, LogIn, UserPlus } from "lucide-react";
-import type { PreInterviewField } from "@/hooks/interview/useInterviewSession";
 import { apiUpload } from "@/lib/api";
 
 interface Props {
-  preInterviewFields: PreInterviewField[];
   jobId: number;
   isExistingUser?: boolean;
   onRegister: (
     name: string,
     email: string,
     phone: string,
-    resumePath: string,
-    extraFields: Record<string, string>
+    resumePath: string
   ) => Promise<true | false | null>; // true=ok, false=error, null=already_completed
   onSwitchToLogin: () => void;
   onBack: () => void;
 }
 
-// Default field IDs/types that are always rendered explicitly — skip them in dynamic section
-const DEFAULT_FIELD_IDS = new Set([
-  "name", "full_name", "full-name", "fullname",
-  "email", "email_address", "emailaddress", "email-address", "email_id",
-  "phone", "phone_number", "phonenumber", "phone-number", "mobile", "mobile_number",
-]);
-// Also filter by label — catches cases where field_id is custom but label duplicates a default
-const DEFAULT_LABELS = new Set([
-  "name", "full name", "your name",
-  "email", "email address", "email id", "your email",
-  "phone", "phone number", "mobile", "mobile number", "contact number",
-]);
-
-export default function RegistrationStep({ preInterviewFields, jobId, onRegister, isExistingUser, onSwitchToLogin, onBack }: Props) {
+export default function RegistrationStep({ jobId, onRegister, isExistingUser, onSwitchToLogin, onBack }: Props) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -47,16 +29,7 @@ export default function RegistrationStep({ preInterviewFields, jobId, onRegister
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [extraFields, setExtraFields] = useState<Record<string, string>>({});
   const fileRef = useRef<HTMLInputElement>(null);
-
-  // Only render custom fields not covered by the hardcoded defaults (by ID, label, or type)
-  const customFields = preInterviewFields.filter(
-    (f) =>
-      !DEFAULT_FIELD_IDS.has(f.field_id.toLowerCase()) &&
-      !DEFAULT_LABELS.has(f.label.toLowerCase()) &&
-      f.type !== "email"
-  );
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -99,13 +72,6 @@ export default function RegistrationStep({ preInterviewFields, jobId, onRegister
       if (!/^\d{7,15}$/.test(digits)) e.phone = "Enter a valid phone number (digits only, 7–15 characters)";
     }
     if (!resumePath) e.resume = "Resume is required — upload a PDF or DOCX file to continue";
-    // Validate dynamic custom fields that are required (date fields must have value)
-    for (const field of customFields) {
-      const val = extraFields[field.field_id] ?? "";
-      if (field.type === "date" && !val) {
-        e[field.field_id] = `${field.label} is required`;
-      }
-    }
     return e;
   };
 
@@ -115,7 +81,7 @@ export default function RegistrationStep({ preInterviewFields, jobId, onRegister
     if (Object.keys(errs).length > 0) { setErrors(errs); return; }
 
     setLoading(true);
-    const result = await onRegister(name, email, phone, resumePath, extraFields);
+    const result = await onRegister(name, email, phone, resumePath);
     if (result === null) {
       setErrors({ submit: "You have already completed your interview for this position. Please contact HR for further steps." });
     } else if (!result) {
@@ -222,70 +188,6 @@ export default function RegistrationStep({ preInterviewFields, jobId, onRegister
             />
             {errors.phone && <p className="text-red-400 text-xs mt-1">{errors.phone}</p>}
           </div>
-
-          {/* Dynamic custom fields from job config */}
-          {customFields.map((field) => (
-            <div key={field.field_id}>
-              <Label className="text-gray-300">{field.label}</Label>
-              {field.type === "textarea" ? (
-                <Textarea
-                  className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-blue-500 resize-none"
-                  rows={3}
-                  placeholder={field.label}
-                  value={extraFields[field.field_id] ?? ""}
-                  onChange={(e) =>
-                    setExtraFields((prev) => ({ ...prev, [field.field_id]: e.target.value }))
-                  }
-                />
-              ) : field.type === "checkbox" ? (
-                <div className="flex items-center gap-2 mt-2">
-                  <Checkbox
-                    id={`field-${field.field_id}`}
-                    checked={extraFields[field.field_id] === "true"}
-                    onCheckedChange={(checked) =>
-                      setExtraFields((prev) => ({
-                        ...prev,
-                        [field.field_id]: checked === true ? "true" : "false",
-                      }))
-                    }
-                  />
-                  <Label htmlFor={`field-${field.field_id}`} className="text-gray-300 text-sm cursor-pointer">{field.label}</Label>
-                </div>
-              ) : field.type === "date" ? (
-                <Input
-                  type="date"
-                  className="mt-1 bg-gray-900 border-gray-700 text-white placeholder-gray-500"
-                  value={extraFields[field.field_id] ?? ""}
-                  onChange={(e) =>
-                    setExtraFields((prev) => ({ ...prev, [field.field_id]: e.target.value }))
-                  }
-                />
-              ) : field.type === "phone" ? (
-                <Input
-                  type="tel"
-                  inputMode="numeric"
-                  className="mt-1 bg-gray-900 border-gray-700 text-white placeholder-gray-500"
-                  placeholder={field.label}
-                  value={extraFields[field.field_id] ?? ""}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/[^0-9\s\+\-\(\)]/g, "");
-                    setExtraFields((prev) => ({ ...prev, [field.field_id]: val }));
-                  }}
-                />
-              ) : (
-                <Input
-                  type={field.type === "email" ? "email" : "text"}
-                  className="mt-1 bg-gray-900 border-gray-700 text-white placeholder-gray-500"
-                  placeholder={field.label}
-                  value={extraFields[field.field_id] ?? ""}
-                  onChange={(e) =>
-                    setExtraFields((prev) => ({ ...prev, [field.field_id]: e.target.value }))
-                  }
-                />
-              )}
-              {errors[field.field_id] && <p className="text-red-400 text-xs mt-1">{errors[field.field_id]}</p>}
-            </div>
-          ))}
 
           {/* Resume — MANDATORY */}
           <div>

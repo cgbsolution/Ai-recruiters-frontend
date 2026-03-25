@@ -3,13 +3,6 @@
 import { useCallback, useRef, useState } from "react";
 import { api, apiPost, apiUpload, ApiError } from "@/lib/api";
 
-export interface PreInterviewField {
-  field_id: string;
-  label: string;
-  type: string;
-  is_default: boolean;
-}
-
 export interface CodingQuestion {
   title: string;
   description: string;
@@ -46,9 +39,13 @@ export interface JobConfig {
   webcam_required: boolean;
   face_match: boolean;
   resume_based: boolean;
+  code_editor_required: boolean;
+  allow_mobile: boolean;
+  secondary_cam: boolean;
+  manual_interview: boolean;
   special_instructions?: string;
+  auto_skip_timeout: number;
   skills: string[];
-  pre_interview_fields: PreInterviewField[];
 }
 
 export interface EvaluationResult {
@@ -95,8 +92,7 @@ interface InterviewSessionHook {
     name: string,
     email: string,
     phone: string | undefined,
-    resumePath: string,
-    extraFields?: Record<string, string>
+    resumePath: string
   ) => Promise<true | false | null>;
   verifyAccess: (token: string, email: string) => Promise<{
     access: "granted" | "apply" | "completed" | "terminated";
@@ -201,8 +197,7 @@ export function useInterviewSession(): InterviewSessionHook {
       name: string,
       email: string,
       phone: string | undefined,
-      resumePath: string,
-      extraFields?: Record<string, string>
+      resumePath: string
     ): Promise<true | false | null> => {
       try {
         const data = await apiPost<any>(`/interview/${token}/register`, {
@@ -210,7 +205,6 @@ export function useInterviewSession(): InterviewSessionHook {
           email,
           phone,
           resume_path: resumePath,
-          extra_fields: extraFields ?? null,
         });
         setSessionId(data.session_id);
         setCandidateId(data.candidate_id);
