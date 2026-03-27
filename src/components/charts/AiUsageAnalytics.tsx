@@ -74,7 +74,7 @@ function fmtNum(n: number): string {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function pivotCostTimeSeries(raw: any[], mode: ViewMode): { label: string; [key: string]: string | number }[] {
+function pivotCostTimeSeries(raw: any[], mode: ViewMode): Record<string, string | number>[] {
   const map = new Map<string, Record<string, number>>();
 
   if (mode === "monthly") {
@@ -115,7 +115,7 @@ function pivotCostTimeSeries(raw: any[], mode: ViewMode): { label: string; [key:
   }
 
   return Array.from(map.entries()).map(([label, featureCosts]) => {
-    const row: Record<string, string | number> = { label };
+    const row: { label: string; [key: string]: string | number } = { label };
     for (const f of FEATURES) {
       row[f.key] = featureCosts[f.key] || 0;
     }
@@ -131,7 +131,7 @@ const barChartConfig: ChartConfig = Object.fromEntries(
 export default function AiUsageAnalytics() {
   const [mode, setMode] = useState<ViewMode>("monthly");
   const [summary, setSummary] = useState<SummaryData | null>(null);
-  const [barData, setBarData] = useState<{ label: string; [key: string]: string | number }[]>([]);
+  const [barData, setBarData] = useState<Record<string, string | number>[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {

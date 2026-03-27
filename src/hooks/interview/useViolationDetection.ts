@@ -153,7 +153,7 @@ export function useViolationDetection(
           if (cancelled || !faceDetectorRef.current || video.readyState < 2) return;
           try {
             await faceDetectorRef.current.send({ image: video });
-          } catch (e) {
+          } catch {
             // silently ignore frame errors
           }
         }, 4000);
