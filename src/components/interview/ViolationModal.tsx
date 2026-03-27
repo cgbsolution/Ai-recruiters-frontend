@@ -1,7 +1,15 @@
 "use client";
 
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import type { ViolationType } from "@/hooks/interview/useViolationDetection";
 
 interface Props {
@@ -39,23 +47,27 @@ export default function ViolationModal({ violationType, violationCount, threshol
   const remaining = threshold - violationCount;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="bg-gray-900 border border-red-800 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
-        <div className="flex items-center gap-4 mb-6">
-          <div className="w-14 h-14 rounded-full bg-red-900/50 flex items-center justify-center flex-shrink-0">
-            <AlertTriangle className="w-7 h-7 text-red-400" />
+    <AlertDialog open>
+      <AlertDialogContent className="bg-gray-900 border-red-800 max-w-md">
+        <AlertDialogHeader>
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-full bg-red-900/50 flex items-center justify-center flex-shrink-0">
+              <AlertTriangle className="w-7 h-7 text-red-400" />
+            </div>
+            <div>
+              <AlertDialogTitle className="text-xl font-bold text-white">{title}</AlertDialogTitle>
+              <p className="text-red-400 text-sm font-medium">
+                Violation {violationCount} of {threshold}
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-xl font-bold text-white">{title}</h3>
-            <p className="text-red-400 text-sm font-medium">
-              Violation {violationCount} of {threshold}
-            </p>
-          </div>
-        </div>
+        </AlertDialogHeader>
 
-        <p className="text-gray-300 text-sm mb-6 leading-relaxed">{desc}</p>
+        <AlertDialogDescription className="text-gray-300 text-sm leading-relaxed">
+          {desc}
+        </AlertDialogDescription>
 
-        <div className="bg-red-950/30 border border-red-900/40 rounded-xl px-4 py-3 mb-6">
+        <div className="bg-red-950/30 border border-red-900/40 rounded-xl px-4 py-3">
           {remaining > 0 ? (
             <p className="text-yellow-400 text-sm text-center">
               <span className="font-bold">{remaining} more violation{remaining !== 1 ? "s" : ""}</span> will automatically terminate your interview.
@@ -68,14 +80,16 @@ export default function ViolationModal({ violationType, violationCount, threshol
         </div>
 
         {remaining > 0 && (
-          <Button
-            onClick={onDismiss}
-            className="w-full h-12 bg-blue-600 hover:bg-blue-700"
-          >
-            I Understand, Continue
-          </Button>
+          <AlertDialogFooter>
+            <Button
+              onClick={onDismiss}
+              className="w-full h-12 bg-blue-600 hover:bg-blue-700"
+            >
+              I Understand, Continue
+            </Button>
+          </AlertDialogFooter>
         )}
-      </div>
-    </div>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

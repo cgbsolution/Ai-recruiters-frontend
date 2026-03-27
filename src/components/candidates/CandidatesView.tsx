@@ -508,21 +508,14 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
     <div className="flex flex-col gap-4 min-w-0">
 
       {/* ── Job Header ───────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between">
-        <div className="min-w-0 flex-1 mr-4">
-          {/* <button
-            onClick={() => router.push("/job-openings")}
-            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-1"
-          >
-            <ArrowLeft className="w-4 h-4" /> Back to openings
-          </button>
-          <p className="text-xs text-gray-400">Job ID: {jobId}</p> */}
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <h1 className="text-xl font-bold text-gray-800">
             {job?.title || "Loading…"}
           </h1>
 
           {interviewUrl && (
-            <div className="flex items-center gap-2 mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 max-w-xl">
+            <div className="flex items-center gap-2 mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 max-w-full sm:max-w-xl overflow-hidden">
               <Link className="w-4 h-4 text-blue-500 shrink-0" />
               <span className="text-sm text-blue-700 truncate flex-1 font-mono">
                 {interviewUrl}
@@ -553,7 +546,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
           )}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <Button size="sm" onClick={() => setShowAddModal(true)} className="gap-1">
             <Plus className="w-4 h-4" /> Add Candidate
           </Button>
@@ -599,21 +592,20 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
       </div>
 
       {/* ── Stage Tabs ────────────────────────────────────────────────────── */}
-      <div className="border-b border-gray-200">
-        <div className="flex items-center gap-0">
+      <div className="border-b border-gray-200 overflow-x-auto -mx-1 px-1">
+        <div className="flex items-center gap-0 min-w-max">
           {STAGES.map((stage) => (
             <Button
               key={stage}
               variant="ghost"
               size="sm"
               onClick={() => handleTabChange(stage)}
-              className={`rounded-none px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
+              className={`rounded-none px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap
                 ${activeTab === stage
                   ? "border-blue-600 text-blue-600"
                   : "border-transparent text-gray-500 hover:text-gray-700"}`}
             >
               {stage === "Candidates" ? "CANDIDATES" : stage.toUpperCase()}
-              {/* Show count for all tabs; for Candidates tab show total */}
               <span className="ml-1 text-xs text-gray-400">
                 ({tabCounts[stage] ?? 0})
               </span>
@@ -623,7 +615,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
       </div>
 
       {/* ── Filters Row ───────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div className="flex items-center gap-4 flex-wrap">
           {/* "Show All" — only on Candidates tab */}
           {isCandidatesTab && (
@@ -652,7 +644,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
             placeholder="Search…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-8 w-44"
+            className="h-8 w-full sm:w-44"
           />
         </div>
       </div>
@@ -1047,7 +1039,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
         </div>
 
         {/* ── Pagination footer ─────────────────────────────────────────── */}
-        <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-gray-200 px-4 py-3">
           <p className="text-sm text-gray-500">
             {totalRows === 0
               ? "No results"

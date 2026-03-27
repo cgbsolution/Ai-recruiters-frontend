@@ -4,6 +4,8 @@ import React from "react";
 import { JobsDataCard } from "@/components/cards/JobsDataCard";
 import HiringFunnelCharts from "@/components/charts/HiringFunnelCharts";
 import LineStatisticsChart from "@/components/charts/LineStatisticsChart";
+import AiCreditUsageChart from "@/components/charts/AiCreditUsageChart";
+import AiUsageAnalytics from "@/components/charts/AiUsageAnalytics";
 import { JobsOpeningsCard } from "@/components/cards/JobOpeningsCard";
 import SidebarWidget from "@/components/ui/layout/SidebarWidget";
 
@@ -21,7 +23,7 @@ export default function Dashboard() {
             Welcome back, Julie 👋
           </h1>
           <p className="text-sm text-gray-400 dark:text-gray-400 sm:text-base">
-            Here’s what you need to focus on today
+            Here's what you need to focus on today
           </p>
         </div>
         <nav>
@@ -35,12 +37,20 @@ export default function Dashboard() {
         </div>
 
         <div className="col-span-12 space-y-6 xl:col-span-6">
-          {/* <HiringFunnelCharts /> */}
           <LineStatisticsChart />
         </div>
 
+        {/* AI Usage Analytics — Summary Cards + Cost Bar Chart */}
+        <div className="col-span-12 space-y-6">
+          <AiUsageAnalytics />
+        </div>
+
+        {/* AI Credit Usage — Token Line Chart */}
+        <div className="col-span-12 space-y-6">
+          <AiCreditUsageChart />
+        </div>
+
         <div className="col-span-12 space-y-6 xl:col-span-12">
-          {/* <HiringFunnelCharts /> */}
           <JobsOpeningsCard />
         </div>
       </div>

@@ -11,7 +11,12 @@ import {
   EventContentArg,
 } from "@fullcalendar/core";
 import { useModal } from "@/components/ui/hooks/useModal";
-import { Modal } from "@/components/ui/modal";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -148,21 +153,18 @@ const Calendar: React.FC = () => {
           }}
         />
       </div>
-      <Modal
-        isOpen={isOpen}
-        onClose={closeModal}
-        className="max-w-[700px] p-6 lg:p-10"
-      >
-        <div className="flex flex-col px-2 overflow-y-auto custom-scrollbar">
-          <div>
-            <h5 className="mb-2 font-semibold text-gray-800 modal-title text-theme-xl dark:text-white/90 lg:text-2xl">
+      <Dialog open={isOpen} onOpenChange={(open) => !open && closeModal()}>
+        <DialogContent className="sm:max-w-[700px]">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold">
               {selectedEvent ? "Edit Event" : "Add Event"}
-            </h5>
+            </DialogTitle>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Plan your next big moment: schedule or edit an event to stay on
               track
             </p>
-          </div>
+          </DialogHeader>
+        <div className="flex flex-col px-2 overflow-y-auto custom-scrollbar">
           <div className="mt-8">
             <div>
               <div>
@@ -264,7 +266,8 @@ const Calendar: React.FC = () => {
             </Button>
           </div>
         </div>
-      </Modal>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

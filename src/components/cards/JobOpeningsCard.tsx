@@ -397,7 +397,7 @@ export const JobsOpeningsCard = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Are you sure you want to delete this job opening?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the{" "}
+              This action cannot be undone. This will permanently delete the
               <strong>"{jobToDelete?.title}"</strong> job opening and remove all associated data.
             </AlertDialogDescription>
           </AlertDialogHeader>

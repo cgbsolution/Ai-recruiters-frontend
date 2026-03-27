@@ -502,6 +502,7 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     // Allow going backward freely
     if (target <= step) {
       setStep(target);
+      window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
     // For forward navigation, validate all steps before the target
@@ -512,6 +513,7 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       }
     }
     setStep(target);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleNext = () => {
@@ -524,9 +526,13 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       return;
     }
     setStep((s) => Math.min(2, s + 1));
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const handleBack = () => setStep((s) => Math.max(0, s - 1));
+  const handleBack = () => {
+    setStep((s) => Math.max(0, s - 1));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const formatMmSs = (seconds: number) => {
     const mm = Math.floor(seconds / 60)

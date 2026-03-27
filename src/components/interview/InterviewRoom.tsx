@@ -2,6 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { PhoneOff, Mic, MicOff, GripVertical, SkipForward, Monitor } from "lucide-react";
 import dynamic from "next/dynamic";
 import AvatarScene from "./AvatarScene";
@@ -860,16 +868,20 @@ export default function InterviewRoom({
       )}
 
       {/* ── Screen Share Lost Modal ── */}
-      {showScreenShareModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-900 rounded-2xl p-6 max-w-sm w-full mx-4 border border-gray-700 shadow-2xl">
-            <div className="w-12 h-12 rounded-full bg-amber-900/40 flex items-center justify-center mx-auto mb-4">
+      <AlertDialog open={showScreenShareModal}>
+        <AlertDialogContent className="bg-gray-900 border-gray-700 max-w-sm">
+          <AlertDialogHeader className="text-center">
+            <div className="w-12 h-12 rounded-full bg-amber-900/40 flex items-center justify-center mx-auto mb-2">
               <Monitor className="w-6 h-6 text-amber-400" />
             </div>
-            <h3 className="text-white font-semibold text-lg text-center mb-2">Screen Share Stopped</h3>
-            <p className="text-gray-400 text-sm text-center mb-6">
+            <AlertDialogTitle className="text-white font-semibold text-lg">
+              Screen Share Stopped
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-400 text-sm">
               Your screen sharing has stopped. The interview is paused until you resume sharing your entire screen.
-            </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="sm:justify-center">
             <Button
               className="w-full bg-purple-600 hover:bg-purple-700"
               onClick={async () => {
@@ -887,41 +899,43 @@ export default function InterviewRoom({
             >
               Share Screen Again
             </Button>
-          </div>
-        </div>
-      )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ── End Interview Confirmation ── */}
-      {showEndConfirm && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-900 rounded-2xl p-6 max-w-sm w-full mx-4 border border-gray-700 shadow-2xl">
-            <div className="w-12 h-12 rounded-full bg-red-900/40 flex items-center justify-center mx-auto mb-4">
+      <AlertDialog open={showEndConfirm} onOpenChange={setShowEndConfirm}>
+        <AlertDialogContent className="bg-gray-900 border-gray-700 max-w-sm">
+          <AlertDialogHeader className="text-center">
+            <div className="w-12 h-12 rounded-full bg-red-900/40 flex items-center justify-center mx-auto mb-2">
               <PhoneOff className="w-6 h-6 text-red-400" />
             </div>
-            <h3 className="text-white font-semibold text-lg text-center mb-2">End Interview?</h3>
-            <p className="text-gray-400 text-sm text-center mb-6">
+            <AlertDialogTitle className="text-white font-semibold text-lg">
+              End Interview?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-400 text-sm">
               This will immediately stop the interview and submit your session for evaluation.
               This action cannot be undone.
-            </p>
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                className="flex-1 border-gray-600 text-gray-300 hover:bg-gray-800"
-                onClick={() => setShowEndConfirm(false)}
-              >
-                Continue
-              </Button>
-              <Button
-                variant="destructive"
-                className="flex-1 bg-red-600 hover:bg-red-700"
-                onClick={handleEndInterview}
-              >
-                End Now
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button
+              variant="outline"
+              className="flex-1 border-gray-600 text-gray-300 hover:bg-gray-800"
+              onClick={() => setShowEndConfirm(false)}
+            >
+              Continue
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1 bg-red-600 hover:bg-red-700"
+              onClick={handleEndInterview}
+            >
+              End Now
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -64,6 +64,9 @@ export default function UploadResumesModal({
     addFiles(e.dataTransfer.files);
   }, []);
 
+  // Track which candidates we've already sent to parent as completed
+  const notifiedRef = useRef<Set<number>>(new Set());
+
   // Poll parsing status for all uploaded candidates
   const pollStatuses = useCallback(async (ids: number[]) => {
     try {
@@ -90,6 +93,25 @@ export default function UploadResumesModal({
         })
       );
 
+      // Progressively update parent table as each candidate completes
+      const newlyCompleted = updated.filter(
+        (s: any) =>
+          (s.parsing_status === "completed" || s.parsing_status === "failed") &&
+          !notifiedRef.current.has((s as any).candidate_id)
+      );
+      if (newlyCompleted.length > 0) {
+        const newIds = newlyCompleted.map((s: any) => (s as any).candidate_id);
+        // Fetch full candidate data for newly completed ones
+        const fullCandidates = await Promise.all(
+          newIds.map((id: number) => api<any>(`/candidates/${id}`).catch(() => null))
+        );
+        const valid = fullCandidates.filter(Boolean);
+        if (valid.length > 0) {
+          onUploaded(valid);
+          newIds.forEach((id: number) => notifiedRef.current.add(id));
+        }
+      }
+
       // Check if all done
       const allDone = updated.every(
         (s: any) => s.parsing_status === "completed" || s.parsing_status === "failed"
@@ -98,7 +120,7 @@ export default function UploadResumesModal({
     } catch {
       return false;
     }
-  }, []);
+  }, [onUploaded]);
 
   // Start polling after upload
   useEffect(() => {
@@ -110,22 +132,13 @@ export default function UploadResumesModal({
       if (done) {
         clearInterval(interval);
         setPolling(false);
-        // Fetch full candidate data for the parent
-        try {
-          const fullCandidates = await Promise.all(
-            ids.map((id) => api<any>(`/candidates/${id}`).catch(() => null))
-          );
-          const valid = fullCandidates.filter(Boolean);
-          onUploaded(valid);
-          const completed = valid.filter((c: any) => c.parsing_status === "completed").length;
-          notifySuccess(`${completed} resume(s) parsed successfully!`);
-        } catch {}
+        notifySuccess(`${ids.length} resume(s) processed!`);
       }
-    }, 3000);
+    }, 2000); // Poll faster (2s) since resumes now complete in parallel
 
     pollRef.current = interval;
     return () => clearInterval(interval);
-  }, [polling, candidates, pollStatuses, onUploaded]);
+  }, [polling, candidates, pollStatuses]);
 
   const handleUpload = async () => {
     if (files.length === 0) return;
@@ -167,6 +180,7 @@ export default function UploadResumesModal({
     setCandidates([]);
     setFiles([]);
     setError("");
+    notifiedRef.current = new Set();
     onClose();
   };
 
@@ -219,7 +233,7 @@ export default function UploadResumesModal({
                     key={c.id}
                     className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded px-3 py-2"
                   >
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
                       {statusIcon(c.parsing_status)}
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-gray-700 truncate">
@@ -230,15 +244,28 @@ export default function UploadResumesModal({
                         )}
                       </div>
                     </div>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded ${
-                      c.parsing_status === "completed"
-                        ? "bg-green-100 text-green-700"
-                        : c.parsing_status === "failed"
-                        ? "bg-red-100 text-red-700"
-                        : "bg-blue-100 text-blue-700"
-                    }`}>
-                      {statusLabel(c.parsing_status)}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {c.parsing_status === "completed" && c.resume_fit_score && (
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                          parseInt(c.resume_fit_score) >= 70
+                            ? "bg-green-100 text-green-700"
+                            : parseInt(c.resume_fit_score) >= 40
+                            ? "bg-yellow-100 text-yellow-700"
+                            : "bg-red-100 text-red-700"
+                        }`}>
+                          {c.resume_fit_score.replace("%", "")}% Fit
+                        </span>
+                      )}
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded ${
+                        c.parsing_status === "completed"
+                          ? "bg-green-100 text-green-700"
+                          : c.parsing_status === "failed"
+                          ? "bg-red-100 text-red-700"
+                          : "bg-blue-100 text-blue-700"
+                      }`}>
+                        {statusLabel(c.parsing_status)}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>

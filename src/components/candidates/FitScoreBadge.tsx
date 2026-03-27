@@ -169,6 +169,7 @@ export default function FitScoreBadge({
   // Top breakdown dimensions to show (sorted by contribution, top 5)
   const topDimensions = breakdown
     ? Object.entries(breakdown)
+        .filter(([, val]) => val && typeof val === "object" && "score" in val)
         .map(([key, val]) => ({ key, ...val }))
         .sort((a, b) => b.contribution - a.contribution)
         .slice(0, 5)
@@ -264,7 +265,9 @@ export default function FitScoreBadge({
               AI Score Breakdown
             </p>
             <div className="space-y-1.5">
-              {Object.entries(aiScoreBreakdown).map(([key, score]) => {
+              {Object.entries(aiScoreBreakdown)
+                .filter(([, score]) => typeof score === "number")
+                .map(([key, score]) => {
                 const maxScore = key === "core_skills" ? 40
                   : key === "experience_fit" || key === "responsibility_match" ? 15
                   : 10;
