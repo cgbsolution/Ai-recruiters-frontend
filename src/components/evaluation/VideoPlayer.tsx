@@ -22,6 +22,7 @@ interface Props {
 }
 
 function fmt(s: number) {
+  if (!isFinite(s) || isNaN(s) || s < 0) return "0:00";
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = Math.floor(s % 60);
@@ -46,7 +47,9 @@ export default function VideoPlayer({ src }: Props) {
   const [speed, setSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [showControls, setShowControls] = useState(true);
+  const [resolving, setResolving] = useState(true); // loading state while resolving duration
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resolvedRef = useRef(false);
 
   const video = videoRef.current;
 
@@ -83,12 +86,12 @@ export default function VideoPlayer({ src }: Props) {
 
   const handleSeek = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!video || !progressRef.current) return;
+      if (!video || !progressRef.current || duration <= 0) return;
       const rect = progressRef.current.getBoundingClientRect();
       const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      video.currentTime = pct * video.duration;
+      video.currentTime = pct * duration;
     },
-    [video]
+    [video, duration]
   );
 
   const handleSpeed = useCallback(
@@ -110,21 +113,118 @@ export default function VideoPlayer({ src }: Props) {
     }
   }, []);
 
+  /**
+   * Resolve WebM duration — MediaRecorder WebM files often report Infinity.
+   * Strategy: seek to a huge time (1e10), browser clamps to actual end,
+   * then read either the now-finite duration or use currentTime as fallback.
+   */
+  const resolveDuration = useCallback((v: HTMLVideoElement) => {
+    if (resolvedRef.current) return;
+
+    const finishResolve = (dur: number) => {
+      if (resolvedRef.current) return;
+      resolvedRef.current = true;
+      setDuration(dur);
+      // Reset to beginning
+      v.currentTime = 0;
+      setCurrentTime(0);
+      setResolving(false);
+    };
+
+    // If duration is already finite, we're good
+    if (v.duration && isFinite(v.duration) && v.duration > 0.5) {
+      finishResolve(v.duration);
+      return;
+    }
+
+    // WebM workaround: seek to a very large time
+    const onSeeked = () => {
+      v.removeEventListener("seeked", onSeeked);
+
+      if (v.duration && isFinite(v.duration) && v.duration > 0.5) {
+        finishResolve(v.duration);
+      } else if (v.currentTime > 0.5) {
+        // duration is still Infinity, but currentTime got clamped to the actual end
+        finishResolve(v.currentTime);
+      } else {
+        // Last resort: try using buffered ranges
+        if (v.buffered.length > 0) {
+          finishResolve(v.buffered.end(v.buffered.length - 1));
+        } else {
+          // Give up — set a minimal duration so controls still work
+          setResolving(false);
+        }
+      }
+    };
+
+    v.addEventListener("seeked", onSeeked);
+    // Use 1e10 instead of MAX_SAFE_INTEGER — more browser-friendly
+    v.currentTime = 1e10;
+
+    // Safety timeout: if seeked never fires within 3s, give up gracefully
+    setTimeout(() => {
+      if (!resolvedRef.current) {
+        v.removeEventListener("seeked", onSeeked);
+        // Try reading whatever we have
+        if (v.duration && isFinite(v.duration) && v.duration > 0.5) {
+          finishResolve(v.duration);
+        } else if (v.currentTime > 0.5) {
+          finishResolve(v.currentTime);
+        } else if (v.buffered.length > 0) {
+          finishResolve(v.buffered.end(v.buffered.length - 1));
+        } else {
+          resolvedRef.current = true;
+          v.currentTime = 0;
+          setResolving(false);
+        }
+      }
+    }, 3000);
+  }, []);
+
   // Sync state from video events
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
 
+    // Reset resolve state when src changes
+    resolvedRef.current = false;
+    setResolving(true);
+    setDuration(0);
+    setCurrentTime(0);
+
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
-    const onTime = () => setCurrentTime(v.currentTime);
-    const onMeta = () => setDuration(v.duration);
+    const onTime = () => {
+      setCurrentTime(v.currentTime);
+      // Also update duration if it becomes finite during playback
+      if (!resolvedRef.current && v.duration && isFinite(v.duration) && v.duration > 0.5) {
+        resolvedRef.current = true;
+        setDuration(v.duration);
+        setResolving(false);
+      }
+    };
+    const onMeta = () => resolveDuration(v);
+    const onDurationChange = () => {
+      if (v.duration && isFinite(v.duration) && v.duration > 0.5) {
+        if (!resolvedRef.current) {
+          resolvedRef.current = true;
+          setResolving(false);
+        }
+        setDuration(v.duration);
+      }
+    };
     const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+
+    // If video is already loaded (cached), resolve immediately
+    if (v.readyState >= 1) {
+      resolveDuration(v);
+    }
 
     v.addEventListener("play", onPlay);
     v.addEventListener("pause", onPause);
     v.addEventListener("timeupdate", onTime);
     v.addEventListener("loadedmetadata", onMeta);
+    v.addEventListener("durationchange", onDurationChange);
     document.addEventListener("fullscreenchange", onFsChange);
 
     return () => {
@@ -132,9 +232,10 @@ export default function VideoPlayer({ src }: Props) {
       v.removeEventListener("pause", onPause);
       v.removeEventListener("timeupdate", onTime);
       v.removeEventListener("loadedmetadata", onMeta);
+      v.removeEventListener("durationchange", onDurationChange);
       document.removeEventListener("fullscreenchange", onFsChange);
     };
-  }, []);
+  }, [src, resolveDuration]);
 
   // Auto-hide controls during playback
   const resetHideTimer = useCallback(() => {
@@ -170,13 +271,24 @@ export default function VideoPlayer({ src }: Props) {
       onClick={(e) => {
         // Only toggle play if clicking the video area, not controls
         if ((e.target as HTMLElement).closest("[data-controls]")) return;
+        if (resolving) return; // Don't toggle during duration resolve
         togglePlay();
       }}
     >
       <video ref={videoRef} src={src} className="w-full block" preload="metadata" />
 
+      {/* Loading overlay while resolving duration */}
+      {resolving && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+          <div className="text-center">
+            <div className="w-8 h-8 rounded-full border-2 border-blue-500 border-t-transparent animate-spin mx-auto mb-2" />
+            <p className="text-white/60 text-xs">Loading video...</p>
+          </div>
+        </div>
+      )}
+
       {/* Big center play icon when paused */}
-      {!playing && (
+      {!playing && !resolving && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-16 h-16 rounded-full bg-black/60 flex items-center justify-center">
             <Play className="w-7 h-7 text-white ml-1" />

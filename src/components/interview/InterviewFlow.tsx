@@ -12,6 +12,7 @@ import ScreenShareStep from "./steps/ScreenShareStep";
 import DeviceTestStep from "./steps/DeviceTestStep";
 import InstructionsStep from "./steps/InstructionsStep";
 import WarningStep from "./steps/WarningStep";
+import CapturePhotoStep from "./steps/CapturePhotoStep";
 import InterviewRoom from "./InterviewRoom";
 import CompletionScreen from "./CompletionScreen";
 import FeedbackForm from "./FeedbackForm";
@@ -24,6 +25,7 @@ type FlowStep =
   | "VERIFY_EMAIL"
   | "APPLY"
   | "PERMISSION_CAM_MIC"
+  | "CAPTURE_PHOTO"
   | "PERMISSION_SCREEN"
   | "DEVICE_TEST"
   | "INSTRUCTIONS"
@@ -156,7 +158,7 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
 
   const handlePermissionsGranted = useCallback((stream: MediaStream) => {
     setWebcamStream(stream);
-    setStep("PERMISSION_SCREEN");
+    setStep("CAPTURE_PHOTO");
   }, []);
 
   // When webcam is not required, request mic-only and skip device test
@@ -217,8 +219,9 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     } catch {
       // non-fatal
     }
-    if (webcamStream) {
-      startRecording(webcamStream);
+    // Start combined recording: screen (background) + webcam (PIP overlay)
+    if (webcamStream || screenStream) {
+      startRecording(webcamStream, screenStream);
     }
     if (isResumingRef.current && session.sessionStatus === "in_progress") {
       await session.resumeSession();
@@ -226,7 +229,7 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     } else {
       await session.startInterview();
     }
-  }, [session, webcamStream, startRecording]);
+  }, [session, webcamStream, screenStream, startRecording]);
 
   const handleWarningConfirm = useCallback(async () => {
     setStep("INTERVIEW");
@@ -340,6 +343,20 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
         <PermissionStep onPermissionsGranted={handlePermissionsGranted} />
       ) : (
         <PermissionStep micOnly onPermissionsGranted={handleMicOnlyGranted} />
+      );
+
+    case "CAPTURE_PHOTO":
+      if (!webcamStream || !session.sessionId) {
+        // No webcam — skip photo capture
+        setStep("PERMISSION_SCREEN");
+        return null;
+      }
+      return (
+        <CapturePhotoStep
+          webcamStream={webcamStream}
+          sessionId={session.sessionId}
+          onCaptured={() => setStep("PERMISSION_SCREEN")}
+        />
       );
 
     case "PERMISSION_SCREEN":

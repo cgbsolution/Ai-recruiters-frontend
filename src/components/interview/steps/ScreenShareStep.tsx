@@ -19,7 +19,7 @@ export default function ScreenShareStep({ onNext, required = false }: Props) {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { displaySurface: "monitor" } as any,
-        audio: false,
+        audio: true,
       });
 
       const track = stream.getVideoTracks()[0];

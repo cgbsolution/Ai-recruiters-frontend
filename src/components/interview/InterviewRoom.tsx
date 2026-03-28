@@ -18,6 +18,7 @@ import ViolationModal from "./ViolationModal";
 import { useSpeechRecognition } from "@/hooks/interview/useSpeechRecognition";
 import { useSpeechSynthesis } from "@/hooks/interview/useSpeechSynthesis";
 import { useViolationDetection } from "@/hooks/interview/useViolationDetection";
+import { useScreenCapture } from "@/hooks/interview/useScreenCapture";
 import type { Message, JobConfig, QuestionState, CodingQuestion } from "@/hooks/interview/useInterviewSession";
 import { API_BASE } from "@/lib/api";
 
@@ -63,6 +64,15 @@ const END_COMMANDS = [
   "close interview", "end interview", "stop interview",
   "exit interview", "finish interview",
   "close my interview", "end my interview",
+  "close the interview", "close this interview",
+  "end this interview", "stop this interview",
+  "end the interview", "finish the interview",
+  "i want to end", "i want to stop", "i need to end",
+  "please end", "please stop", "please close",
+  "want to leave", "need to leave", "want to quit",
+  "terminate interview", "cancel interview",
+  "end up", "need to end up",
+  "close this call", "end this call", "end call",
 ];
 
 const COMPLETION_PHRASES = [
@@ -129,6 +139,7 @@ export default function InterviewRoom({
 
   /* ── Coding Mode State ── */
   const [activeCodingQuestion, setActiveCodingQuestion] = useState<CodingQuestion | null>(null);
+  const [showCodeEditor, setShowCodeEditor] = useState(false);
 
   /* ── Refs ── */
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -150,6 +161,7 @@ export default function InterviewRoom({
   const { transcript, interimTranscript, isListening, isSupported, lastFinalAt, start, stop, reset } = useSpeechRecognition();
   const { speak, cancel, isSpeaking } = useSpeechSynthesis();
   const { violationCount, lastViolation, shouldTerminate, disable: disableViolations } = useViolationDetection(sessionId, true, webcamStream, jobConfig.face_match);
+  useScreenCapture(sessionId, webcamStream, !isInterviewComplete);
 
   /* ── Keep transcriptRef in sync ── */
   useEffect(() => {
@@ -162,6 +174,18 @@ export default function InterviewRoom({
     timerRef.current = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, []);
+
+  /* ── Tab close / navigation away: mark session as dropped ── */
+  useEffect(() => {
+    if (!sessionId) return;
+    const handleBeforeUnload = () => {
+      if (isInterviewComplete) return;
+      const url = `${API_BASE}/interview/sessions/${sessionId}/drop`;
+      navigator.sendBeacon(url);
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [sessionId, isInterviewComplete]);
 
   /* ── Current question index from latest AI message ── */
   const currentQuestionIndex = (() => {
@@ -259,6 +283,7 @@ export default function InterviewRoom({
       const latestAiMsg = aiMsgs[latestIdx];
       if (latestAiMsg.codingQuestion && jobConfig.code_editor_required) {
         setActiveCodingQuestion(latestAiMsg.codingQuestion);
+        setShowCodeEditor(false); // Don't auto-open — candidate clicks the button
       }
     }
   }, [messages, speak, stop, cancelSilenceAnim]);
@@ -272,8 +297,8 @@ export default function InterviewRoom({
     if (isSpeaking || isThinking) return;
     if (isInterviewComplete) return;
 
-    // When coding mode is active, go to IDLE instead of LISTENING (no STT needed)
-    if (activeCodingQuestion) {
+    // When code editor is open, go to IDLE instead of LISTENING (no STT needed)
+    if (showCodeEditor) {
       setPhase("IDLE");
       return;
     }
@@ -287,7 +312,7 @@ export default function InterviewRoom({
     }, POST_SPEECH_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [phase, isSpeaking, isThinking, isInterviewComplete, activeCodingQuestion, reset, start]);
+  }, [phase, isSpeaking, isThinking, isInterviewComplete, showCodeEditor, reset, start]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  EFFECT 3: Silence detection — ChatGPT voice mode style        */
@@ -301,8 +326,8 @@ export default function InterviewRoom({
       return;
     }
 
-    // Pause silence detection during coding mode — candidate is typing, not speaking
-    if (activeCodingQuestion) {
+    // Pause silence detection when code editor is open — candidate is typing, not speaking
+    if (showCodeEditor) {
       cancelSilenceAnim();
       return;
     }
@@ -359,7 +384,7 @@ export default function InterviewRoom({
         silenceAnimRef.current = null;
       }
     };
-  }, [transcript, interimTranscript, lastFinalAt, phase, currentQuestionIndex, handleSubmit, handleSkip, cancelSilenceAnim]);
+  }, [transcript, interimTranscript, lastFinalAt, phase, currentQuestionIndex, showCodeEditor, handleSubmit, handleSkip, cancelSilenceAnim]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  EFFECT 4: Interview completion — stop everything              */
@@ -443,15 +468,18 @@ export default function InterviewRoom({
     questionTimerRef.current = setInterval(() => {
       setQuestionTimeLeft((prev) => {
         if (prev <= 1) {
-          // Time's up — auto-skip
+          // Time's up — auto-submit if there's a transcript, otherwise skip
           if (questionTimerRef.current) clearInterval(questionTimerRef.current);
           questionTimerRef.current = null;
-          // Trigger skip (must be async, fire-and-forget from interval)
           if (phaseRef.current === "LISTENING") {
-            // Use setTimeout(0) to avoid calling setState during render cycle
             setTimeout(() => {
               if (phaseRef.current === "LISTENING" && !isSubmittingRef.current) {
-                handleSkip();
+                const hasAnswer = finalTranscriptRef.current.trim().length >= MIN_SUBMIT_LENGTH;
+                if (hasAnswer) {
+                  handleSubmit();
+                } else {
+                  handleSkip();
+                }
               }
             }, 0);
           }
@@ -467,7 +495,7 @@ export default function InterviewRoom({
         questionTimerRef.current = null;
       }
     };
-  }, [currentQuestionIndex, autoSkipTimeout, handleSkip]);
+  }, [currentQuestionIndex, autoSkipTimeout, handleSubmit, handleSkip]);
 
   // Pause question timer during SPEAKING/PROCESSING, resume during LISTENING
   useEffect(() => {
@@ -488,7 +516,12 @@ export default function InterviewRoom({
             questionTimerRef.current = null;
             setTimeout(() => {
               if (phaseRef.current === "LISTENING" && !isSubmittingRef.current) {
-                handleSkip();
+                const hasAnswer = finalTranscriptRef.current.trim().length >= MIN_SUBMIT_LENGTH;
+                if (hasAnswer) {
+                  handleSubmit();
+                } else {
+                  handleSkip();
+                }
               }
             }, 0);
             return 0;
@@ -501,7 +534,7 @@ export default function InterviewRoom({
     return () => {
       // Don't clear on unmount here — the main effect handles full cleanup
     };
-  }, [phase, autoSkipTimeout, currentQuestionIndex, questionTimeLeft, handleSkip]);
+  }, [phase, autoSkipTimeout, currentQuestionIndex, questionTimeLeft, handleSubmit, handleSkip]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  Violation modal                                               */
@@ -544,7 +577,8 @@ export default function InterviewRoom({
   /* ── Code submission handler ── */
   const handleCodeSubmit = useCallback(
     async (code: string, language: string, testResult: { passed: number; total: number }) => {
-      setActiveCodingQuestion(null); // Close editor
+      setActiveCodingQuestion(null);
+      setShowCodeEditor(false);
       // Submit code + get AI response
       const codeContext =
         `[CODE SUBMISSION] Language: ${language} | ` +
@@ -556,7 +590,7 @@ export default function InterviewRoom({
   );
 
   const handleCodeClose = useCallback(() => {
-    setActiveCodingQuestion(null);
+    setShowCodeEditor(false);
   }, []);
 
   const handleEndInterview = useCallback(() => {
@@ -642,7 +676,7 @@ export default function InterviewRoom({
         <div className="flex items-center gap-3">
           {/* Question progress */}
           <div className="flex items-center gap-1.5 bg-gray-800/80 px-3 py-1.5 rounded-lg">
-            <span className="text-blue-400 text-xs font-bold">{answeredCount}</span>
+            <span className="text-blue-400 text-xs font-bold">{Math.max(0, currentQuestionIndex)}</span>
             <span className="text-gray-600 text-xs">/</span>
             <span className="text-gray-400 text-xs">{jobConfig.max_questions}</span>
             <span className="text-gray-500 text-[10px] ml-1 uppercase tracking-wide">Questions</span>
@@ -667,6 +701,29 @@ export default function InterviewRoom({
               <span className="font-semibold">{violationCount}</span>
               <span>violation{violationCount !== 1 ? "s" : ""}</span>
             </div>
+          )}
+
+          {/* Switch to Coding Test button — shown when a coding question is pending */}
+          {activeCodingQuestion && !showCodeEditor && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-3 text-xs gap-1.5 border-purple-600 text-purple-300 hover:bg-purple-900/30"
+              onClick={() => setShowCodeEditor(true)}
+            >
+              <Monitor className="w-3.5 h-3.5" />
+              Switch to Coding Test
+            </Button>
+          )}
+          {activeCodingQuestion && showCodeEditor && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-3 text-xs gap-1.5 border-gray-600 text-gray-300 hover:bg-gray-800"
+              onClick={() => setShowCodeEditor(false)}
+            >
+              Back to Chat
+            </Button>
           )}
 
           {/* Skip Question button */}
@@ -695,9 +752,9 @@ export default function InterviewRoom({
 
       {/* ── Main Content: Avatar Left | Chat/Code Right ── */}
       <div id="interview-main" className="flex flex-1 overflow-hidden relative">
-        {/* ── Left: Avatar Panel (shrinks when coding) ── */}
+        {/* ── Left: Avatar Panel (shrinks when coding editor is open) ── */}
         <div className={`flex flex-col bg-gradient-to-b from-gray-900 via-gray-925 to-gray-950 border-r border-gray-800 transition-all duration-300 ${
-          activeCodingQuestion ? "w-[25%]" : "w-[45%]"
+          showCodeEditor ? "w-[25%]" : "w-[45%]"
         }`}>
           <div className="flex-1 relative">
             {jobConfig.virtual_avatar ? (
@@ -747,8 +804,8 @@ export default function InterviewRoom({
           </div>
         </div>
 
-        {/* ── Right: Code Editor (when coding question active) OR Chat Panel ── */}
-        {activeCodingQuestion ? (
+        {/* ── Right: Code Editor (when user opens it) OR Chat Panel ── */}
+        {showCodeEditor && activeCodingQuestion ? (
           <div className="flex-1 flex flex-col min-w-0">
             <CodeEditor
               question={activeCodingQuestion}
@@ -784,6 +841,28 @@ export default function InterviewRoom({
                 liveTranscript={liveText}
               />
             </div>
+
+            {/* Coding question prompt — prominent banner when code editor is available but not opened */}
+            {activeCodingQuestion && !showCodeEditor && (
+              <div className="mx-4 mb-2 shrink-0">
+                <div className="bg-purple-950/60 border border-purple-700/50 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Monitor className="w-5 h-5 text-purple-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-purple-200 text-sm font-semibold truncate">{activeCodingQuestion.title}</p>
+                      <p className="text-purple-400 text-xs">Click the button to open the code editor</p>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="bg-purple-600 hover:bg-purple-500 text-white text-xs px-4 shrink-0"
+                    onClick={() => setShowCodeEditor(true)}
+                  >
+                    Open Code Editor
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {/* Per-question timeout progress bar */}
             {autoSkipTimeout > 0 && questionTimeLeft > 0 && currentQuestionIndex > 0 && phase === "LISTENING" && (

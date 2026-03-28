@@ -397,22 +397,23 @@ export function useInterviewSession(): InterviewSessionHook {
       } catch (e: any) {
         const isTimeout = e instanceof ApiError && e.status === 408;
         setError(isTimeout ? "Response timed out — please try again" : (e instanceof ApiError ? e.detail : e.message));
-        // On timeout or error, add a varied fallback so the flow doesn't freeze
+        // On timeout or error, add a contextual fallback so the flow doesn't freeze
         const fallbackCount = consecutiveFallbacksRef.current;
         consecutiveFallbacksRef.current += 1;
-        const fallbackMessages = [
-          "I didn't catch that clearly. Could you please repeat your answer?",
-          "There seems to be a brief audio delay. Let's continue — could you share more about your experience?",
-          "Let me rephrase. Tell me about a recent project you've worked on and what your role was.",
-          "Let's move on. Can you describe how you approach solving a technical problem you haven't seen before?",
-          "I appreciate your patience. Let's try a different question — what technologies are you most comfortable working with?",
-        ];
+        const lastAiQi = messages.filter((m) => m.role === "ai").pop()?.questionIndex ?? 0;
+
+        // First timeout: ask to repeat. Second+: acknowledge and move forward
+        let fallbackContent: string;
+        if (fallbackCount === 0) {
+          fallbackContent = "I didn't catch that clearly. Could you please repeat your answer?";
+        } else {
+          // After repeated failures, acknowledge the answer and advance
+          fallbackContent = "Thank you for your answer. Let's move on to the next question.";
+        }
         const fallbackMsg: Message = {
           role: "ai",
-          content: fallbackMessages[fallbackCount % fallbackMessages.length],
-          questionIndex: messages.filter((m) => m.role === "ai").length > 0
-            ? (messages.filter((m) => m.role === "ai").pop()?.questionIndex ?? 0)
-            : 0,
+          content: fallbackContent,
+          questionIndex: lastAiQi,
         };
         setMessages((prev) => [...prev, fallbackMsg]);
         return false;

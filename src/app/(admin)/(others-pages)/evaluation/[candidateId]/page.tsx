@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,7 +50,7 @@ import {
 } from "lucide-react";
 import VideoPlayer from "@/components/evaluation/VideoPlayer";
 import { api, API_BASE } from "@/lib/api";
-import { notifySuccess } from "@/lib/notify";
+import { notifySuccess, notifyError } from "@/lib/notify";
 
 const API_STATIC = API_BASE.replace(/\/api$/, "");
 
@@ -143,7 +143,9 @@ interface EvaluationData {
     skills_ratings: SkillRating[];
   } | null;
   violations: ViolationEntry[];
+  screenshots: { file_path: string; captured_at: string | null }[];
   session: {
+    id: number;
     started_at: string | null;
     completed_at: string | null;
     violation_count: number;
@@ -228,6 +230,9 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
   const [activeTab, setActiveTab] = useState("evaluation");
   const [showViolations, setShowViolations] = useState(false);
   const [expandedQA, setExpandedQA] = useState<Set<number>>(new Set());
+  const [generatingEval, setGeneratingEval] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     (async () => {
@@ -250,13 +255,133 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
     });
   }, []);
 
+  const generateEvaluation = useCallback(async () => {
+    if (!data?.session?.id) return;
+    setGeneratingEval(true);
+    try {
+      await api(`/interview/sessions/${data.session.id}/complete`, { method: "POST" });
+      // Reload data
+      const fresh = await api<EvaluationData>(`/candidates/${candidateId}/evaluation`);
+      setData(fresh);
+      notifySuccess("Evaluation generated successfully!");
+    } catch (err: any) {
+      setError(err.message || "Failed to generate evaluation");
+    } finally {
+      setGeneratingEval(false);
+    }
+  }, [data?.session?.id, candidateId]);
+
   const copyRecordingUrl = useCallback(() => {
     if (!data?.recording.link) return;
     const url = data.recording.link.startsWith("/")
-      ? `${window.location.origin}${API_STATIC}${data.recording.link}`
+      ? `${API_STATIC}${data.recording.link}`
       : data.recording.link;
     navigator.clipboard.writeText(url);
     notifySuccess("Recording URL copied!");
+  }, [data]);
+
+  const downloadPdf = useCallback(async () => {
+    if (!contentRef.current || !data) return;
+    setGeneratingPdf(true);
+    try {
+      const html2canvas = (await import("html2canvas-pro")).default;
+      const { jsPDF } = await import("jspdf");
+
+      // Expand all collapsed answers before capturing
+      const allIndices = new Set(data.transcript.map((t) => t.index));
+      setExpandedQA(allIndices);
+
+      // Wait for React to re-render with expanded answers + hidden elements
+      await new Promise((r) => setTimeout(r, 400));
+
+      const element = contentRef.current;
+
+      // Convert all cross-origin images to inline base64 to avoid tainted canvas
+      const images = element.querySelectorAll("img");
+      const origSrcs: { el: HTMLImageElement; src: string }[] = [];
+      await Promise.all(
+        Array.from(images).map(async (img) => {
+          try {
+            if (!img.src || img.src.startsWith("data:")) return;
+            origSrcs.push({ el: img, src: img.src });
+            const resp = await fetch(img.src);
+            const blob = await resp.blob();
+            const dataUrl = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+            img.src = dataUrl;
+          } catch {
+            // If fetch fails, hide the image so it doesn't taint the canvas
+            img.style.visibility = "hidden";
+          }
+        })
+      );
+
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: false,
+        allowTaint: false,
+        backgroundColor: "#ffffff",
+        logging: false,
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight,
+      });
+
+      // Restore original image sources
+      for (const { el, src } of origSrcs) {
+        el.src = src;
+        el.style.visibility = "";
+      }
+
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+
+      // A4 dimensions in points
+      const pageWidth = 595.28;
+      const pageHeight = 841.89;
+      const margin = 20;
+      const usableWidth = pageWidth - margin * 2;
+      const usableHeight = pageHeight - margin * 2;
+
+      const scaleFactor = usableWidth / imgWidth;
+      const scaledHeight = imgHeight * scaleFactor;
+
+      const pdf = new jsPDF("p", "pt", "a4");
+      let position = 0;
+
+      while (position < scaledHeight) {
+        if (position > 0) pdf.addPage();
+
+        // Calculate source crop for this page
+        const srcY = position / scaleFactor;
+        const srcH = Math.min(usableHeight / scaleFactor, imgHeight - srcY);
+        const destH = srcH * scaleFactor;
+
+        // Create a canvas for this page slice
+        const pageCanvas = document.createElement("canvas");
+        pageCanvas.width = imgWidth;
+        pageCanvas.height = Math.ceil(srcH);
+        const ctx = pageCanvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(canvas, 0, srcY, imgWidth, srcH, 0, 0, imgWidth, srcH);
+          const pageImg = pageCanvas.toDataURL("image/jpeg", 0.95);
+          pdf.addImage(pageImg, "JPEG", margin, margin, usableWidth, destH);
+        }
+
+        position += usableHeight;
+      }
+
+      const safeName = (data.candidate.name || "candidate").replace(/\s+/g, "_");
+      pdf.save(`${safeName}_Evaluation.pdf`);
+      notifySuccess("Evaluation PDF downloaded successfully!");
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+      notifyError("Failed to generate PDF. Please try again.");
+    } finally {
+      setGeneratingPdf(false);
+    }
   }, [data]);
 
   // Per-question evaluation map — must be before any early returns
@@ -286,13 +411,16 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
     </div>
   );
 
-  const { candidate, job, scores, recording, transcript, full_transcript, evaluation, violations, session } = data;
+  const { candidate, job, scores, recording, transcript, full_transcript, evaluation, violations, screenshots, session } = data;
 
   const recordingHref = recording.link?.startsWith("/")
     ? `${API_STATIC}${recording.link}` : recording.link ?? undefined;
 
-  const interviewDateStr = formatDateTime(candidate.interview_date, candidate.interview_timezone);
-  const interviewEndStr = formatDateTime(session?.completed_at ?? null);
+  const tz = candidate.interview_timezone ?? "Asia/Kolkata";
+  const interviewDateStr = session?.started_at
+    ? formatDateTime(session.started_at, tz)
+    : formatDateTime(candidate.interview_date, tz);
+  const interviewEndStr = formatDateTime(session?.completed_at ?? null, tz);
   const durationStr = session?.started_at && session?.completed_at
     ? computeDuration(session.started_at, session.completed_at)
     : recording.duration ?? null;
@@ -300,11 +428,12 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
     ? `${job.experience_min}-${job.experience_max} years` : null;
 
   const cheatingScore = scores.ai_cheating;
+  // ai_cheating_score: 0 = no cheating, 100 = max cheating. Display as X/10
   const cheatingDisplay = cheatingScore != null
-    ? `${Math.round((100 - cheatingScore) / 10)} / 10` : null;
+    ? `${Math.round(cheatingScore / 10)} / 10` : null;
 
   return (
-    <div className="max-w-7xl mx-auto pb-12 min-w-0">
+    <div ref={contentRef} className="max-w-7xl mx-auto pb-12 min-w-0">
 
       {/* ══════════════════════════════════════════════════════════════════════
           CANDIDATE HEADER
@@ -333,7 +462,7 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
                   <span className="text-sm text-gray-700">
                     AI-Cheating Score: <strong>{cheatingDisplay}</strong>
                   </span>
-                  {violations.length > 0 && (
+                  {violations.length > 0 && !generatingPdf && (
                     <Button
                       size="sm"
                       className="h-7 text-xs bg-red-500 hover:bg-red-600 text-white"
@@ -346,12 +475,18 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
               )}
 
               {recordingHref && (
-                <button
-                  onClick={copyRecordingUrl}
-                  className="text-brand-500 hover:underline text-sm flex items-center gap-1 mt-2"
-                >
-                  Copy recording URL
-                </button>
+                generatingPdf ? (
+                  <p className="text-brand-500 text-sm mt-2 break-all">
+                    Recording: {`${API_STATIC}${recording.link}`}
+                  </p>
+                ) : (
+                  <button
+                    onClick={copyRecordingUrl}
+                    className="text-brand-500 hover:underline text-sm flex items-center gap-1 mt-2"
+                  >
+                    Copy recording URL
+                  </button>
+                )
               )}
             </div>
 
@@ -377,6 +512,7 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
           TABS
          ══════════════════════════════════════════════════════════════════════ */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
+        {!generatingPdf && (
         <div className="border-b border-gray-200 overflow-x-auto flex items-center">
           <TabsList className="bg-transparent h-auto p-0 gap-0 rounded-none flex-1">
             {[
@@ -404,8 +540,8 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => window.open(`${API_BASE}/candidates/${candidateId}/evaluation/download-pdf`, "_blank")}>
-                <FileText className="w-4 h-4 mr-2" /> Download Evaluation Pdf
+              <DropdownMenuItem onClick={downloadPdf} disabled={generatingPdf}>
+                <FileText className="w-4 h-4 mr-2" /> {generatingPdf ? "Generating PDF…" : "Download Evaluation Pdf"}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => window.open(`${API_BASE}/candidates/${candidateId}/evaluation/download-docx`, "_blank")}>
                 <FileText className="w-4 h-4 mr-2" /> Download Evaluation as Docx
@@ -416,6 +552,7 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+        )}
 
         {/* ═══════════════════════ TAB: EVALUATION ═══════════════════════════ */}
         <TabsContent value="evaluation" className="mt-6">
@@ -429,7 +566,8 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
                 const pq = pqMap.get(pair.index);
                 const isExpanded = expandedQA.has(pair.index);
                 const answerText = pair.answer;
-                const showToggle = answerText.length > 250;
+                const isSkipped = answerText === "[No answer provided — skipped]";
+                const showToggle = !isSkipped && answerText.length > 250;
                 const displayAnswer = isExpanded ? answerText : showToggle ? answerText.slice(0, 250) + "..." : answerText;
 
                 return (
@@ -440,7 +578,7 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
 
                       <div>
                         <p className="text-sm font-semibold text-gray-700">Candidate&apos;s Answer:</p>
-                        <p className="text-sm text-gray-600 leading-relaxed mt-1">
+                        <p className={`text-sm leading-relaxed mt-1 ${isSkipped ? "italic text-gray-400" : "text-gray-600"}`}>
                           {displayAnswer}
                           {showToggle && (
                             <button onClick={() => toggleQA(pair.index)}
@@ -558,7 +696,32 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
                   )}
 
                   {!evaluation && (
-                    <p className="text-sm text-gray-400">Evaluation will appear after the interview is completed.</p>
+                    <div className="text-center py-4 space-y-3">
+                      <p className="text-sm text-gray-400">
+                        {session?.status === "completed" || session?.status === "terminated"
+                          ? "Evaluation was not generated automatically."
+                          : "Evaluation will appear after the interview is completed."}
+                      </p>
+                      {session?.id && (session?.status === "completed" || session?.status === "terminated") && (
+                        <Button
+                          onClick={generateEvaluation}
+                          disabled={generatingEval}
+                          className="gap-2"
+                        >
+                          {generatingEval ? (
+                            <>
+                              <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                              Generating…
+                            </>
+                          ) : (
+                            <>
+                              <TrendingUp className="w-4 h-4" />
+                              Generate Evaluation
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -682,9 +845,13 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
                         </div>
                       </div>
                       <div className="flex gap-3 justify-end">
-                        <div className="max-w-[75%] rounded-2xl rounded-tr-sm bg-brand-500 text-white px-4 py-3">
+                        <div className={`max-w-[75%] rounded-2xl rounded-tr-sm px-4 py-3 ${
+                          pair.answer === "[No answer provided — skipped]"
+                            ? "bg-gray-200 text-gray-500"
+                            : "bg-brand-500 text-white"
+                        }`}>
                           <p className="text-xs font-semibold mb-1 opacity-70">Candidate</p>
-                          <p className="text-sm leading-relaxed">{pair.answer}</p>
+                          <p className={`text-sm leading-relaxed ${pair.answer === "[No answer provided — skipped]" ? "italic" : ""}`}>{pair.answer}</p>
                         </div>
                         <div className="shrink-0 w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center">
                           <User className="w-4 h-4 text-brand-600" />
@@ -706,7 +873,7 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
 
         {/* ═══════════════════════ TAB: FACE DETECTION ═════════════════════ */}
         <TabsContent value="face-detection" className="mt-6">
-          <FaceDetectionTab violations={violations} />
+          <FaceDetectionTab violations={violations} screenshots={screenshots} timezone={tz} />
         </TabsContent>
       </Tabs>
 
@@ -752,7 +919,7 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
 
 // ── Face Detection Tab ───────────────────────────────────────────────────────
 
-function FaceDetectionTab({ violations }: { violations: ViolationEntry[] }) {
+function FaceDetectionTab({ violations, screenshots, timezone }: { violations: ViolationEntry[]; screenshots: { file_path: string; captured_at: string | null }[]; timezone: string }) {
   const [subTab, setSubTab] = useState("single");
 
   const faceViolations = useMemo(() => {
@@ -806,11 +973,31 @@ function FaceDetectionTab({ violations }: { violations: ViolationEntry[] }) {
           </TabsList>
 
           <TabsContent value="single">
-            <div className="py-16 text-center text-gray-400">
-              <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-40" />
-              <p className="text-base font-medium">No captured frames available</p>
-              <p className="text-sm mt-1">Face detection frames will appear here when frame storage is enabled.</p>
-            </div>
+            {screenshots.length > 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {screenshots.map((ss, idx) => (
+                  <div key={idx} className="relative bg-gray-100 rounded-lg border border-gray-200 overflow-hidden aspect-video">
+                    <img
+                      src={`${API_STATIC}${ss.file_path}`}
+                      alt={`Frame ${idx + 1}`}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                    {ss.captured_at && (
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] px-2 py-1 text-center">
+                        {new Date(ss.captured_at).toLocaleString("en-IN", { timeZone: timezone, month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-16 text-center text-gray-400">
+                <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-40" />
+                <p className="text-base font-medium">No captured frames available</p>
+                <p className="text-sm mt-1">Face detection frames will appear here after the interview is completed.</p>
+              </div>
+            )}
           </TabsContent>
           <TabsContent value="multiple">
             {renderGrid(faceViolations.multiple, "No multiple face events detected")}

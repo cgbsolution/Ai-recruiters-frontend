@@ -669,7 +669,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
 
       {/* ── Table ─────────────────────────────────────────────────────────── */}
       <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-        <div className="overflow-x-auto w-full">
+        <div className="overflow-x-auto w-full glass-scrollbar">
           <Table className="min-w-max">
 
             <TableHeader className="bg-gray-50">

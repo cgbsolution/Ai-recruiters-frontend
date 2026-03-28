@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Calendar, Clock, Mail, MessageSquare, Info, ChevronLeft, ChevronRight, Timer } from "lucide-react";
+import { TimePicker } from "@/components/ui/time-picker";
 import EditEmailTemplateModal, { EmailTemplateData } from "./EditEmailTemplateModal";
 import { notifySuccess, notifyError } from "@/lib/notify";
 import { apiPost } from "@/lib/api";
@@ -191,7 +192,7 @@ export default function ScheduleInterviewModal({
   return (
     <>
       <Dialog open={open} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-[680px] max-h-[90vh] overflow-y-auto p-0">
+        <DialogContent className="sm:max-w-[680px] max-h-[90vh] overflow-y-auto glass-scrollbar p-0">
           {/* Header */}
           <div className="px-6 pt-6 pb-4 border-b">
             <DialogHeader>
@@ -299,16 +300,7 @@ export default function ScheduleInterviewModal({
                   <Clock className="w-4 h-4 text-gray-400" />
                   Time
                 </Label>
-                <Select value={selectedTime} onValueChange={setSelectedTime}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-60">
-                    {TIMES.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <TimePicker value={selectedTime} onChange={setSelectedTime} />
 
                 {/* Selected summary */}
                 <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 mt-3">
@@ -317,7 +309,12 @@ export default function ScheduleInterviewModal({
                     {MONTH_NAMES[calMonth].slice(0, 3)} {selectedDay}, {calYear}
                   </p>
                   <p className="text-sm text-blue-700">
-                    {TIMES.find((t) => t.value === selectedTime)?.label}
+                    {(() => {
+                      const [hStr, mStr] = selectedTime.split(":");
+                      const h = parseInt(hStr, 10);
+                      const m = mStr;
+                      return `${h === 0 ? 12 : h > 12 ? h - 12 : h}:${m} ${h < 12 ? "AM" : "PM"}`;
+                    })()}
                   </p>
                   <p className="text-xs text-blue-500 mt-0.5">{selectedTz.label}</p>
                 </div>
