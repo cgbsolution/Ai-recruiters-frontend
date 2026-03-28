@@ -14,6 +14,7 @@ import InstructionsStep from "./steps/InstructionsStep";
 import WarningStep from "./steps/WarningStep";
 import CapturePhotoStep from "./steps/CapturePhotoStep";
 import InterviewRoom from "./InterviewRoom";
+import PreInterviewProgress from "./PreInterviewProgress";
 import CompletionScreen from "./CompletionScreen";
 import FeedbackForm from "./FeedbackForm";
 import MeetingScheduler from "./MeetingScheduler";
@@ -339,10 +340,15 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
       );
 
     case "PERMISSION_CAM_MIC":
-      return jobConfig.webcam_required ? (
-        <PermissionStep onPermissionsGranted={handlePermissionsGranted} />
-      ) : (
-        <PermissionStep micOnly onPermissionsGranted={handleMicOnlyGranted} />
+      return (
+        <>
+          <PreInterviewProgress currentStep={1} />
+          {jobConfig.webcam_required ? (
+            <PermissionStep onPermissionsGranted={handlePermissionsGranted} />
+          ) : (
+            <PermissionStep micOnly onPermissionsGranted={handleMicOnlyGranted} />
+          )}
+        </>
       );
 
     case "CAPTURE_PHOTO":
@@ -352,15 +358,23 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
         return null;
       }
       return (
-        <CapturePhotoStep
-          webcamStream={webcamStream}
-          sessionId={session.sessionId}
-          onCaptured={() => setStep("PERMISSION_SCREEN")}
-        />
+        <>
+          <PreInterviewProgress currentStep={2} />
+          <CapturePhotoStep
+            webcamStream={webcamStream}
+            sessionId={session.sessionId}
+            onCaptured={() => setStep("PERMISSION_SCREEN")}
+          />
+        </>
       );
 
     case "PERMISSION_SCREEN":
-      return <ScreenShareStep onNext={handleScreenShare} required={true} />;
+      return (
+        <>
+          <PreInterviewProgress currentStep={2} />
+          <ScreenShareStep onNext={handleScreenShare} required={true} />
+        </>
+      );
 
     case "DEVICE_TEST":
       if (!webcamStream) {
@@ -369,14 +383,27 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
         return null;
       }
       return (
-        <DeviceTestStep stream={webcamStream} onNext={() => setStep("INSTRUCTIONS")} />
+        <>
+          <PreInterviewProgress currentStep={3} />
+          <DeviceTestStep stream={webcamStream} onNext={() => setStep("INSTRUCTIONS")} />
+        </>
       );
 
     case "INSTRUCTIONS":
-      return <InstructionsStep jobConfig={jobConfig} onNext={() => setStep("WARNING")} />;
+      return (
+        <>
+          <PreInterviewProgress currentStep={4} />
+          <InstructionsStep jobConfig={jobConfig} onNext={() => setStep("WARNING")} />
+        </>
+      );
 
     case "WARNING":
-      return <WarningStep onConfirm={handleWarningConfirm} />;
+      return (
+        <>
+          <PreInterviewProgress currentStep={4} />
+          <WarningStep onConfirm={handleWarningConfirm} />
+        </>
+      );
 
     case "INTERVIEW":
       if (jobConfig.manual_interview) {

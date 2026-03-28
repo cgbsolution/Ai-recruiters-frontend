@@ -71,18 +71,22 @@ export default function CapturePhotoStep({ webcamStream, sessionId, onCaptured }
   }, [capturedImage, sessionId, onCaptured]);
 
   return (
-    <div className="flex items-center justify-center min-h-screen px-6">
-      <div className="w-full max-w-md text-center space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-white mb-2">Capture Your Photo</h1>
-          <p className="text-gray-400 text-sm">
-            Please ensure your face is clearly visible and well-lit. This photo will be used for your candidate profile.
+    <div className="flex flex-col items-center min-h-screen bg-white px-6">
+      {/* Photo preview or live webcam */}
+      <div className="flex flex-col items-center w-full max-w-lg flex-1 justify-center space-y-6 py-8">
+        {/* Icon + Title */}
+        <div className="text-center">
+          <div className="flex items-center justify-center mb-3">
+            <Camera className="w-10 h-10 text-cyan-500" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Photo Verification</h1>
+          <p className="text-gray-500 text-sm max-w-xs mx-auto">
+            Please capture a clear, well-lit photo of your face. This helps in verifying your identity.
           </p>
         </div>
 
-        {/* Camera preview + captured overlay — video is ALWAYS mounted */}
-        <div className="relative mx-auto w-72 h-72 rounded-2xl overflow-hidden border-2 border-gray-700 bg-gray-900">
-          {/* Video is always present, just hidden behind the captured image */}
+        {/* Camera preview */}
+        <div className="relative w-full max-w-sm rounded-xl overflow-hidden border border-gray-200 bg-gray-100 aspect-video">
           <video
             ref={videoRef}
             autoPlay
@@ -90,29 +94,24 @@ export default function CapturePhotoStep({ webcamStream, sessionId, onCaptured }
             playsInline
             className={`absolute inset-0 w-full h-full object-cover scale-x-[-1] ${capturedImage ? "invisible" : ""}`}
           />
-
-          {/* Face guide overlay — only when live preview */}
           {!capturedImage && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-44 h-56 rounded-full border-2 border-dashed border-white/30" />
+              <div className="w-32 h-40 rounded-full border-2 border-dashed border-white/50" />
             </div>
           )}
-
-          {/* Captured image overlay */}
           {capturedImage && (
             <img src={capturedImage} alt="Captured" className="absolute inset-0 w-full h-full object-cover" />
           )}
         </div>
 
-        {/* Hidden canvas for capture */}
         <canvas ref={canvasRef} className="hidden" />
 
-        {/* Action buttons */}
-        <div className="flex flex-col gap-3">
+        {/* Buttons */}
+        <div className="flex flex-col gap-3 w-full max-w-sm">
           {!capturedImage ? (
             <Button
               onClick={capture}
-              className="w-full bg-blue-600 hover:bg-blue-500 text-white py-6 text-base gap-2 rounded-xl"
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white py-5 text-base gap-2 rounded-xl"
             >
               <Camera className="w-5 h-5" />
               Capture Photo
@@ -122,7 +121,7 @@ export default function CapturePhotoStep({ webcamStream, sessionId, onCaptured }
               <Button
                 onClick={saveAndContinue}
                 disabled={uploading}
-                className="w-full bg-green-600 hover:bg-green-500 text-white py-6 text-base gap-2 rounded-xl"
+                className="w-full bg-green-600 hover:bg-green-500 text-white py-5 text-base gap-2 rounded-xl"
               >
                 {uploading ? (
                   <>
@@ -132,7 +131,7 @@ export default function CapturePhotoStep({ webcamStream, sessionId, onCaptured }
                 ) : (
                   <>
                     <CheckCircle className="w-5 h-5" />
-                    Save & Continue
+                    Use This Photo
                   </>
                 )}
               </Button>
@@ -140,18 +139,14 @@ export default function CapturePhotoStep({ webcamStream, sessionId, onCaptured }
                 onClick={retake}
                 disabled={uploading}
                 variant="ghost"
-                className="w-full text-gray-400 hover:text-white py-5 text-sm gap-2 rounded-xl"
+                className="w-full text-gray-500 hover:text-gray-800 py-4 text-sm gap-2 rounded-xl border border-gray-200"
               >
                 <RefreshCw className="w-4 h-4" />
-                Retake Photo
+                Re-take Photo
               </Button>
             </>
           )}
         </div>
-
-        <p className="text-xs text-gray-500">
-          Your photo helps recruiters identify you during the evaluation process.
-        </p>
       </div>
     </div>
   );

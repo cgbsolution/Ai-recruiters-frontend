@@ -10,7 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { PhoneOff, Mic, MicOff, GripVertical, SkipForward, Monitor } from "lucide-react";
+import { PhoneOff, Mic, MicOff, GripVertical, SkipForward, Monitor, Square, Send, Trash2, ChevronRight, HelpCircle, ArrowRight } from "lucide-react";
 import dynamic from "next/dynamic";
 import AvatarScene from "./AvatarScene";
 import TranscriptPanel from "./TranscriptPanel";
@@ -131,6 +131,12 @@ export default function InterviewRoom({
   const [showScreenShareModal, setShowScreenShareModal] = useState(false);
   const [silenceProgress, setSilenceProgress] = useState(0);
   const [answeredCount, setAnsweredCount] = useState(0);
+
+  /* ── Manual voice interaction state ── */
+  type VoiceState = "idle" | "recording" | "answered";
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   /* ── Per-question auto-skip timer state ── */
   const [questionTimeLeft, setQuestionTimeLeft] = useState<number>(0);
@@ -264,6 +270,38 @@ export default function InterviewRoom({
     }
   }, [stop, cancel, reset, cancelSilenceAnim, onSkipQuestion]);
 
+  /* ── Manual voice control handlers ── */
+  const handleBeginClick = useCallback(async () => {
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setPhase("PROCESSING");
+    processingStartRef.current = Date.now();
+    stop();
+    cancel();
+    cancelSilenceAnim();
+    try {
+      await onSendMessage("Let's begin");
+    } finally {
+      isSubmittingRef.current = false;
+    }
+  }, [stop, cancel, cancelSilenceAnim, onSendMessage]);
+
+  const handleStartSpeaking = useCallback(() => {
+    reset();
+    setRecordingDuration(0);
+    start();
+    setVoiceState("recording");
+  }, [reset, start]);
+
+  const handleStopSpeaking = useCallback(() => {
+    stop();
+    setVoiceState("answered");
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+  }, [stop]);
+
   /* ═══════════════════════════════════════════════════════════════ */
   /*  EFFECT 1: Speak new AI messages → enter SPEAKING phase        */
   /* ═══════════════════════════════════════════════════════════════ */
@@ -370,7 +408,14 @@ export default function InterviewRoom({
       setSilenceProgress(progress);
 
       if (elapsed >= timeout) {
-        handleSubmit();
+        // Auto-move to answered state — user clicks Send Response manually
+        stop();
+        setSilenceProgress(0);
+        setVoiceState("answered");
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
+          recordingTimerRef.current = null;
+        }
       } else {
         silenceAnimRef.current = requestAnimationFrame(tick);
       }
@@ -384,7 +429,7 @@ export default function InterviewRoom({
         silenceAnimRef.current = null;
       }
     };
-  }, [transcript, interimTranscript, lastFinalAt, phase, currentQuestionIndex, showCodeEditor, handleSubmit, handleSkip, cancelSilenceAnim]);
+  }, [transcript, interimTranscript, lastFinalAt, phase, currentQuestionIndex, showCodeEditor, stop, handleSubmit, handleSkip, cancelSilenceAnim]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  EFFECT 4: Interview completion — stop everything              */
@@ -403,6 +448,42 @@ export default function InterviewRoom({
     const t = setTimeout(() => onComplete(), 800);
     return () => clearTimeout(t);
   }, [isInterviewComplete, disableViolations, cancel, stop, onComplete, cancelSilenceAnim]);
+
+  /* ═══════════════════════════════════════════════════════════════ */
+  /*  EFFECT: Reset voiceState when leaving LISTENING phase          */
+  /* ═══════════════════════════════════════════════════════════════ */
+  useEffect(() => {
+    if (phase !== "LISTENING") {
+      setVoiceState("idle");
+      setRecordingDuration(0);
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    }
+  }, [phase]);
+
+  /* ═══════════════════════════════════════════════════════════════ */
+  /*  EFFECT: Recording duration timer                               */
+  /* ═══════════════════════════════════════════════════════════════ */
+  useEffect(() => {
+    if (voiceState === "recording") {
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration((d) => d + 1);
+      }, 1000);
+    } else {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    }
+    return () => {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    };
+  }, [voiceState]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  EFFECT 5: PROCESSING timeout recovery                         */
@@ -894,9 +975,9 @@ export default function InterviewRoom({
               </div>
             )}
 
-            {/* Live transcript bar */}
-            {phase === "LISTENING" && liveText && (
-              <div className="mx-4 mb-3 px-4 py-2.5 bg-gray-800/60 border border-gray-700/50 rounded-xl shrink-0">
+            {/* Live transcript bar — only visible while actively recording */}
+            {phase === "LISTENING" && voiceState === "recording" && liveText && (
+              <div className="mx-4 mb-2 px-4 py-2.5 bg-gray-800/60 border border-gray-700/50 rounded-xl shrink-0">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse shrink-0" />
                   <p className="text-gray-300 text-sm truncate">{liveText}</p>
@@ -908,6 +989,114 @@ export default function InterviewRoom({
             {!isSupported && (
               <div className="mx-4 mb-3 px-3 py-2 bg-yellow-950/30 border border-yellow-800/30 rounded-lg shrink-0">
                 <p className="text-yellow-400 text-xs">Voice recognition not supported in this browser.</p>
+              </div>
+            )}
+
+            {/* ── Bottom Voice Controls ── */}
+            {!showCodeEditor && (
+              <div className="px-4 pb-5 pt-2 shrink-0 flex flex-col items-center gap-3 border-t border-gray-800/60">
+
+                {/* BEGIN button — shown for avatar intro (questionIndex === 0, LISTENING) */}
+                {phase === "LISTENING" && currentQuestionIndex === 0 && (
+                  <Button
+                    onClick={handleBeginClick}
+                    className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-3 rounded-full text-base gap-2 font-medium"
+                  >
+                    Begin <ArrowRight className="w-5 h-5" />
+                  </Button>
+                )}
+
+                {/* Q&A voice controls — shown when past intro */}
+                {phase === "LISTENING" && currentQuestionIndex > 0 && (
+                  <>
+                    {/* Ask Doubt / Skip links */}
+                    {voiceState === "idle" && (
+                      <div className="flex items-center gap-6 text-sm">
+                        <button className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors">
+                          <HelpCircle className="w-4 h-4" />
+                          Ask Doubt
+                        </button>
+                        <button
+                          onClick={handleSkip}
+                          className="flex items-center gap-1 text-gray-400 hover:text-white transition-colors"
+                        >
+                          Skip this question
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* IDLE: Start Speaking button */}
+                    {voiceState === "idle" && (
+                      <Button
+                        onClick={handleStartSpeaking}
+                        className="bg-red-500 hover:bg-red-400 text-white rounded-full px-8 py-3 gap-2 font-medium text-sm shadow-lg shadow-red-900/30"
+                      >
+                        <Mic className="w-4 h-4" />
+                        Start Speaking
+                      </Button>
+                    )}
+
+                    {/* RECORDING: Waveform + timer + stop */}
+                    {voiceState === "recording" && (
+                      <div className="flex items-center gap-3 w-full max-w-xs px-4 py-2.5 bg-gray-800/80 border border-gray-700 rounded-full">
+                        {/* Waveform bars */}
+                        <div className="flex-1 flex items-center gap-px h-7">
+                          {[4,7,3,8,5,9,4,6,8,3,7,5,9,4,6,8,3,7,5,6].map((h, i) => (
+                            <div
+                              key={i}
+                              className="flex-1 bg-red-400 rounded-full"
+                              style={{
+                                height: `${h * 8}%`,
+                                minHeight: "15%",
+                                maxHeight: "90%",
+                                animation: `pulse ${0.4 + (i % 5) * 0.08}s ease-in-out ${i * 0.04}s infinite alternate`,
+                              }}
+                            />
+                          ))}
+                        </div>
+                        <span className="text-gray-300 text-xs font-mono tabular-nums whitespace-nowrap">
+                          {formatTime(recordingDuration)}
+                        </span>
+                        <button
+                          onClick={handleStopSpeaking}
+                          className="w-8 h-8 bg-red-500 hover:bg-red-400 rounded-full flex items-center justify-center shrink-0 transition-colors"
+                        >
+                          <Square className="w-3 h-3 text-white fill-current" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* ANSWERED: Delete + Send Response */}
+                    {voiceState === "answered" && (
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => { reset(); setVoiceState("idle"); }}
+                          className="w-10 h-10 border border-gray-600 hover:border-red-500 rounded-full flex items-center justify-center text-gray-400 hover:text-red-400 transition-colors"
+                          title="Delete & Re-record"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        <Button
+                          onClick={handleSubmit}
+                          disabled={!finalTranscriptRef.current.trim() || finalTranscriptRef.current.trim().length < 3}
+                          className="bg-blue-600 hover:bg-blue-500 text-white rounded-full px-6 py-3 gap-2 font-medium text-sm shadow-lg shadow-blue-900/30"
+                        >
+                          <Send className="w-4 h-4" />
+                          Send Response
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* PROCESSING indicator */}
+                {(phase === "PROCESSING" || (phase === "IDLE" && isThinking)) && (
+                  <div className="flex items-center gap-2 text-blue-400 text-sm">
+                    <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                    <span>Processing your response…</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
