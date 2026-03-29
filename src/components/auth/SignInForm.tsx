@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -10,7 +9,6 @@ import { Label } from "@/components/ui/label";
 import { Eye, EyeOff, Loader2, Mail, Lock } from "lucide-react";
 
 export default function SignInForm() {
-  const router = useRouter();
   const { login } = useAuth();
 
   const [email, setEmail] = useState("");
@@ -28,7 +26,9 @@ export default function SignInForm() {
 
     try {
       await login(email.trim().toLowerCase(), password);
-      router.push("/");
+      // Use hard navigation to bypass Next.js router cache — the middleware
+      // needs to see the new auth cookie on a fresh server request.
+      window.location.href = "/";
     } catch (err) {
       setError((err as Error).message || "Login failed");
     } finally {

@@ -18,17 +18,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  EyeIcon,
   PencilIcon,
   MapPin,
   Users,
   Briefcase,
-  Calendar,
   MoreVertical,
   CheckCircle2,
   Send,
   ClipboardList,
   Trash,
+  Copy,
+  CircleCheck,
+  CircleMinus,
+  CircleDot,
+  FolderOpen,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
@@ -49,6 +52,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { api, apiPost } from "@/lib/api";
+import { notifyError, notifySuccess } from "@/lib/notify";
 
 type Job = {
   id: number;
@@ -70,7 +74,7 @@ export const JobsOpeningsCard = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<
-    "All" | "Open" | "Inactive" | "Draft"
+    "All" | "Open" | "Inactive" | "Draft" | "Finished"
   >("All");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [jobToDelete, setJobToDelete] = useState<Job | null>(null);
@@ -109,6 +113,7 @@ export const JobsOpeningsCard = () => {
     Open: "bg-green-100 text-green-700",
     Inactive: "bg-red-100 text-red-700",
     Draft: "bg-gray-200 text-gray-600",
+    Finished: "bg-blue-100 text-blue-700",
   };
 
   // Filtering
@@ -161,14 +166,29 @@ export const JobsOpeningsCard = () => {
         title: `${jobToDuplicate.title} (Copy)`,
         status: "Draft",
         created_at: new Date().toISOString(),
-        // Remove id to let backend generate new one
         id: undefined,
       };
 
       const newJob = await apiPost<Job>("/jobs/", duplicatedJob);
       setJobs((prev) => [newJob, ...prev]);
-    } catch (error) {
-      console.error("Error duplicating job:", error);
+      notifySuccess("Job duplicated as Draft.");
+    } catch (error: any) {
+      // Show user-friendly message if job limit is exhausted
+      notifyError(error?.message || "Failed to duplicate job.");
+    }
+  };
+
+  const handleChangeStatus = async (jobId: number, newStatus: string) => {
+    try {
+      const updated = await api<Job>(`/jobs/${jobId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      setJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: updated.status } : j)));
+      notifySuccess(`Job status changed to ${newStatus}.`);
+    } catch (error: any) {
+      notifyError(error?.message || "Failed to update status.");
     }
   };
 
@@ -227,8 +247,9 @@ export const JobsOpeningsCard = () => {
             <SelectContent>
               <SelectItem value="All">All Status</SelectItem>
               <SelectItem value="Open">Open</SelectItem>
-              <SelectItem value="Inactive">Inactive</SelectItem>
               <SelectItem value="Draft">Draft</SelectItem>
+              <SelectItem value="Inactive">Inactive</SelectItem>
+              <SelectItem value="Finished">Finished</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -273,10 +294,10 @@ export const JobsOpeningsCard = () => {
                     </div>
                     {/* Right: pencil on top, badge below */}
                     <div className="flex flex-col items-end gap-1 shrink-0">
-                      <PencilIcon
+                      {/* <PencilIcon
                         className="w-4 h-4 text-gray-400 cursor-pointer hover:text-gray-600"
                         onClick={() => handleEditJob(job.id)}
-                      />
+                      /> */}
                       <span
                         className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
                           statusColors[job.status] || "bg-gray-200 text-gray-600"
@@ -349,19 +370,45 @@ export const JobsOpeningsCard = () => {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => handleEditJob(job.id)}>
-                        <PencilIcon className="h-5 w-5 mr-2" />
+                        <PencilIcon className="h-4 w-4 mr-2" />
                         Edit Opening
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleDuplicateJob(job.id)}>
-                        <Briefcase className="h-5 w-5 mr-2" />
+                        <Copy className="h-4 w-4 mr-2" />
                         Duplicate Opening
                       </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {/* Change Status */}
+                      {job.status !== "Open" && (
+                        <DropdownMenuItem onClick={() => handleChangeStatus(job.id, "Open")}>
+                          <CircleCheck className="h-4 w-4 mr-2 text-green-600" />
+                          Mark as Open
+                        </DropdownMenuItem>
+                      )}
+                      {job.status !== "Draft" && (
+                        <DropdownMenuItem onClick={() => handleChangeStatus(job.id, "Draft")}>
+                          <CircleDot className="h-4 w-4 mr-2 text-gray-500" />
+                          Move to Draft
+                        </DropdownMenuItem>
+                      )}
+                      {job.status !== "Inactive" && (
+                        <DropdownMenuItem onClick={() => handleChangeStatus(job.id, "Inactive")}>
+                          <CircleMinus className="h-4 w-4 mr-2 text-red-500" />
+                          Mark as Inactive
+                        </DropdownMenuItem>
+                      )}
+                      {job.status !== "Finished" && (
+                        <DropdownMenuItem onClick={() => handleChangeStatus(job.id, "Finished")}>
+                          <FolderOpen className="h-4 w-4 mr-2 text-blue-500" />
+                          Mark as Finished
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         onClick={() => openDeleteDialog(job)}
                         className="text-red-600 focus:text-red-600"
                       >
-                        <Trash className="h-5 w-5 mr-2" />
+                        <Trash className="h-4 w-4 mr-2" />
                         Delete Post
                       </DropdownMenuItem>
                     </DropdownMenuContent>

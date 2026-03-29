@@ -236,18 +236,6 @@ export default function AIJDModal({
                 </ul>
               </section>
 
-              {/* ── Special Instructions ── */}
-              <section>
-                <SectionTitle>Special Instructions</SectionTitle>
-                {generatedJD?.special_instructions ? (
-                  <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
-                    {generatedJD.special_instructions}
-                  </p>
-                ) : (
-                  <p className="text-gray-400 italic">None</p>
-                )}
-              </section>
-
               {/* ── Coding Questions ── */}
               <section>
                 <SectionTitle>Coding Questions</SectionTitle>

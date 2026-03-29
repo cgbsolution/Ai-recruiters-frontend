@@ -356,7 +356,7 @@ const AppSidebar: React.FC = () => {
                 )}
               </h2>
               {renderMenuItems(navItems, "main")}
-              <SidebarWidget />
+              <SidebarWidget collapsible />
             </div>
           </div>
         </nav>

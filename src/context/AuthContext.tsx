@@ -15,6 +15,8 @@ export interface AuthUser {
   name: string;
   email: string;
   role: UserRole;
+  phone: string | null;
+  designation: string | null;
   is_email_verified: boolean;
   organization_id: number | null;
   organization_name: string | null;
@@ -28,6 +30,7 @@ interface AuthContextType {
   signup: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
   hasRole: (...roles: UserRole[]) => boolean;
+  updateUser: (updates: Partial<AuthUser>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -70,6 +73,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 name: data.name,
                 email: data.email,
                 role: data.role,
+                phone: data.phone ?? null,
+                designation: data.designation ?? null,
                 is_email_verified: data.is_email_verified,
                 organization_id: data.organization_id,
                 organization_name: data.organization_name,
@@ -95,6 +100,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     Cookies.set(USER_KEY, JSON.stringify(userData), { expires: 7, sameSite: "Lax" });
     setToken(accessToken);
     setUser(userData);
+  }, []);
+
+  const updateUser = useCallback((updates: Partial<AuthUser>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, ...updates };
+      Cookies.set(USER_KEY, JSON.stringify(updated), { expires: 7, sameSite: "Lax" });
+      return updated;
+    });
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -148,7 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, signup, logout, hasRole }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, signup, logout, hasRole, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

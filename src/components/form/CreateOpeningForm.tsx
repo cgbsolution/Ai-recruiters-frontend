@@ -48,6 +48,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip
 
 // --- Config
 import { api, apiPost, apiUpload, ApiError } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 
 type SkillGroup = {
   id: string;
@@ -64,6 +65,7 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
   const searchParams = useSearchParams();
   const openingType = searchParams?.get("openingType") || "technical";
   const router = useRouter();
+  const { user } = useAuth();
   const isEditMode = Boolean(jobId);
 
   // AI JD modal
@@ -101,7 +103,11 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     allowCandidateContact: false,
   });
 
-  const [manager, setManager] = useState({ name: "", phone: "", email: "" });
+  const [manager, setManager] = useState({
+    name: user?.name || "",
+    phone: "",
+    email: user?.email || "",
+  });
   const [questionType, setQuestionType] = useState<"traditional" | "scenario">(
     "traditional"
   );
@@ -314,7 +320,14 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
   };
 
   const toggleInterviewSetting = (key: keyof typeof interviewSettings) =>
-    setInterviewSettings((s) => ({ ...s, [key]: !s[key] }));
+    setInterviewSettings((s) => {
+      const newVal = !s[key];
+      const updates: Partial<typeof s> = { [key]: newVal };
+      // Mutual exclusivity: Avatar and Manual Interview cannot both be on
+      if (key === "enableVirtualAvatar" && newVal) updates.manualInterview = false;
+      if (key === "manualInterview" && newVal) updates.enableVirtualAvatar = false;
+      return { ...s, ...updates };
+    });
 
   const addCustomQuestion = (q = "") =>
     setCustomQuestions((p) => [...p, { 
