@@ -43,11 +43,13 @@ export default function FeedbackForm({ sessionId, onDone }: Props) {
 
   if (done) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen px-6 text-center">
-        <div className="text-6xl mb-6">🎉</div>
-        <h2 className="text-2xl font-bold text-white mb-2">Thank you!</h2>
-        <p className="text-gray-400 mb-8">Your feedback helps us improve the interview experience.</p>
-        <Button onClick={onDone} className="h-12 px-8 bg-blue-600 hover:bg-blue-700">
+      <div className="flex flex-col items-center justify-center min-h-screen px-6 text-center bg-white">
+        <div className="w-16 h-16 rounded-full bg-green-50 border border-green-100 flex items-center justify-center mb-6">
+          <span className="text-3xl">🎉</span>
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Thank you!</h2>
+        <p className="text-gray-500 mb-8">Your feedback helps us improve the interview experience.</p>
+        <Button onClick={onDone} className="h-12 px-8 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl shadow-md shadow-blue-200">
           Close Interview
         </Button>
       </div>
@@ -55,10 +57,10 @@ export default function FeedbackForm({ sessionId, onDone }: Props) {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen px-6">
+    <div className="flex flex-col items-center justify-center min-h-screen px-6 bg-white">
       <div className="w-full max-w-md">
-        <h2 className="text-3xl font-bold text-white mb-2 text-center">Share Your Experience</h2>
-        <p className="text-gray-400 text-center mb-8">How was your interview experience?</p>
+        <h2 className="text-3xl font-bold text-gray-900 mb-2 text-center">Share Your Experience</h2>
+        <p className="text-gray-500 text-center mb-8">How was your interview experience?</p>
 
         {/* Star rating */}
         <div className="flex justify-center gap-3 mb-8">
@@ -75,7 +77,7 @@ export default function FeedbackForm({ sessionId, onDone }: Props) {
               <Star
                 className="w-10 h-10 transition-colors"
                 fill={(hovered || rating) >= star ? "#facc15" : "none"}
-                stroke={(hovered || rating) >= star ? "#facc15" : "#4b5563"}
+                stroke={(hovered || rating) >= star ? "#facc15" : "#d1d5db"}
               />
             </Button>
           ))}
@@ -84,14 +86,14 @@ export default function FeedbackForm({ sessionId, onDone }: Props) {
         <div className="space-y-4 mb-8">
           {/* Comment */}
           <div>
-            <Label className="block text-gray-300 text-sm font-medium mb-1">
+            <Label className="block text-gray-700 text-sm font-medium mb-1">
               Any comments? (optional)
             </Label>
             <Textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               rows={3}
-              className="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-blue-500 resize-none"
+              className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-blue-500 resize-none"
               placeholder="Share your thoughts about the interview..."
             />
           </div>
@@ -103,7 +105,7 @@ export default function FeedbackForm({ sessionId, onDone }: Props) {
               checked={technicalIssues}
               onCheckedChange={(checked) => setTechnicalIssues(checked === true)}
             />
-            <Label htmlFor="technical-issues" className="text-gray-300 text-sm cursor-pointer">
+            <Label htmlFor="technical-issues" className="text-gray-700 text-sm cursor-pointer">
               I experienced technical issues
             </Label>
           </div>
@@ -115,7 +117,7 @@ export default function FeedbackForm({ sessionId, onDone }: Props) {
               checked={wouldRecommend}
               onCheckedChange={(checked) => setWouldRecommend(checked === true)}
             />
-            <Label htmlFor="would-recommend" className="text-gray-300 text-sm cursor-pointer">
+            <Label htmlFor="would-recommend" className="text-gray-700 text-sm cursor-pointer">
               I would recommend this platform to others
             </Label>
           </div>
@@ -124,7 +126,7 @@ export default function FeedbackForm({ sessionId, onDone }: Props) {
         <Button
           onClick={handleSubmit}
           disabled={rating === 0 || submitting}
-          className="w-full h-12 bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+          className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white font-semibold disabled:opacity-50 rounded-xl shadow-md shadow-blue-200"
         >
           {submitting ? "Submitting..." : "Submit Feedback"}
         </Button>
@@ -132,7 +134,7 @@ export default function FeedbackForm({ sessionId, onDone }: Props) {
         <Button
           variant="ghost"
           onClick={onDone}
-          className="w-full mt-3 text-gray-500 text-sm hover:text-gray-300 transition-colors"
+          className="w-full mt-3 text-gray-400 text-sm hover:text-gray-600 transition-colors"
         >
           Skip
         </Button>

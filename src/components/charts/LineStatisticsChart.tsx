@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   LineChart,
   Line,
@@ -7,77 +7,99 @@ import {
   XAxis,
   YAxis,
   ResponsiveContainer,
+  Legend,
 } from "recharts";
-import ChartTab from "../common/ChartTab";
-
-import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
+import { api } from "@/lib/api";
+
+type ViewMode = "daily" | "weekly" | "monthly";
+
+const chartConfig: ChartConfig = {
+  active: { label: "Active Jobs", color: "#465fff" },
+  finished: { label: "Finished Jobs", color: "#20C997" },
+};
 
 export default function LineStatisticsChart() {
+  const [mode, setMode] = useState<ViewMode>("monthly");
   const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<Record<string, string | number>[]>([]);
 
-  // Simulate loading for 1 second
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api<Record<string, string | number>[]>(
+        `/jobs/jobs-chart?period=${mode}`
+      );
+      setData(res);
+    } catch {
+      setData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [mode]);
+
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 1000);
-    return () => clearTimeout(timer);
-  }, []);
+    fetchData();
+  }, [fetchData]);
 
-  const data = [
-    { month: "Jan", Sales: 180, Revenue: 40 },
-    { month: "Feb", Sales: 190, Revenue: 30 },
-    { month: "Mar", Sales: 170, Revenue: 50 },
-    { month: "Apr", Sales: 160, Revenue: 40 },
-    { month: "May", Sales: 175, Revenue: 55 },
-    { month: "Jun", Sales: 165, Revenue: 40 },
-    { month: "Jul", Sales: 170, Revenue: 70 },
-    { month: "Aug", Sales: 205, Revenue: 100 },
-    { month: "Sep", Sales: 230, Revenue: 110 },
-    { month: "Oct", Sales: 210, Revenue: 120 },
-    { month: "Nov", Sales: 240, Revenue: 150 },
-    { month: "Dec", Sales: 235, Revenue: 140 },
-  ];
-
-  const chartConfig = {
-    Sales: { label: "Sales", color: "#8979FF" },
-    Revenue: { label: "Revenue", color: "#8979FF" },
-  } satisfies ChartConfig;
+  const getButtonClass = (m: ViewMode) =>
+    mode === m
+      ? "shadow-theme-xs text-gray-900 dark:text-white bg-white dark:bg-gray-800"
+      : "text-gray-500 dark:text-gray-400";
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white px-5 pb-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
       <div className="flex flex-col gap-5 mb-6 sm:flex-row sm:justify-between">
         <div className="w-full">
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
-            Statistics
+            Active Jobs
           </h3>
           <p className="mt-1 text-gray-500 text-theme-sm dark:text-gray-400">
-            Target you’ve set for each month
+            {mode === "monthly"
+              ? "Jobs created per month (current year)"
+              : mode === "weekly"
+              ? "Jobs created this week (Mon–Fri)"
+              : "Jobs created today (hourly)"}
           </p>
         </div>
         <div className="flex items-start w-full gap-3 sm:justify-end">
-          <ChartTab />
+          <div className="flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-900">
+            {(["daily", "weekly", "monthly"] as ViewMode[]).map((m) => (
+              <Button
+                key={m}
+                variant="ghost"
+                size="sm"
+                onClick={() => setMode(m)}
+                className={`px-3 py-2 font-medium rounded-md text-theme-sm hover:text-gray-900 dark:hover:text-white ${getButtonClass(m)}`}
+              >
+                {m.charAt(0).toUpperCase() + m.slice(1)}
+              </Button>
+            ))}
+          </div>
         </div>
       </div>
 
       <div className="max-w-full overflow-x-auto custom-scrollbar">
-        <div className="min-w-[1000px] xl:min-w-full h-[310px]">
+        <div className="min-w-[700px] xl:min-w-full h-[310px]">
           {loading ? (
-            // Skeleton while loading
             <Skeleton className="h-full w-full rounded-xl" />
           ) : (
             <ChartContainer config={chartConfig} className="h-full w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart
                   data={data}
-                  margin={{ top: 0, right: 30, left: 0, bottom: 0 }}
+                  margin={{ top: 5, right: 30, left: 0, bottom: 5 }}
                 >
                   <CartesianGrid vertical={false} strokeDasharray="3 3" />
                   <XAxis
-                    dataKey="month"
+                    dataKey="label"
                     tickLine={false}
                     axisLine={false}
                     tickMargin={8}
@@ -88,21 +110,34 @@ export default function LineStatisticsChart() {
                     tick={{ fontSize: 12, fill: "#6B7280" }}
                   />
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  {/* <Line
-                    type="monotone"
-                    dataKey="Sales"
-                    stroke={chartConfig.Sales.color}
-                    strokeWidth={2}
-                    dot={{ r: 3, fill: chartConfig.Sales.color }}
-                    activeDot={{ r: 6 }}
-                  /> */}
                   <Line
                     type="monotone"
-                    dataKey="Revenue"
-                    stroke={chartConfig.Revenue.color}
+                    dataKey="active"
+                    name="active"
+                    stroke={chartConfig.active.color}
                     strokeWidth={2}
-                    dot={{ r: 3, fill: chartConfig.Revenue.color }}
+                    dot={{ r: 3, fill: chartConfig.active.color }}
                     activeDot={{ r: 6 }}
+                    connectNulls
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="finished"
+                    name="finished"
+                    stroke={chartConfig.finished.color}
+                    strokeWidth={2}
+                    dot={{ r: 3, fill: chartConfig.finished.color }}
+                    activeDot={{ r: 6 }}
+                    connectNulls
+                  />
+                  <Legend
+                    verticalAlign="bottom"
+                    height={36}
+                    iconType="circle"
+                    iconSize={8}
+                    formatter={(value: string) =>
+                      chartConfig[value]?.label ?? value
+                    }
                   />
                 </LineChart>
               </ResponsiveContainer>

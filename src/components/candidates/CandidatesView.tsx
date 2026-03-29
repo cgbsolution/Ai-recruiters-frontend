@@ -215,6 +215,20 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
   const [cancelTarget, setCancelTarget] = useState<number | null>(null);
   const [removeTarget, setRemoveTarget] = useState<number | null>(null);
   const [showMatchModal, setShowMatchModal] = useState(false);
+
+  // Candidate quota pre-check
+  const checkCandidateQuota = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await api<{ allowed: boolean; message?: string }>(`/candidates/can-add?job_id=${jobId}`);
+      if (!res.allowed) {
+        notifyError(res.message || "You have exceeded the candidate limit for this job. Please upgrade your plan.");
+        return false;
+      }
+      return true;
+    } catch {
+      return true; // Allow on network error
+    }
+  }, [jobId]);
   const [recomputingIds, setRecomputingIds] = useState<Set<number>>(new Set());
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [interviewUrl, setInterviewUrl] = useState<string | null>(null);
@@ -547,14 +561,14 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
         </div>
 
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          <Button size="sm" onClick={() => setShowAddModal(true)} className="gap-1">
+          <Button size="sm" onClick={async () => { if (await checkCandidateQuota()) setShowAddModal(true); }} className="gap-1">
             <Plus className="w-4 h-4" /> Add Candidate
           </Button>
           <Button
             size="sm"
             variant="outline"
             className="gap-1 bg-yellow-500 hover:bg-yellow-600 text-white border-yellow-500"
-            onClick={() => setShowUploadModal(true)}
+            onClick={async () => { if (await checkCandidateQuota()) setShowUploadModal(true); }}
           >
             <Upload className="w-4 h-4" /> Upload Resumes
           </Button>
@@ -562,7 +576,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
             size="sm"
             variant="outline"
             className="gap-1 bg-purple-600 hover:bg-purple-700 text-white border-purple-600"
-            onClick={() => setShowMatchModal(true)}
+            onClick={async () => { if (await checkCandidateQuota()) setShowMatchModal(true); }}
           >
             <Database className="w-4 h-4" /> Match From Database
           </Button>
@@ -1091,7 +1105,10 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
       />
       <UploadResumesModal
         open={showUploadModal}
-        onClose={() => setShowUploadModal(false)}
+        onClose={() => {
+          setShowUploadModal(false);
+          fetchCandidates(); // Full refresh from server after modal closes
+        }}
         jobId={jobId}
         onUploaded={handleResumesUploaded}
       />

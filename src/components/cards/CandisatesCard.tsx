@@ -69,6 +69,7 @@ const CandidateCards = () => {
   const [jobsLoading, setJobsLoading] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     const fetchCandidates = async () => {
       setLoading(true);
       try {
@@ -77,14 +78,15 @@ const CandidateCards = () => {
             ? "/candidates/"
             : `/candidates/?status=${filter}`;
         const data = await api<Candidate[]>(path);
-        setCandidates(data);
+        if (!cancelled) setCandidates(data);
       } catch (err) {
-        console.error("Error fetching candidates:", err);
+        if (!cancelled) console.error("Error fetching candidates:", err);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     fetchCandidates();
+    return () => { cancelled = true; };
   }, [filter]);
 
   const formatDate = (iso: string) => {

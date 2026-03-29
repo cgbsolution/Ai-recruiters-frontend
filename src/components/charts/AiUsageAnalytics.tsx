@@ -128,24 +128,26 @@ const barChartConfig: ChartConfig = Object.fromEntries(
   FEATURES.map((f) => [f.key, { label: f.label, color: f.color }])
 );
 
-export default function AiUsageAnalytics() {
+export default function AiUsageAnalytics({ orgId }: { orgId?: number } = {}) {
   const [mode, setMode] = useState<ViewMode>("monthly");
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [barData, setBarData] = useState<Record<string, string | number>[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const orgParam = orgId ? `&org_id=${orgId}` : "";
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const costEndpoint =
         mode === "monthly"
-          ? "/credits/cost/monthly"
+          ? `/credits/cost/monthly?_=1${orgParam}`
           : mode === "weekly"
-          ? "/credits/cost/weekly"
-          : "/credits/cost/daily";
+          ? `/credits/cost/weekly?_=1${orgParam}`
+          : `/credits/cost/daily?_=1${orgParam}`;
 
       const [summaryRes, costRes] = await Promise.all([
-        api<SummaryData>(`/credits/summary?period=${mode}`),
+        api<SummaryData>(`/credits/summary?period=${mode}${orgParam}`),
         api<Record<string, unknown>[]>(costEndpoint),
       ]);
 
@@ -157,7 +159,7 @@ export default function AiUsageAnalytics() {
     } finally {
       setLoading(false);
     }
-  }, [mode]);
+  }, [mode, orgParam]);
 
   useEffect(() => {
     fetchData();

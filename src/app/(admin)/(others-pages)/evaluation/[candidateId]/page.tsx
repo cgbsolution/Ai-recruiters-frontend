@@ -143,7 +143,7 @@ interface EvaluationData {
     skills_ratings: SkillRating[];
   } | null;
   violations: ViolationEntry[];
-  screenshots: { file_path: string; captured_at: string | null }[];
+  screenshots: { file_path: string; captured_at: string | null; face_count?: number | null }[];
   session: {
     id: number;
     started_at: string | null;
@@ -873,7 +873,7 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
 
         {/* ═══════════════════════ TAB: FACE DETECTION ═════════════════════ */}
         <TabsContent value="face-detection" className="mt-6">
-          <FaceDetectionTab violations={violations} screenshots={screenshots} timezone={tz} />
+          <FaceDetectionTab screenshots={screenshots} timezone={tz} />
         </TabsContent>
       </Tabs>
 
@@ -919,20 +919,39 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
 
 // ── Face Detection Tab ───────────────────────────────────────────────────────
 
-function FaceDetectionTab({ violations, screenshots, timezone }: { violations: ViolationEntry[]; screenshots: { file_path: string; captured_at: string | null }[]; timezone: string }) {
+function FaceDetectionTab({ screenshots, timezone }: { screenshots: { file_path: string; captured_at: string | null; face_count?: number | null }[]; timezone: string }) {
   const [subTab, setSubTab] = useState("single");
 
-  const faceViolations = useMemo(() => {
-    const multiple: ViolationEntry[] = [];
-    const none: ViolationEntry[] = [];
-    for (const v of violations) {
-      if (v.type === "face_not_detected") none.push(v);
-      else if (v.type === "multiple_faces") multiple.push(v);
-    }
-    return { multiple, none };
-  }, [violations]);
+  // Classify screenshots by face_count from Python model
+  const classified = useMemo(() => {
+    const single: typeof screenshots = [];
+    const multiple: typeof screenshots = [];
+    const none: typeof screenshots = [];
 
-  const renderGrid = (items: ViolationEntry[], emptyMsg: string) => {
+    for (const ss of screenshots) {
+      const fc = ss.face_count;
+      if (fc === null || fc === undefined || fc === 1) {
+        single.push(ss);
+      } else if (fc === 0) {
+        none.push(ss);
+      } else {
+        multiple.push(ss);
+      }
+    }
+    return { single, multiple, none };
+  }, [screenshots]);
+
+  const formatTs = (captured_at: string | null) => {
+    if (!captured_at) return "";
+    return new Date(captured_at).toLocaleString("en-IN", {
+      timeZone: timezone,
+      month: "short", day: "numeric", year: "numeric",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: true,
+    });
+  };
+
+  const renderGrid = (items: typeof screenshots, emptyMsg: string) => {
     if (items.length === 0) {
       return (
         <div className="py-16 text-center text-gray-400">
@@ -943,15 +962,17 @@ function FaceDetectionTab({ violations, screenshots, timezone }: { violations: V
     }
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        {items.map((item, idx) => (
-          <div key={idx} className="relative bg-gray-100 rounded-lg border border-gray-200 overflow-hidden aspect-video flex items-center justify-center">
-            <div className="text-center p-2">
-              <AlertTriangle className="w-8 h-8 mx-auto mb-1 text-yellow-400" />
-              <p className="text-xs text-gray-500 font-medium">{VIOLATION_LABELS[item.type] ?? item.type}</p>
-            </div>
-            {item.occurred_at && (
+        {items.map((ss, idx) => (
+          <div key={idx} className="relative bg-gray-100 rounded-lg border border-gray-200 overflow-hidden aspect-video">
+            <img
+              src={`${API_STATIC}${ss.file_path}`}
+              alt={`Frame ${idx + 1}`}
+              className="w-full h-full object-cover"
+              loading="lazy"
+            />
+            {ss.captured_at && (
               <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] px-2 py-1 text-center">
-                {new Date(item.occurred_at).toLocaleTimeString()}
+                {formatTs(ss.captured_at)}
               </div>
             )}
           </div>
@@ -967,43 +988,25 @@ function FaceDetectionTab({ violations, screenshots, timezone }: { violations: V
 
         <Tabs value={subTab} onValueChange={setSubTab}>
           <TabsList className="mb-4">
-            <TabsTrigger value="single" className="text-xs sm:text-sm">Single Face Detected</TabsTrigger>
-            <TabsTrigger value="multiple" className="text-xs sm:text-sm">Multiple Faces ({faceViolations.multiple.length})</TabsTrigger>
-            <TabsTrigger value="none" className="text-xs sm:text-sm">No Face ({faceViolations.none.length})</TabsTrigger>
+            <TabsTrigger value="single" className="text-xs sm:text-sm">
+              Single Face Detected ({classified.single.length})
+            </TabsTrigger>
+            <TabsTrigger value="multiple" className="text-xs sm:text-sm">
+              Multiple Faces ({classified.multiple.length})
+            </TabsTrigger>
+            <TabsTrigger value="none" className="text-xs sm:text-sm">
+              No Face ({classified.none.length})
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="single">
-            {screenshots.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                {screenshots.map((ss, idx) => (
-                  <div key={idx} className="relative bg-gray-100 rounded-lg border border-gray-200 overflow-hidden aspect-video">
-                    <img
-                      src={`${API_STATIC}${ss.file_path}`}
-                      alt={`Frame ${idx + 1}`}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                    />
-                    {ss.captured_at && (
-                      <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] px-2 py-1 text-center">
-                        {new Date(ss.captured_at).toLocaleString("en-IN", { timeZone: timezone, month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true })}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="py-16 text-center text-gray-400">
-                <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-40" />
-                <p className="text-base font-medium">No captured frames available</p>
-                <p className="text-sm mt-1">Face detection frames will appear here after the interview is completed.</p>
-              </div>
-            )}
+            {renderGrid(classified.single, "No single-face frames available")}
           </TabsContent>
           <TabsContent value="multiple">
-            {renderGrid(faceViolations.multiple, "No multiple face events detected")}
+            {renderGrid(classified.multiple, "No multiple face events detected")}
           </TabsContent>
           <TabsContent value="none">
-            {renderGrid(faceViolations.none, "No missing face events detected")}
+            {renderGrid(classified.none, "No missing face events detected")}
           </TabsContent>
         </Tabs>
       </CardContent>

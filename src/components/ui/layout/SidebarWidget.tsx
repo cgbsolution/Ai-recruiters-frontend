@@ -8,7 +8,7 @@ export default function SidebarWidget() {
   const { openModal } = useGlobalModal();
 
   return (
-    <Button size="sm" variant="primary" onClick={openModal}>
+    <Button size="sm" variant="primary" className="w-full mt-4" onClick={openModal}>
       <PlusIcon />
       Create Opening
     </Button>

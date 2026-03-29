@@ -14,50 +14,38 @@ export default function WarningStep({ onConfirm }: Props) {
   const [confirmed, setConfirmed] = useState(false);
 
   const warnings = [
-    {
-      icon: <Monitor className="w-4 h-4 text-red-400" />,
-      text: "Do NOT switch browser tabs or windows during the interview.",
-    },
-    {
-      icon: <Eye className="w-4 h-4 text-red-400" />,
-      text: "Keep your face clearly visible in the webcam at all times.",
-    },
-    {
-      icon: <Tablet className="w-4 h-4 text-red-400" />,
-      text: "Only one person should be visible in the frame.",
-    },
-    {
-      icon: <Shield className="w-4 h-4 text-red-400" />,
-      text: "Exiting fullscreen mode will be flagged as a violation.",
-    },
+    { icon: <Monitor className="w-4 h-4 text-red-500" />, text: "Do NOT switch browser tabs or windows during the interview." },
+    { icon: <Eye className="w-4 h-4 text-red-500" />, text: "Keep your face clearly visible in the webcam at all times." },
+    { icon: <Tablet className="w-4 h-4 text-red-500" />, text: "Only one person should be visible in the frame." },
+    { icon: <Shield className="w-4 h-4 text-red-500" />, text: "Exiting fullscreen mode will be flagged as a violation." },
   ];
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen px-6">
+    <div className="flex flex-col items-center justify-center flex-1 px-6 py-10">
       <div className="w-full max-w-md">
         <div className="flex items-center justify-center mb-6">
-          <div className="w-16 h-16 rounded-full bg-red-900/40 flex items-center justify-center">
-            <AlertTriangle className="w-8 h-8 text-red-400" />
+          <div className="w-16 h-16 rounded-full bg-red-50 border border-red-100 flex items-center justify-center">
+            <AlertTriangle className="w-8 h-8 text-red-500" />
           </div>
         </div>
 
-        <h2 className="text-3xl font-bold text-white mb-2 text-center">Zero Tolerance Policy</h2>
-        <p className="text-gray-400 text-center mb-8">
+        <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">Zero Tolerance Policy</h2>
+        <p className="text-gray-500 text-center mb-8 text-sm">
           This interview uses AI monitoring. Violations will be recorded and may affect your result.
         </p>
 
         <div className="space-y-3 mb-6">
           {warnings.map((w, i) => (
-            <div key={i} className="flex items-start gap-3 bg-red-950/20 border border-red-900/40 rounded-xl px-4 py-3">
-              <div className="mt-0.5 flex-shrink-0">{w.icon}</div>
-              <p className="text-gray-300 text-sm">{w.text}</p>
+            <div key={i} className="flex items-start gap-3 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
+              <div className="mt-0.5 shrink-0">{w.icon}</div>
+              <p className="text-gray-700 text-sm">{w.text}</p>
             </div>
           ))}
         </div>
 
-        <div className="bg-gray-900 rounded-xl p-4 mb-6">
-          <p className="text-gray-400 text-sm text-center">
-            After <span className="text-red-400 font-semibold">5 violations</span>, your interview will be automatically terminated.
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-6 text-center">
+          <p className="text-gray-600 text-sm">
+            After <span className="text-red-500 font-semibold">5 violations</span>, your interview will be automatically terminated.
           </p>
         </div>
 
@@ -68,7 +56,7 @@ export default function WarningStep({ onConfirm }: Props) {
             onCheckedChange={(checked) => setConfirmed(checked === true)}
             className="mt-1"
           />
-          <Label htmlFor="confirm-policy" className="text-gray-300 text-sm cursor-pointer">
+          <Label htmlFor="confirm-policy" className="text-gray-600 text-sm cursor-pointer leading-relaxed">
             I understand the anti-cheating policy and agree to conduct this interview honestly and fairly.
           </Label>
         </div>
@@ -76,7 +64,7 @@ export default function WarningStep({ onConfirm }: Props) {
         <Button
           onClick={onConfirm}
           disabled={!confirmed}
-          className="w-full h-12 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white rounded-xl disabled:opacity-50"
         >
           Begin Interview
         </Button>

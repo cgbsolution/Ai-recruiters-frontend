@@ -72,14 +72,14 @@ export default function EmailVerifyStep({
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen px-6 py-10">
+    <div className="flex flex-col items-center justify-center min-h-screen px-6 py-10 bg-white">
       <div className="w-full max-w-md">
         {/* Go Back */}
         <Button
           type="button"
           variant="ghost"
           onClick={onBack}
-          className="flex items-center gap-1.5 text-gray-400 hover:text-white text-sm mb-8 transition-colors px-0"
+          className="flex items-center gap-1.5 text-gray-500 hover:text-gray-900 text-sm mb-8 transition-colors px-0"
         >
           <ArrowLeft className="w-4 h-4" />
           Go Back
@@ -87,31 +87,31 @@ export default function EmailVerifyStep({
 
         {/* Icon */}
         <div className="flex justify-center mb-6">
-          <div className="w-16 h-16 rounded-full bg-blue-600/20 flex items-center justify-center">
-            <ShieldCheck className="w-8 h-8 text-blue-400" />
+          <div className="w-16 h-16 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center">
+            <ShieldCheck className="w-8 h-8 text-blue-500" />
           </div>
         </div>
 
-        <h2 className="text-3xl font-bold text-white mb-2 text-center">
+        <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">
           Verify Your Access
         </h2>
-        <p className="text-gray-400 text-center mb-8">
+        <p className="text-gray-500 text-center mb-8 text-sm">
           Enter the email address that was used when you were invited for this interview.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <Label className="text-gray-300">
-              Email Address <span className="text-red-400">*</span>
+            <Label className="text-gray-700 text-sm font-medium">
+              Email Address <span className="text-red-500">*</span>
             </Label>
-            <div className="relative mt-1">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+            <div className="relative mt-1.5">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <Input
                 type="email"
                 placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="h-12 pl-10 bg-gray-900 border-gray-700 text-white placeholder:text-gray-500"
+                className="h-12 pl-10 bg-white border-gray-300 text-gray-900 placeholder:text-gray-400 rounded-xl focus:border-blue-500 focus:ring-blue-500"
                 required
                 autoFocus
               />
@@ -119,15 +119,15 @@ export default function EmailVerifyStep({
           </div>
 
           {errorMsg && (
-            <div className="bg-red-950/30 border border-red-800/40 rounded-lg px-4 py-3">
-              <p className="text-red-300 text-sm">{errorMsg}</p>
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+              <p className="text-red-600 text-sm">{errorMsg}</p>
             </div>
           )}
 
           <Button
             type="submit"
             disabled={loading || !email.trim()}
-            className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50"
+            className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white font-semibold disabled:opacity-50 rounded-xl shadow-md shadow-blue-200"
           >
             {loading ? (
               <>
@@ -139,7 +139,7 @@ export default function EmailVerifyStep({
           </Button>
         </form>
 
-        <p className="text-gray-500 text-xs text-center mt-6">
+        <p className="text-gray-400 text-xs text-center mt-6">
           Don&apos;t have an invitation? You can still apply for this job after entering your email.
         </p>
       </div>

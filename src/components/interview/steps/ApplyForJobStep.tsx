@@ -124,18 +124,18 @@ export default function ApplyForJobStep({
   // Success state
   if (submitted) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen px-6 py-10">
+      <div className="flex flex-col items-center justify-center min-h-screen px-6 py-10 bg-white">
         <div className="w-full max-w-md text-center">
-          <div className="w-20 h-20 rounded-full bg-green-600/20 flex items-center justify-center mx-auto mb-6">
-            <CheckCircle className="w-10 h-10 text-green-400" />
+          <div className="w-20 h-20 rounded-full bg-green-50 border border-green-100 flex items-center justify-center mx-auto mb-6">
+            <CheckCircle className="w-10 h-10 text-green-500" />
           </div>
-          <h2 className="text-3xl font-bold text-white mb-3">
+          <h2 className="text-3xl font-bold text-gray-900 mb-3">
             Application Submitted
           </h2>
-          <p className="text-gray-400 mb-6">{resultMessage}</p>
-          <div className="bg-gray-900 rounded-xl p-4 text-left">
+          <p className="text-gray-500 mb-6">{resultMessage}</p>
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-left">
             <p className="text-sm text-gray-500 mb-1">What happens next?</p>
-            <ul className="text-sm text-gray-400 space-y-2">
+            <ul className="text-sm text-gray-600 space-y-2">
               <li>1. Your resume will be reviewed by the recruiter</li>
               <li>2. If shortlisted, you&apos;ll receive an interview invitation via email</li>
               <li>3. Use the link in the invitation email to start your AI interview</li>
@@ -147,14 +147,14 @@ export default function ApplyForJobStep({
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen px-6 py-10">
+    <div className="flex flex-col items-center justify-center min-h-screen px-6 py-10 bg-white">
       <div className="w-full max-w-md">
         {/* Go Back */}
         <Button
           type="button"
           variant="ghost"
           onClick={onBack}
-          className="flex items-center gap-1.5 text-gray-400 hover:text-white text-sm mb-6 transition-colors px-0"
+          className="flex items-center gap-1.5 text-gray-500 hover:text-gray-900 text-sm mb-6 transition-colors px-0"
         >
           <ArrowLeft className="w-4 h-4" />
           Go Back
@@ -162,100 +162,100 @@ export default function ApplyForJobStep({
 
         {/* Header */}
         <div className="flex justify-center mb-6">
-          <div className="w-16 h-16 rounded-full bg-purple-600/20 flex items-center justify-center">
-            <Briefcase className="w-8 h-8 text-purple-400" />
+          <div className="w-16 h-16 rounded-full bg-purple-50 border border-purple-100 flex items-center justify-center">
+            <Briefcase className="w-8 h-8 text-purple-500" />
           </div>
         </div>
 
-        <h2 className="text-3xl font-bold text-white mb-2 text-center">
+        <h2 className="text-3xl font-bold text-gray-900 mb-2 text-center">
           Apply for this Job
         </h2>
-        <p className="text-gray-400 text-center mb-2">
-          <span className="text-blue-400 font-medium">{jobTitle}</span>
+        <p className="text-gray-500 text-center mb-2">
+          <span className="text-blue-600 font-medium">{jobTitle}</span>
         </p>
-        <p className="text-gray-500 text-sm text-center mb-8">
+        <p className="text-gray-400 text-sm text-center mb-8">
           Upload your resume and we&apos;ll notify you if you&apos;re selected for an interview.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Name */}
           <div>
-            <Label className="text-gray-300">
-              Full Name <span className="text-red-400">*</span>
+            <Label className="text-gray-700 text-sm font-medium">
+              Full Name <span className="text-red-500">*</span>
             </Label>
-            <div className="relative mt-1">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+            <div className="relative mt-1.5">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <Input
                 type="text"
                 placeholder="Your full name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="h-12 pl-10 bg-gray-900 border-gray-700 text-white placeholder:text-gray-500"
+                className="h-12 pl-10 bg-white border-gray-300 text-gray-900 placeholder:text-gray-400 rounded-xl focus:border-blue-500 focus:ring-blue-500"
                 required
               />
             </div>
             {errors.name && (
-              <p className="text-red-400 text-xs mt-1">{errors.name}</p>
+              <p className="text-red-500 text-xs mt-1">{errors.name}</p>
             )}
           </div>
 
           {/* Email (read-only) */}
           <div>
-            <Label className="text-gray-300">Email Address</Label>
-            <div className="relative mt-1">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+            <Label className="text-gray-700 text-sm font-medium">Email Address</Label>
+            <div className="relative mt-1.5">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <Input
                 type="email"
                 value={email}
                 disabled
-                className="h-12 pl-10 bg-gray-800 border-gray-700 text-gray-400"
+                className="h-12 pl-10 bg-gray-100 border-gray-300 text-gray-500 rounded-xl"
               />
             </div>
           </div>
 
           {/* Phone */}
           <div>
-            <Label className="text-gray-300">Phone Number</Label>
-            <div className="relative mt-1">
-              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+            <Label className="text-gray-700 text-sm font-medium">Phone Number</Label>
+            <div className="relative mt-1.5">
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <Input
                 type="tel"
                 placeholder="Optional"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="h-12 pl-10 bg-gray-900 border-gray-700 text-white placeholder:text-gray-500"
+                className="h-12 pl-10 bg-white border-gray-300 text-gray-900 placeholder:text-gray-400 rounded-xl focus:border-blue-500 focus:ring-blue-500"
               />
             </div>
             {errors.phone && (
-              <p className="text-red-400 text-xs mt-1">{errors.phone}</p>
+              <p className="text-red-500 text-xs mt-1">{errors.phone}</p>
             )}
           </div>
 
           {/* Resume Upload */}
           <div>
-            <Label className="text-gray-300">
-              Resume <span className="text-red-400">*</span>
+            <Label className="text-gray-700 text-sm font-medium">
+              Resume <span className="text-red-500">*</span>
             </Label>
-            <div className="mt-1">
+            <div className="mt-1.5">
               {resumeFile ? (
-                <div className="flex items-center gap-3 bg-gray-900 border border-gray-700 rounded-lg px-4 py-3">
-                  <FileText className="w-5 h-5 text-blue-400 flex-shrink-0" />
-                  <span className="text-sm text-gray-300 truncate flex-1">
+                <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+                  <FileText className="w-5 h-5 text-blue-500 flex-shrink-0" />
+                  <span className="text-sm text-gray-700 truncate flex-1">
                     {resumeFile.name}
                   </span>
                   {uploading ? (
-                    <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+                    <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
                   ) : resumePath ? (
-                    <CheckCircle className="w-4 h-4 text-green-400" />
+                    <CheckCircle className="w-4 h-4 text-green-500" />
                   ) : null}
                 </div>
               ) : (
-                <label className="flex flex-col items-center gap-2 bg-gray-900 border-2 border-dashed border-gray-700 rounded-lg px-4 py-6 cursor-pointer hover:border-gray-500 transition-colors">
-                  <Upload className="w-6 h-6 text-gray-500" />
-                  <span className="text-sm text-gray-400">
+                <label className="flex flex-col items-center gap-2 bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl px-4 py-6 cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-colors">
+                  <Upload className="w-6 h-6 text-gray-400" />
+                  <span className="text-sm text-gray-500">
                     Click to upload your resume
                   </span>
-                  <span className="text-xs text-gray-600">
+                  <span className="text-xs text-gray-400">
                     PDF, DOC, or DOCX
                   </span>
                   <input
@@ -268,21 +268,21 @@ export default function ApplyForJobStep({
               )}
             </div>
             {errors.resume && (
-              <p className="text-red-400 text-xs mt-1">{errors.resume}</p>
+              <p className="text-red-500 text-xs mt-1">{errors.resume}</p>
             )}
           </div>
 
           {/* Form-level error */}
           {errors.form && (
-            <div className="bg-red-950/30 border border-red-800/40 rounded-lg px-4 py-3">
-              <p className="text-red-300 text-sm">{errors.form}</p>
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+              <p className="text-red-600 text-sm">{errors.form}</p>
             </div>
           )}
 
           <Button
             type="submit"
             disabled={submitting || uploading || !resumePath}
-            className="w-full h-12 bg-purple-600 hover:bg-purple-700 text-white font-semibold disabled:opacity-50"
+            className="w-full h-12 bg-purple-600 hover:bg-purple-500 text-white font-semibold disabled:opacity-50 rounded-xl shadow-md shadow-purple-200"
           >
             {submitting ? (
               <>

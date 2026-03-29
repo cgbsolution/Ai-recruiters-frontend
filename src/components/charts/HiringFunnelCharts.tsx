@@ -1,129 +1,143 @@
 "use client";
-import { useState, useEffect } from "react";
-import { MoreDotIcon } from "@/components/ui/icons";
-import { DropdownItem } from "../ui/dropdown/DropdownItem";
-import { Dropdown } from "../ui/dropdown/Dropdown";
-
+import { useState, useEffect, useCallback } from "react";
+import {
+  BarChart,
+  Bar,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  ResponsiveContainer,
+  Legend,
+} from "recharts";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import {
   ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import { BarChart, Bar, CartesianGrid, XAxis, YAxis } from "recharts";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api";
+
+type ViewMode = "monthly" | "weekly";
+
+const STAGES = [
+  { key: "applied", label: "Applied", color: "#FFA94D" },
+  { key: "interview", label: "Interview", color: "#339AF0" },
+  { key: "offered", label: "Offered", color: "#CC5DE8" },
+  { key: "selected", label: "Selected", color: "#51CF66" },
+  { key: "hired", label: "Hired", color: "#20C997" },
+  { key: "rejected", label: "Rejected", color: "#FF6B6B" },
+] as const;
+
+const chartConfig: ChartConfig = Object.fromEntries(
+  STAGES.map((s) => [s.key, { label: s.label, color: s.color }])
+);
 
 export default function HiringFunnelCharts() {
-  const [isOpen, setIsOpen] = useState(false);
+  const [mode, setMode] = useState<ViewMode>("monthly");
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any[]>([]);
-  const [heights, setHeights] = useState<number[]>([]);
+  const [data, setData] = useState<Record<string, string | number>[]>([]);
 
-  function toggleDropdown() {
-    setIsOpen(!isOpen);
-  }
-
-  function closeDropdown() {
-    setIsOpen(false);
-  }
-
-  // Simulate data loading (replace with your API call later)
-  useEffect(() => {
-    setTimeout(() => {
-      setData([
-        { month: "Jan", sales: 168 },
-        { month: "Feb", sales: 385 },
-        { month: "Mar", sales: 201 },
-        { month: "Apr", sales: 298 },
-        { month: "May", sales: 187 },
-        { month: "Jun", sales: 195 },
-        { month: "Jul", sales: 291 },
-        { month: "Aug", sales: 110 },
-        { month: "Sep", sales: 215 },
-        { month: "Oct", sales: 390 },
-        { month: "Nov", sales: 280 },
-        { month: "Dec", sales: 112 },
-      ]);
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api<Record<string, string | number>[]>(
+        `/jobs/hiring-funnel?period=${mode}`
+      );
+      setData(res);
+    } catch {
+      setData([]);
+    } finally {
       setLoading(false);
-    }, 1000); // fake 2s loading
-    // generate random only on client
-    setHeights(Array.from({ length: 30 }, () => 40 + Math.random() * 100));
-  }, []);
+    }
+  }, [mode]);
 
-  const chartConfig = {
-    sales: {
-      label: "Sales",
-      color: "#465fff",
-    },
-  } satisfies ChartConfig;
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const getButtonClass = (m: ViewMode) =>
+    mode === m
+      ? "shadow-theme-xs text-gray-900 dark:text-white bg-white dark:bg-gray-800"
+      : "text-gray-500 dark:text-gray-400";
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white px-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
-      <div className="flex items-center justify-between">
-        <div className="pb-3">
-          <h3 className="text-xl font-semibold text-gray-800 dark:text-white/90 ">
+    <div className="rounded-2xl border border-gray-200 bg-white px-5 pb-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
+      <div className="flex flex-col gap-5 mb-6 sm:flex-row sm:justify-between">
+        <div className="w-full">
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
             Hiring Funnel
           </h3>
-          <p className="text-sm text-gray-400 dark:text-gray-400 sm:text-base">
-            Track candidate progression through stages
+          <p className="mt-1 text-gray-500 text-theme-sm dark:text-gray-400">
+            {mode === "monthly"
+              ? "Candidate progression by month (current year)"
+              : "Candidate progression this week (Mon–Fri)"}
           </p>
         </div>
-        <div className="relative inline-block">
-          <Button onClick={toggleDropdown} variant="ghost" size="icon" className="dropdown-toggle">
-            <MoreDotIcon className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-300" />
-          </Button>
-          <Dropdown
-            isOpen={isOpen}
-            onClose={closeDropdown}
-            className="w-40 p-2"
-          >
-            <DropdownItem
-              onItemClick={closeDropdown}
-              className="flex w-full font-normal text-left text-gray-500 rounded-lg hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
-            >
-              View More
-            </DropdownItem>
-            <DropdownItem
-              onItemClick={closeDropdown}
-              className="flex w-full font-normal text-left text-gray-500 rounded-lg hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
-            >
-              Delete
-            </DropdownItem>
-          </Dropdown>
+        <div className="flex items-start w-full gap-3 sm:justify-end">
+          <div className="flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-900">
+            {(["monthly", "weekly"] as ViewMode[]).map((m) => (
+              <Button
+                key={m}
+                variant="ghost"
+                size="sm"
+                onClick={() => setMode(m)}
+                className={`px-3 py-2 font-medium rounded-md text-theme-sm hover:text-gray-900 dark:hover:text-white ${getButtonClass(m)}`}
+              >
+                {m.charAt(0).toUpperCase() + m.slice(1)}
+              </Button>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="max-w-full overflow-x-auto custom-scrollbar mt-4">
-        <div className="-ml-2 min-w-[650px] xl:min-w-full">
+      <div className="max-w-full overflow-x-auto custom-scrollbar">
+        <div className="min-w-[650px] xl:min-w-full h-[300px]">
           {loading ? (
-            <div className="flex items-end gap-2 h-[180px]">
-              {(heights.length ? heights : Array(30).fill(80)).map((h, i) => (
-                <Skeleton
-                  key={i}
-                  className="flex-1 rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"
-                  style={{ height: `${h}px` }}
-                />
-              ))}
-            </div>
+            <Skeleton className="h-full w-full rounded-xl" />
           ) : (
             <ChartContainer config={chartConfig} className="h-full w-full">
-              <BarChart data={data}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="month"
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                />
-                <YAxis tickLine={false} axisLine={false} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar
-                  dataKey="sales"
-                  fill={chartConfig.sales.color}
-                  radius={[5, 5, 0, 0]}
-                />
-              </BarChart>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={data}
+                  margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                >
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    tick={{ fontSize: 11 }}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 12, fill: "#6B7280" }}
+                  />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  {STAGES.map((s) => (
+                    <Bar
+                      key={s.key}
+                      dataKey={s.key}
+                      name={s.label}
+                      stackId="funnel"
+                      fill={s.color}
+                      radius={[0, 0, 0, 0]}
+                    />
+                  ))}
+                  <Legend
+                    verticalAlign="bottom"
+                    height={36}
+                    iconType="circle"
+                    iconSize={8}
+                    formatter={(value: string) =>
+                      chartConfig[value]?.label ?? value
+                    }
+                  />
+                </BarChart>
+              </ResponsiveContainer>
             </ChartContainer>
           )}
         </div>

@@ -79,6 +79,7 @@ export default function ResumeDatabaseView() {
   const [clearing, setClearing] = useState(false);
   const [editTarget, setEditTarget] = useState<ResumeItem | null>(null);
   const [reparsingIds, setReparsingIds] = useState<Set<number>>(new Set());
+  const [hasWriteAccess, setHasWriteAccess] = useState(true); // assume true until checked
 
   const fetchResumes = useCallback(async () => {
     setLoading(true);
@@ -119,6 +120,13 @@ export default function ResumeDatabaseView() {
   useEffect(() => {
     fetchStats();
   }, [fetchStats]);
+
+  // Check resume database write permission
+  useEffect(() => {
+    api<{ allowed: boolean }>("/resume-database/permissions")
+      .then((res) => setHasWriteAccess(res.allowed))
+      .catch(() => setHasWriteAccess(true));
+  }, []);
 
   const handleSearch = () => {
     setPage(1);
@@ -245,19 +253,29 @@ export default function ResumeDatabaseView() {
           </p>
         </div>
         <div className="flex gap-2">
-          {stats && stats.total > 0 && (
+          {stats && stats.total > 0 && hasWriteAccess && (
             <Button variant="outline" onClick={() => setShowClearAll(true)} className="gap-2 text-red-600 border-red-200 hover:bg-red-50">
               <Trash className="w-4 h-4" />
               Clear All
             </Button>
           )}
-          {stats && stats.failed > 0 && (
+          {stats && stats.failed > 0 && hasWriteAccess && (
             <Button variant="outline" onClick={handleCleanup} className="gap-2">
               <Sparkles className="w-4 h-4" />
               Clean Up ({stats.failed})
             </Button>
           )}
-          <Button onClick={() => setShowUpload(true)} className="gap-2">
+          <Button
+            onClick={() => {
+              if (!hasWriteAccess) {
+                notifyError("You do not have permission to perform this action. Please contact your admin.");
+                return;
+              }
+              setShowUpload(true);
+            }}
+            className="gap-2"
+            variant={hasWriteAccess ? "default" : "outline"}
+          >
             <Upload className="w-4 h-4" />
             Upload Resumes
           </Button>
@@ -344,7 +362,13 @@ export default function ResumeDatabaseView() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setShowUpload(true)}
+                onClick={() => {
+                  if (!hasWriteAccess) {
+                    notifyError("You do not have permission to upload resumes. Please contact your admin.");
+                    return;
+                  }
+                  setShowUpload(true);
+                }}
                 className="mt-2 gap-1"
               >
                 <Upload className="w-4 h-4" /> Upload Resumes

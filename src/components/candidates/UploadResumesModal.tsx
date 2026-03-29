@@ -18,11 +18,11 @@ interface UploadResumesModalProps {
   onUploaded: (candidates: any[]) => void;
 }
 
-type ParseStatus = "pending" | "processing" | "completed" | "failed";
+type ParseStatus = "uploading" | "pending" | "processing" | "completed" | "failed";
 
-interface CandidateStatus {
+interface CandidateTrack {
   id: number;
-  candidate_id?: number;
+  fileName: string;
   name: string;
   email: string;
   parsing_status: ParseStatus;
@@ -41,9 +41,11 @@ export default function UploadResumesModal({
   const [dragOver, setDragOver] = useState(false);
 
   // After upload: track parsing status per candidate
-  const [candidates, setCandidates] = useState<CandidateStatus[]>([]);
+  const [candidates, setCandidates] = useState<CandidateTrack[]>([]);
   const [polling, setPolling] = useState(false);
+  const [allDone, setAllDone] = useState(false);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
+  const notifiedRef = useRef<Set<number>>(new Set());
 
   const addFiles = (newFiles: FileList | null) => {
     if (!newFiles) return;
@@ -64,43 +66,51 @@ export default function UploadResumesModal({
     addFiles(e.dataTransfer.files);
   }, []);
 
-  // Track which candidates we've already sent to parent as completed
-  const notifiedRef = useRef<Set<number>>(new Set());
-
   // Poll parsing status for all uploaded candidates
   const pollStatuses = useCallback(async (ids: number[]) => {
     try {
       const statuses = await Promise.all(
         ids.map((id) =>
-          api<CandidateStatus>(`/candidates/${id}/parsing-status`).catch(() => null)
+          api<any>(`/candidates/${id}/parsing-status`).catch(() => null)
         )
       );
 
-      const updated = statuses.filter(Boolean) as CandidateStatus[];
+      const updated = statuses.filter(Boolean);
+
+      // Update modal tracking state — mark deleted candidates (404) as failed
       setCandidates((prev) =>
-        prev.map((c) => {
-          const fresh = updated.find((u) => u.candidate_id === c.id || (u as any).candidate_id === c.id);
+        prev.map((c, idx) => {
+          const fresh = updated.find((u: any) => u.candidate_id === c.id);
           if (fresh) {
             return {
               ...c,
-              parsing_status: (fresh as any).parsing_status,
-              name: (fresh as any).name || c.name,
-              email: (fresh as any).email || c.email,
-              resume_fit_score: (fresh as any).resume_fit_score,
+              parsing_status: fresh.parsing_status as ParseStatus,
+              name: fresh.name || c.name,
+              email: fresh.email || c.email,
+              resume_fit_score: fresh.resume_fit_score,
             };
+          }
+          // If status returned null (404) and candidate was processing/pending,
+          // it was deleted due to parse failure
+          if (
+            statuses[idx] === null &&
+            c.parsing_status !== "completed" &&
+            c.parsing_status !== "failed"
+          ) {
+            return { ...c, parsing_status: "failed" as ParseStatus };
           }
           return c;
         })
       );
 
-      // Progressively update parent table as each candidate completes
+      // Progressively update parent table as each candidate completes (not failed)
       const newlyCompleted = updated.filter(
         (s: any) =>
-          (s.parsing_status === "completed" || s.parsing_status === "failed") &&
-          !notifiedRef.current.has((s as any).candidate_id)
+          s.parsing_status === "completed" &&
+          !notifiedRef.current.has(s.candidate_id)
       );
       if (newlyCompleted.length > 0) {
-        const newIds = newlyCompleted.map((s: any) => (s as any).candidate_id);
+        const newIds = newlyCompleted.map((s: any) => s.candidate_id);
         // Fetch full candidate data for newly completed ones
         const fullCandidates = await Promise.all(
           newIds.map((id: number) => api<any>(`/candidates/${id}`).catch(() => null))
@@ -112,63 +122,135 @@ export default function UploadResumesModal({
         }
       }
 
-      // Check if all done
-      const allDone = updated.every(
-        (s: any) => s.parsing_status === "completed" || s.parsing_status === "failed"
-      );
-      return allDone;
+      // Check if all done (all either completed, failed, or deleted/404)
+      const allResolved = ids.every((id) => {
+        const fresh = updated.find((u: any) => u.candidate_id === id);
+        if (fresh && (fresh.parsing_status === "completed" || fresh.parsing_status === "failed")) return true;
+        // 404 = deleted = resolved
+        const idx = ids.indexOf(id);
+        if (statuses[idx] === null) return true;
+        return false;
+      });
+      return allResolved;
     } catch {
       return false;
     }
   }, [onUploaded]);
 
-  // Start polling after upload
+  // Polling loop
   useEffect(() => {
     if (!polling || candidates.length === 0) return;
 
     const ids = candidates.map((c) => c.id);
+
+    // Run first poll immediately
+    let stopped = false;
+
+    const notifyDone = () => {
+      setPolling(false);
+      setAllDone(true);
+    };
+
+    const runPoll = async () => {
+      const done = await pollStatuses(ids);
+      if (done && !stopped) {
+        notifyDone();
+      }
+    };
+    runPoll();
+
     const interval = setInterval(async () => {
+      if (stopped) return;
       const done = await pollStatuses(ids);
       if (done) {
+        stopped = true;
         clearInterval(interval);
-        setPolling(false);
-        notifySuccess(`${ids.length} resume(s) processed!`);
+        notifyDone();
       }
-    }, 2000); // Poll faster (2s) since resumes now complete in parallel
+    }, 2000);
 
     pollRef.current = interval;
-    return () => clearInterval(interval);
-  }, [polling, candidates, pollStatuses]);
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+    };
+  }, [polling, candidates.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleUpload = async () => {
     if (files.length === 0) return;
     setError("");
     setUploading(true);
     setCandidates([]);
+    setAllDone(false);
+
+    // Show processing state immediately with file names
+    const uploadingTracks: CandidateTrack[] = files.map((f, i) => ({
+      id: -(i + 1), // temporary negative IDs
+      fileName: f.name,
+      name: f.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " "),
+      email: "",
+      parsing_status: "processing" as ParseStatus,
+      resume_fit_score: null,
+    }));
+    setCandidates(uploadingTracks);
+
     try {
       const formData = new FormData();
       formData.append("job_id", String(jobId));
       files.forEach((f) => formData.append("files", f));
 
       const data = await apiUpload<any[]>("/candidates/upload-resume", formData);
+      const returnedIds = new Set((data || []).map((c: any) => c.id));
 
-      // Candidates returned with parsing_status="pending"
-      const candidateStatuses: CandidateStatus[] = (data || []).map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        email: c.email,
-        parsing_status: c.parsing_status || "pending",
-        resume_fit_score: c.resume_fit_score,
-      }));
+      // Map results back to uploaded files
+      // Candidates that were deleted (parse failed) won't be in the response
+      const candidateTracks: CandidateTrack[] = files.map((f, i) => {
+        const matched = data && data[i] ? data[i] : null;
+        // If candidate exists in response, it parsed successfully
+        if (matched && returnedIds.has(matched.id)) {
+          return {
+            id: matched.id,
+            fileName: f.name,
+            name: matched.name || f.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " "),
+            email: matched.email || "",
+            parsing_status: (matched.parsing_status || "completed") as ParseStatus,
+            resume_fit_score: matched.resume_fit_score,
+          };
+        }
+        // Not in response = parse failed, candidate was deleted
+        return {
+          id: -(i + 1),
+          fileName: f.name,
+          name: f.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " "),
+          email: "",
+          parsing_status: "failed" as ParseStatus,
+          resume_fit_score: null,
+        };
+      });
 
-      setCandidates(candidateStatuses);
+      setCandidates(candidateTracks);
       setFiles([]);
-      setPolling(true);
-      // Also immediately inform parent so rows appear in table
-      onUploaded(data);
+      setAllDone(true);
+
+      // Add successfully parsed candidates to parent table
+      const successCandidates = (data || []).filter((c: any) =>
+        c.parsing_status === "completed"
+      );
+      const failCount = files.length - successCandidates.length;
+      if (successCandidates.length > 0) {
+        onUploaded(successCandidates);
+        notifySuccess(
+          failCount > 0
+            ? `${successCandidates.length} resume(s) added, ${failCount} failed.`
+            : `${successCandidates.length} resume(s) added successfully!`
+        );
+      } else if (failCount > 0) {
+        notifyError(`${failCount} resume(s) failed to parse.`);
+      }
     } catch (err: any) {
       notifyError(err.message || "Failed to upload resumes");
       setError(err.message || "Upload failed");
+      setCandidates([]);
     } finally {
       setUploading(false);
     }
@@ -180,13 +262,10 @@ export default function UploadResumesModal({
     setCandidates([]);
     setFiles([]);
     setError("");
+    setAllDone(false);
     notifiedRef.current = new Set();
     onClose();
   };
-
-  const allDone = candidates.length > 0 && candidates.every(
-    (c) => c.parsing_status === "completed" || c.parsing_status === "failed"
-  );
 
   const statusIcon = (s: ParseStatus) => {
     switch (s) {
@@ -196,6 +275,8 @@ export default function UploadResumesModal({
         return <AlertCircle className="w-4 h-4 text-red-500" />;
       case "processing":
         return <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />;
+      case "uploading":
+        return <Loader2 className="w-4 h-4 text-purple-500 animate-spin" />;
       default:
         return <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />;
     }
@@ -206,9 +287,27 @@ export default function UploadResumesModal({
       case "completed": return "Parsed";
       case "failed": return "Failed";
       case "processing": return "Parsing...";
+      case "uploading": return "Uploading...";
       default: return "Queued";
     }
   };
+
+  const statusColor = (s: ParseStatus) => {
+    switch (s) {
+      case "completed": return "bg-green-100 text-green-700";
+      case "failed": return "bg-red-100 text-red-700";
+      case "uploading": return "bg-purple-100 text-purple-700";
+      default: return "bg-blue-100 text-blue-700";
+    }
+  };
+
+  // Progress bar calculation
+  const successCount = candidates.filter((c) => c.parsing_status === "completed").length;
+  const failedCount = candidates.filter((c) => c.parsing_status === "failed").length;
+  const completedCount = successCount + failedCount;
+  const progressPercent = candidates.length > 0
+    ? Math.round((completedCount / candidates.length) * 100)
+    : 0;
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -223,9 +322,27 @@ export default function UploadResumesModal({
             <div className="space-y-3">
               <p className="text-sm text-gray-600">
                 {allDone
-                  ? "All resumes processed!"
+                  ? failedCount > 0
+                    ? `${successCount} resume(s) added, ${failedCount} failed to parse.`
+                    : `All ${successCount} resume(s) added successfully!`
                   : "Parsing resumes in background... You can close this dialog."}
               </p>
+
+              {/* Progress bar */}
+              {!allDone && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>{completedCount} of {candidates.length} processed</span>
+                    <span>{progressPercent}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-blue-500 h-2 rounded-full transition-all duration-500"
+                      style={{ width: `${progressPercent}%` }}
+                    />
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {candidates.map((c) => (
@@ -237,9 +354,12 @@ export default function UploadResumesModal({
                       {statusIcon(c.parsing_status)}
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-gray-700 truncate">
-                          {c.name}
+                          {c.parsing_status === "completed" && c.name
+                            ? c.name
+                            : c.fileName}
                         </p>
-                        {c.parsing_status === "completed" && c.email && (
+                        {c.parsing_status === "completed" && c.email &&
+                         !c.email.endsWith("@resume.local") && (
                           <p className="text-xs text-gray-500 truncate">{c.email}</p>
                         )}
                       </div>
@@ -256,13 +376,7 @@ export default function UploadResumesModal({
                           {c.resume_fit_score.replace("%", "")}% Fit
                         </span>
                       )}
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded ${
-                        c.parsing_status === "completed"
-                          ? "bg-green-100 text-green-700"
-                          : c.parsing_status === "failed"
-                          ? "bg-red-100 text-red-700"
-                          : "bg-blue-100 text-blue-700"
-                      }`}>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded ${statusColor(c.parsing_status)}`}>
                         {statusLabel(c.parsing_status)}
                       </span>
                     </div>
@@ -338,7 +452,7 @@ export default function UploadResumesModal({
               >
                 {uploading ? (
                   <span className="flex items-center gap-2">
-                    <Upload className="w-4 h-4 animate-bounce" /> Uploading...
+                    <Loader2 className="w-4 h-4 animate-spin" /> Uploading & Parsing...
                   </span>
                 ) : (
                   <span className="flex items-center gap-2">

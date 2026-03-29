@@ -4,8 +4,9 @@ import type { Metadata } from "next";
 
 import { SidebarProvider } from "@/components/ui/context/SidebarContext";
 import { ThemeProvider } from "@/components/ui/context/ThemeContext";
-import { ModalProvider } from "@/context/ModalContext"; // import the new provider
-import { GlobalCreateOpeningModal } from "@/components/modals/GlobalCreateOpeningModal"; // global modal
+import { AuthProvider } from "@/context/AuthContext";
+import { ModalProvider } from "@/context/ModalContext";
+import { GlobalCreateOpeningModal } from "@/components/modals/GlobalCreateOpeningModal";
 import { Toaster } from "sonner";
 
 
@@ -26,16 +27,17 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${outfit.className} dark:bg-gray-900`}>
-        <ThemeProvider>
-          <SidebarProvider>
-            <ModalProvider>
-              {children}
-              {/* Global modal always rendered at root */}
-              <Toaster richColors closeButton position="top-right" />
-              <GlobalCreateOpeningModal />
-            </ModalProvider>
-          </SidebarProvider>
-        </ThemeProvider>
+        <AuthProvider>
+          <ThemeProvider>
+            <SidebarProvider>
+              <ModalProvider>
+                {children}
+                <Toaster richColors closeButton position="top-right" />
+                <GlobalCreateOpeningModal />
+              </ModalProvider>
+            </SidebarProvider>
+          </ThemeProvider>
+        </AuthProvider>
       </body>
     </html>
   );

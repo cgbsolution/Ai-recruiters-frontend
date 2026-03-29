@@ -1,118 +1,100 @@
 "use client";
-import React, { useEffect, useRef, useState,useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSidebar } from "@/components/ui/context/SidebarContext";
+import { useAuth, type UserRole } from "@/context/AuthContext";
 import SidebarWidget from "./SidebarWidget";
 import {
-  BoxCubeIcon,
-  CalenderIcon,
   ChevronDownIcon,
   GridIcon,
+  GroupIcon,
   HorizontaLDots,
   ListIcon,
+  LockIcon,
   PageIcon,
-  PieChartIcon,
-  PlugInIcon,
   TableIcon,
   UserCircleIcon,
   SignOut,
 } from "@/components/ui/icons/index";
-// import SidebarWidget from "./SidebarWidget";
 
 type NavItem = {
   name: string;
   icon: React.ReactNode;
   path?: string;
+  action?: () => void;
+  /** Which roles can see this item. Undefined = everyone who is logged in. */
+  roles?: UserRole[];
   subItems?: { name: string; path: string; pro?: boolean; new?: boolean }[];
 };
 
-const navItems: NavItem[] = [
-   {
-    icon: <GridIcon />,
-   name: "Dashboard",
-    path: "/",
-  },
-     {
-    icon: <PageIcon />,
-   name: "Job Openings",
-    path: "/job-openings",
-  },
-     {
-    icon: <UserCircleIcon />,
-   name: "Candidates",
-    path: "/candidates",
-  },
-     {
-    icon: <ListIcon />,
-   name: "Question Bank",
-    path: "/question-bank",
-  },
-     {
-    icon: <TableIcon />,
-   name: "Resume Database",
-    path: "/resume-database",
-  },
-       {
-    icon: <SignOut />,
-   name: "Log Out",
-    path: "/logout",
-  },
-
-  // {
-  //   icon: <CalenderIcon />,
-  //   name: "Calendar",
-  //   path: "/calendar",
-  // },
-  // {
-  //   icon: <UserCircleIcon />,
-  //   name: "User Profile",
-  //   path: "/profile",
-  // },
-];
-
-const othersItems: NavItem[] = [
-  {
-    icon: <PieChartIcon />,
-    name: "Charts",
-    subItems: [
-      { name: "Line Chart", path: "/line-chart", pro: false },
-      { name: "Bar Chart", path: "/bar-chart", pro: false },
-    ],
-  },
-  {
-    icon: <BoxCubeIcon />,
-    name: "UI Elements",
-    subItems: [
-      { name: "Alerts", path: "/alerts", pro: false },
-      { name: "Avatar", path: "/avatars", pro: false },
-      { name: "Badge", path: "/badge", pro: false },
-      { name: "Buttons", path: "/buttons", pro: false },
-      { name: "Images", path: "/images", pro: false },
-      { name: "Videos", path: "/videos", pro: false },
-    ],
-  },
-  {
-    icon: <PlugInIcon />,
-    name: "Authentication",
-    subItems: [
-      { name: "Sign In", path: "/signin", pro: false },
-      { name: "Sign Up", path: "/signup", pro: false },
-    ],
-  },
-];
-
 const AppSidebar: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered, toggleMobileSidebar } = useSidebar();
+  const { user, logout } = useAuth();
   const pathname = usePathname();
 
+  // Build nav items based on current user role
+  const navItems: NavItem[] = useMemo(() => {
+    const items: NavItem[] = [
+      {
+        icon: <GridIcon />,
+        name: "Dashboard",
+        path: "/",
+      },
+      {
+        icon: <PageIcon />,
+        name: "Job Openings",
+        path: "/job-openings",
+      },
+      {
+        icon: <UserCircleIcon />,
+        name: "Candidates",
+        path: "/candidates",
+      },
+      {
+        icon: <ListIcon />,
+        name: "Question Bank",
+        path: "/question-bank",
+      },
+      {
+        icon: <TableIcon />,
+        name: "Resume Database",
+        path: "/resume-database",
+        roles: ["super_admin", "admin"],
+      },
+      {
+        icon: <GroupIcon />,
+        name: "Organizations",
+        path: "/organizations",
+        roles: ["super_admin"],
+      },
+      {
+        icon: <LockIcon />,
+        name: "Access Control",
+        path: "/access-control",
+        roles: ["super_admin", "admin"],
+      },
+      {
+        icon: <SignOut />,
+        name: "Log Out",
+        action: logout,
+      },
+    ];
+
+    // Filter by role
+    return items.filter((item) => {
+      if (!item.roles) return true;
+      return user ? item.roles.includes(user.role) : false;
+    });
+  }, [user, logout]);
+
   const renderMenuItems = (
-    navItems: NavItem[],
+    items: NavItem[],
     menuType: "main" | "others"
   ) => (
     <ul className="flex flex-col gap-4">
-      {navItems.map((nav, index) => (
+      {items.map((nav, index) => (
         <li key={nav.name}>
           {nav.subItems ? (
             <button
@@ -148,6 +130,18 @@ const AppSidebar: React.FC = () => {
                       : ""
                   }`}
                 />
+              )}
+            </button>
+          ) : nav.action ? (
+            <button
+              onClick={nav.action}
+              className="menu-item group menu-item-inactive cursor-pointer w-full"
+            >
+              <span className="menu-item-icon-inactive">
+                {nav.icon}
+              </span>
+              {(isExpanded || isHovered || isMobileOpen) && (
+                <span className="menu-item-text">{nav.name}</span>
               )}
             </button>
           ) : (
@@ -244,8 +238,7 @@ const AppSidebar: React.FC = () => {
   );
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // const isActive = (path: string) => path === pathname;
-   const isActive = useCallback((path: string) => path === pathname, [pathname]);
+  const isActive = useCallback((path: string) => path === pathname, [pathname]);
 
   const handleLinkClick = useCallback(() => {
     if (isMobileOpen) {
@@ -256,31 +249,23 @@ const AppSidebar: React.FC = () => {
   useEffect(() => {
     // Check if the current path matches any submenu item
     let submenuMatched = false;
-    ["main", "others"].forEach((menuType) => {
-      const items = menuType === "main" ? navItems : othersItems;
-      items.forEach((nav, index) => {
-        if (nav.subItems) {
-          nav.subItems.forEach((subItem) => {
-            if (isActive(subItem.path)) {
-              setOpenSubmenu({
-                type: menuType as "main" | "others",
-                index,
-              });
-              submenuMatched = true;
-            }
-          });
-        }
-      });
+    navItems.forEach((nav, index) => {
+      if (nav.subItems) {
+        nav.subItems.forEach((subItem) => {
+          if (isActive(subItem.path)) {
+            setOpenSubmenu({ type: "main", index });
+            submenuMatched = true;
+          }
+        });
+      }
     });
 
-    // If no submenu item matches, close the open submenu
     if (!submenuMatched) {
       setOpenSubmenu(null);
     }
-  }, [pathname,isActive]);
+  }, [pathname, isActive, navItems]);
 
   useEffect(() => {
-    // Set the height of the submenu items when the submenu is opened
     if (openSubmenu !== null) {
       const key = `${openSubmenu.type}-${openSubmenu.index}`;
       if (subMenuRefs.current[key]) {
@@ -307,7 +292,7 @@ const AppSidebar: React.FC = () => {
 
   return (
     <aside
-      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200 
+      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200
         ${
           isExpanded || isMobileOpen
             ? "w-[290px]"
@@ -353,7 +338,7 @@ const AppSidebar: React.FC = () => {
           )}
         </Link>
       </div>
-      <div className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar">
+      <div className="flex flex-col flex-1 overflow-y-auto duration-300 ease-linear no-scrollbar">
         <nav className="mb-6">
           <div className="flex flex-col gap-4">
             <div>
@@ -371,28 +356,24 @@ const AppSidebar: React.FC = () => {
                 )}
               </h2>
               {renderMenuItems(navItems, "main")}
+              <SidebarWidget />
             </div>
-
-            {/* <div className="">
-              <h2
-                className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
-                  !isExpanded && !isHovered
-                    ? "lg:justify-center"
-                    : "justify-start"
-                }`}
-              >
-                {isExpanded || isHovered || isMobileOpen ? (
-                  "Others"
-                ) : (
-                  <HorizontaLDots />
-                )}
-              </h2>
-              {renderMenuItems(othersItems, "others")}
-            </div> */}
           </div>
         </nav>
-        {isExpanded || isHovered || isMobileOpen ? <SidebarWidget /> : null}
       </div>
+
+      {/* Sticky user profile at bottom */}
+      {user && (isExpanded || isHovered || isMobileOpen) && (
+        <div className="border-t border-gray-200 dark:border-gray-800 px-2 py-4">
+          <div className="rounded-xl bg-gray-50 dark:bg-gray-800 p-3">
+            <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{user.name}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">{user.email}</p>
+            <span className="inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/30 px-2 py-0.5 rounded-full">
+              {user.role.replace("_", " ")}
+            </span>
+          </div>
+        </div>
+      )}
     </aside>
   );
 };

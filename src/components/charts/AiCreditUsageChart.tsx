@@ -123,20 +123,22 @@ function pivotDaily(raw: any[]): ChartRow[] {
   return Array.from(map.values());
 }
 
-export default function AiCreditUsageChart() {
+export default function AiCreditUsageChart({ orgId }: { orgId?: number } = {}) {
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<ViewMode>("monthly");
   const [data, setData] = useState<ChartRow[]>([]);
+
+  const orgParam = orgId ? `?org_id=${orgId}` : "";
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const endpoint =
         mode === "monthly"
-          ? "/credits/monthly"
+          ? `/credits/monthly${orgParam}`
           : mode === "weekly"
-          ? "/credits/weekly"
-          : "/credits/daily";
+          ? `/credits/weekly${orgParam}`
+          : `/credits/daily${orgParam}`;
       const raw = await api<Record<string, unknown>[]>(endpoint);
 
       const pivoted =
@@ -152,7 +154,7 @@ export default function AiCreditUsageChart() {
     } finally {
       setLoading(false);
     }
-  }, [mode]);
+  }, [mode, orgParam]);
 
   useEffect(() => {
     fetchData();

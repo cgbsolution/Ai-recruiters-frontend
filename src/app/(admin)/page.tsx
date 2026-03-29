@@ -8,6 +8,7 @@ import AiCreditUsageChart from "@/components/charts/AiCreditUsageChart";
 import AiUsageAnalytics from "@/components/charts/AiUsageAnalytics";
 import { JobsOpeningsCard } from "@/components/cards/JobOpeningsCard";
 import SidebarWidget from "@/components/ui/layout/SidebarWidget";
+import SuperAdminOnly from "@/components/dashboard/SuperAdminOnly";
 
 export const metadata: Metadata = {
   title: "CGB Solutions - Ai Recruiters",
@@ -40,15 +41,16 @@ export default function Dashboard() {
           <LineStatisticsChart />
         </div>
 
-        {/* AI Usage Analytics — Summary Cards + Cost Bar Chart */}
-        <div className="col-span-12 space-y-6">
-          <AiUsageAnalytics />
-        </div>
+        {/* AI Usage Analytics & Credits — Super Admin only */}
+        <SuperAdminOnly>
+          <div className="col-span-12 space-y-6">
+            <AiUsageAnalytics />
+          </div>
 
-        {/* AI Credit Usage — Token Line Chart */}
-        <div className="col-span-12 space-y-6">
-          <AiCreditUsageChart />
-        </div>
+          <div className="col-span-12 space-y-6">
+            <AiCreditUsageChart />
+          </div>
+        </SuperAdminOnly>
 
         <div className="col-span-12 space-y-6 xl:col-span-12">
           <JobsOpeningsCard />

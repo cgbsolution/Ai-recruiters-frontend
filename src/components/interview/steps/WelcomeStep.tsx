@@ -11,33 +11,33 @@ interface Props {
 
 export default function WelcomeStep({ jobConfig, onNext }: Props) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen px-6 text-center">
-      <div className="w-20 h-20 rounded-full bg-blue-600 flex items-center justify-center mb-8">
-        <Briefcase className="w-10 h-10 text-white" />
+    <div className="flex flex-col items-center justify-center min-h-screen px-6 py-12 bg-white text-center">
+      <div className="w-16 h-16 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center mb-6">
+        <Briefcase className="w-8 h-8 text-blue-500" />
       </div>
 
-      <h1 className="text-4xl font-bold text-white mb-3">AI Interview</h1>
-      <p className="text-gray-400 text-lg mb-10 max-w-md">
+      <h1 className="text-3xl font-bold text-gray-900 mb-2">AI Interview</h1>
+      <p className="text-gray-500 text-base mb-10 max-w-md">
         You have been invited to interview for a position at CGB Solutions
       </p>
 
-      <div className="bg-gray-900 rounded-2xl p-8 w-full max-w-md mb-10 text-left space-y-4">
-        <h2 className="text-2xl font-semibold text-white">{jobConfig.title}</h2>
-        <p className="text-blue-400 font-medium">{jobConfig.department}</p>
+      <div className="bg-white border border-gray-200 rounded-2xl p-7 w-full max-w-md mb-10 text-left shadow-sm">
+        <h2 className="text-xl font-semibold text-gray-900 mb-1">{jobConfig.title}</h2>
+        <p className="text-blue-600 font-medium text-sm mb-4">{jobConfig.department}</p>
 
-        <div className="flex items-center gap-2 text-gray-400 text-sm">
-          <MapPin className="w-4 h-4" />
+        <div className="flex items-center gap-2 text-gray-500 text-sm mb-2">
+          <MapPin className="w-4 h-4 text-gray-400" />
           <span>{jobConfig.location}</span>
         </div>
-        <div className="flex items-center gap-2 text-gray-400 text-sm">
-          <Clock className="w-4 h-4" />
+        <div className="flex items-center gap-2 text-gray-500 text-sm mb-4">
+          <Clock className="w-4 h-4 text-gray-400" />
           <span>~{Math.ceil(jobConfig.max_questions * 2)} minutes</span>
         </div>
-        <div className="flex flex-wrap gap-2 pt-2">
+        <div className="flex flex-wrap gap-2 pt-1">
           {jobConfig.skills.slice(0, 5).map((skill) => (
             <span
               key={skill}
-              className="text-xs bg-blue-900/40 text-blue-300 px-3 py-1 rounded-full"
+              className="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded-full border border-blue-100 font-medium"
             >
               {skill}
             </span>
@@ -48,7 +48,7 @@ export default function WelcomeStep({ jobConfig, onNext }: Props) {
       <div className="w-full max-w-md">
         <Button
           onClick={onNext}
-          className="w-full h-14 text-lg bg-blue-600 hover:bg-blue-700 gap-3"
+          className="w-full h-13 text-base bg-blue-600 hover:bg-blue-500 text-white gap-2 rounded-xl shadow-md shadow-blue-200"
         >
           Continue
           <ArrowRight className="w-5 h-5" />

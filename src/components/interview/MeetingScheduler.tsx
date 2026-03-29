@@ -43,13 +43,13 @@ export default function MeetingScheduler({ onLoadSlots, onSchedule, onDone }: Pr
 
   if (scheduled) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen px-6 text-center">
-        <div className="w-20 h-20 rounded-full bg-green-900/40 flex items-center justify-center mb-6">
-          <CheckCircle className="w-10 h-10 text-green-400" />
+      <div className="flex flex-col items-center justify-center min-h-screen px-6 text-center bg-white">
+        <div className="w-20 h-20 rounded-full bg-green-50 border border-green-100 flex items-center justify-center mb-6">
+          <CheckCircle className="w-10 h-10 text-green-500" />
         </div>
-        <h2 className="text-2xl font-bold text-white mb-2">Meeting Scheduled!</h2>
-        <p className="text-gray-400 mb-8">You will receive a confirmation email shortly.</p>
-        <Button onClick={onDone} className="h-12 px-8 bg-blue-600 hover:bg-blue-700">
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Meeting Scheduled!</h2>
+        <p className="text-gray-500 mb-8">You will receive a confirmation email shortly.</p>
+        <Button onClick={onDone} className="h-12 px-8 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl shadow-md shadow-blue-200">
           Done
         </Button>
       </div>
@@ -57,27 +57,27 @@ export default function MeetingScheduler({ onLoadSlots, onSchedule, onDone }: Pr
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen px-6">
+    <div className="flex flex-col items-center justify-center min-h-screen px-6 bg-white">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-full bg-blue-900/40 flex items-center justify-center mx-auto mb-4">
-            <Calendar className="w-8 h-8 text-blue-400" />
+          <div className="w-16 h-16 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center mx-auto mb-4">
+            <Calendar className="w-8 h-8 text-blue-500" />
           </div>
-          <h2 className="text-3xl font-bold text-white">Schedule a Meeting</h2>
-          <p className="text-gray-400 mt-2">Select a time slot that works for you</p>
+          <h2 className="text-3xl font-bold text-gray-900">Schedule a Meeting</h2>
+          <p className="text-gray-500 mt-2">Select a time slot that works for you</p>
         </div>
 
         {loading ? (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-16 bg-gray-900 rounded-xl animate-pulse" />
+              <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />
             ))}
           </div>
         ) : slots.length === 0 ? (
-          <div className="bg-gray-900 rounded-2xl p-8 text-center mb-6">
-            <Clock className="w-8 h-8 text-gray-500 mx-auto mb-3" />
-            <p className="text-gray-400">No available slots at the moment.</p>
-            <p className="text-gray-500 text-sm mt-1">The team will reach out to you directly.</p>
+          <div className="bg-gray-50 border border-gray-200 rounded-2xl p-8 text-center mb-6">
+            <Clock className="w-8 h-8 text-gray-400 mx-auto mb-3" />
+            <p className="text-gray-500">No available slots at the moment.</p>
+            <p className="text-gray-400 text-sm mt-1">The team will reach out to you directly.</p>
           </div>
         ) : (
           <div className="space-y-3 mb-6">
@@ -91,15 +91,15 @@ export default function MeetingScheduler({ onLoadSlots, onSchedule, onDone }: Pr
                   onClick={() => setSelectedSlot(slot.id)}
                   className={`w-full flex items-center justify-between px-5 py-4 h-auto rounded-xl border transition-all ${
                     isSelected
-                      ? "bg-blue-900/30 border-blue-600 text-white"
-                      : "bg-gray-900 border-gray-800 text-gray-300 hover:border-gray-600"
+                      ? "bg-blue-50 border-blue-300 text-gray-900"
+                      : "bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300"
                   }`}
                 >
                   <div className="text-left">
                     <p className="font-semibold text-sm">{dateStr}</p>
                     <p className="text-xs text-gray-400 mt-0.5">{timeStr}</p>
                   </div>
-                  {isSelected && <CheckCircle className="w-5 h-5 text-blue-400 flex-shrink-0" />}
+                  {isSelected && <CheckCircle className="w-5 h-5 text-blue-500 flex-shrink-0" />}
                 </Button>
               );
             })}
@@ -111,7 +111,7 @@ export default function MeetingScheduler({ onLoadSlots, onSchedule, onDone }: Pr
             <Button
               onClick={handleSchedule}
               disabled={selectedSlot === null || scheduling}
-              className="w-full h-12 bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+              className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white font-semibold disabled:opacity-50 rounded-xl shadow-md shadow-blue-200"
             >
               {scheduling ? "Scheduling..." : "Confirm Meeting"}
             </Button>
@@ -119,7 +119,7 @@ export default function MeetingScheduler({ onLoadSlots, onSchedule, onDone }: Pr
           <Button
             variant="ghost"
             onClick={onDone}
-            className="w-full text-gray-500 text-sm hover:text-gray-300 transition-colors py-2"
+            className="w-full text-gray-400 text-sm hover:text-gray-600 transition-colors py-2"
           >
             Skip for now
           </Button>

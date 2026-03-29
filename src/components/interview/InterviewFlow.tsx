@@ -14,7 +14,7 @@ import InstructionsStep from "./steps/InstructionsStep";
 import WarningStep from "./steps/WarningStep";
 import CapturePhotoStep from "./steps/CapturePhotoStep";
 import InterviewRoom from "./InterviewRoom";
-import PreInterviewProgress from "./PreInterviewProgress";
+import PreInterviewLayout from "./PreInterviewLayout";
 import CompletionScreen from "./CompletionScreen";
 import FeedbackForm from "./FeedbackForm";
 import MeetingScheduler from "./MeetingScheduler";
@@ -285,10 +285,10 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
 
   if (step === "LOADING") {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen bg-white">
         <div className="text-center">
           <div className="w-12 h-12 rounded-full border-4 border-blue-600 border-t-transparent animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">Loading interview...</p>
+          <p className="text-gray-500">Loading interview...</p>
         </div>
       </div>
     );
@@ -296,11 +296,13 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
 
   if (step === "ERROR") {
     return (
-      <div className="flex items-center justify-center min-h-screen px-6 text-center">
+      <div className="flex items-center justify-center min-h-screen px-6 text-center bg-white">
         <div>
-          <div className="text-5xl mb-6">:/</div>
-          <h2 className="text-2xl font-bold text-white mb-2">Interview Not Found</h2>
-          <p className="text-gray-400">{loadError || "This link is invalid or has expired."}</p>
+          <div className="w-16 h-16 rounded-full bg-red-50 border border-red-100 flex items-center justify-center mx-auto mb-6">
+            <span className="text-2xl">:/</span>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Interview Not Found</h2>
+          <p className="text-gray-500 max-w-md">{loadError || "This link is invalid or has expired."}</p>
         </div>
       </div>
     );
@@ -341,14 +343,13 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
 
     case "PERMISSION_CAM_MIC":
       return (
-        <>
-          <PreInterviewProgress currentStep={1} />
+        <PreInterviewLayout currentStep={1}>
           {jobConfig.webcam_required ? (
             <PermissionStep onPermissionsGranted={handlePermissionsGranted} />
           ) : (
             <PermissionStep micOnly onPermissionsGranted={handleMicOnlyGranted} />
           )}
-        </>
+        </PreInterviewLayout>
       );
 
     case "CAPTURE_PHOTO":
@@ -358,22 +359,20 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
         return null;
       }
       return (
-        <>
-          <PreInterviewProgress currentStep={2} />
+        <PreInterviewLayout currentStep={2}>
           <CapturePhotoStep
             webcamStream={webcamStream}
             sessionId={session.sessionId}
             onCaptured={() => setStep("PERMISSION_SCREEN")}
           />
-        </>
+        </PreInterviewLayout>
       );
 
     case "PERMISSION_SCREEN":
       return (
-        <>
-          <PreInterviewProgress currentStep={2} />
+        <PreInterviewLayout currentStep={2}>
           <ScreenShareStep onNext={handleScreenShare} required={true} />
-        </>
+        </PreInterviewLayout>
       );
 
     case "DEVICE_TEST":
@@ -383,39 +382,38 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
         return null;
       }
       return (
-        <>
-          <PreInterviewProgress currentStep={3} />
+        <PreInterviewLayout currentStep={3}>
           <DeviceTestStep stream={webcamStream} onNext={() => setStep("INSTRUCTIONS")} />
-        </>
+        </PreInterviewLayout>
       );
 
     case "INSTRUCTIONS":
       return (
-        <>
-          <PreInterviewProgress currentStep={4} />
+        <PreInterviewLayout currentStep={4}>
           <InstructionsStep jobConfig={jobConfig} onNext={() => setStep("WARNING")} />
-        </>
+        </PreInterviewLayout>
       );
 
     case "WARNING":
       return (
-        <>
-          <PreInterviewProgress currentStep={4} />
+        <PreInterviewLayout currentStep={4}>
           <WarningStep onConfirm={handleWarningConfirm} />
-        </>
+        </PreInterviewLayout>
       );
 
     case "INTERVIEW":
       if (jobConfig.manual_interview) {
         return (
-          <div className="flex flex-col items-center justify-center min-h-screen px-6 text-center">
-            <div className="text-5xl mb-6">📹</div>
-            <h2 className="text-2xl font-bold text-white mb-3">Manual Interview</h2>
-            <p className="text-gray-400 max-w-md mb-6">
+          <div className="flex flex-col items-center justify-center min-h-screen px-6 text-center bg-white">
+            <div className="w-16 h-16 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center mb-6">
+              <span className="text-3xl">📹</span>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">Manual Interview</h2>
+            <p className="text-gray-500 max-w-md mb-6">
               This interview will be conducted by a human recruiter via video call.
               A meeting link has been sent to your email. Please check your inbox and join the meeting at the scheduled time.
             </p>
-            <p className="text-gray-500 text-sm">
+            <p className="text-gray-400 text-sm">
               If you haven&apos;t received the link, please contact the recruiter directly.
             </p>
           </div>
@@ -462,10 +460,12 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
 
     case "DONE":
       return (
-        <div className="flex flex-col items-center justify-center min-h-screen px-6 text-center">
-          <div className="text-6xl mb-6">&#127881;</div>
-          <h2 className="text-2xl font-bold text-white mb-3">Interview Completed!</h2>
-          <p className="text-gray-400 max-w-sm">
+        <div className="flex flex-col items-center justify-center min-h-screen px-6 text-center bg-white">
+          <div className="w-16 h-16 rounded-full bg-green-50 border border-green-100 flex items-center justify-center mb-6">
+            <span className="text-3xl">&#127881;</span>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-3">Interview Completed!</h2>
+          <p className="text-gray-500 max-w-sm">
             You have successfully completed your interview. Our team will review your performance
             and be in touch soon.
           </p>
