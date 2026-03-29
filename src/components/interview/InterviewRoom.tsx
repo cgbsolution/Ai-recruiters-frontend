@@ -10,7 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { PhoneOff, Mic, MicOff, GripVertical, SkipForward, Monitor, Square, Send, Trash2, ChevronRight, HelpCircle, ArrowRight } from "lucide-react";
+import { PhoneOff, Mic, MicOff, GripVertical, SkipForward, Monitor, Square, Send, Trash2, ChevronRight, ArrowRight } from "lucide-react";
 import dynamic from "next/dynamic";
 import AvatarScene from "./AvatarScene";
 import TranscriptPanel from "./TranscriptPanel";
@@ -137,6 +137,8 @@ export default function InterviewRoom({
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [recordingDuration, setRecordingDuration] = useState(0);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Captured transcript preserved through "answered" state and into submit
+  const [capturedTranscript, setCapturedTranscript] = useState("");
 
   /* ── Per-question auto-skip timer state ── */
   const [questionTimeLeft, setQuestionTimeLeft] = useState<number>(0);
@@ -153,9 +155,13 @@ export default function InterviewRoom({
   const lastQuestionIndexRef = useRef(0);
   const transcriptRef = useRef("");
   const finalTranscriptRef = useRef("");
+  const capturedTranscriptRef = useRef(""); // mirrors capturedTranscript state for use in callbacks
   const silenceAnimRef = useRef<number | null>(null);
   const processingStartRef = useRef<number | null>(null);
   const isSubmittingRef = useRef(false);
+  // Refs for values needed inside animation-frame callbacks
+  const messagesRef = useRef(messages);
+  const hasIntroResponseRef = useRef(false);
 
   /* ── Draggable PIP ── */
   const [pipPos, setPipPos] = useState({ x: 16, y: 16 });
@@ -174,6 +180,17 @@ export default function InterviewRoom({
     transcriptRef.current = (transcript + " " + interimTranscript).trim();
     finalTranscriptRef.current = transcript.trim();
   }, [transcript, interimTranscript]);
+
+  /* ── Keep capturedTranscriptRef in sync ── */
+  useEffect(() => {
+    capturedTranscriptRef.current = capturedTranscript;
+  }, [capturedTranscript]);
+
+  /* ── Keep messagesRef and hasIntroResponseRef in sync ── */
+  useEffect(() => {
+    messagesRef.current = messages;
+    hasIntroResponseRef.current = messages.some((m) => m.role === "candidate");
+  }, [messages]);
 
   /* ── Timer ── */
   useEffect(() => {
@@ -218,8 +235,10 @@ export default function InterviewRoom({
     if (phaseRef.current !== "LISTENING") return;
     if (isSubmittingRef.current) return;
 
-    // Use FINAL transcript only — never submit interim/partial text
-    const text = finalTranscriptRef.current.trim();
+    // Use final transcript — capturedTranscriptRef is the authoritative source
+    // when submitted via "Send Response" button (stop() preserves transcript now,
+    // but capturedTranscriptRef is the explicit capture at the moment recording ended)
+    const text = (capturedTranscriptRef.current || finalTranscriptRef.current).trim();
     if (!text || text.length < MIN_SUBMIT_LENGTH) return;
 
     // Lock immediately to prevent double-submit
@@ -294,7 +313,10 @@ export default function InterviewRoom({
   }, [reset, start]);
 
   const handleStopSpeaking = useCallback(() => {
-    stop();
+    const captured = finalTranscriptRef.current.trim();
+    capturedTranscriptRef.current = captured; // sync ref immediately
+    stop(); // stop() now preserves transcript state
+    setCapturedTranscript(captured);
     setVoiceState("answered");
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
@@ -328,6 +350,11 @@ export default function InterviewRoom({
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  EFFECT 2: SPEAKING → LISTENING transition (when TTS ends)     */
+  /*                                                                  */
+  /*  Flow modes:                                                     */
+  /*  • Intro phase (qIndex=0, no candidate msg): auto-listen         */
+  /*  • Begin phase (qIndex=0, has candidate msg): idle, show Begin   */
+  /*  • Q&A phase  (qIndex>0): idle, show manual speaking controls    */
   /* ═══════════════════════════════════════════════════════════════ */
 
   useEffect(() => {
@@ -342,11 +369,22 @@ export default function InterviewRoom({
     }
 
     const timer = setTimeout(() => {
-      if (phaseRef.current === "SPEAKING") {
-        setPhase("LISTENING");
-        reset();
+      if (phaseRef.current !== "SPEAKING") return;
+
+      setPhase("LISTENING");
+      reset();
+
+      // Determine interview mode from latest AI message index and candidate history
+      const aiMsgs = messagesRef.current.filter((m) => m.role === "ai");
+      const latestQIndex = aiMsgs.length > 0 ? (aiMsgs[aiMsgs.length - 1].questionIndex ?? 0) : 0;
+      const hasCandidateMsgYet = hasIntroResponseRef.current;
+
+      if (latestQIndex === 0 && !hasCandidateMsgYet) {
+        // ── Intro phase: auto-listen, no buttons ──
         start();
+        setVoiceState("recording");
       }
+      // else: Begin phase or Q&A → stay idle, let candidate click Start Speaking or Begin
     }, POST_SPEECH_DELAY_MS);
 
     return () => clearTimeout(timer);
@@ -408,13 +446,26 @@ export default function InterviewRoom({
       setSilenceProgress(progress);
 
       if (elapsed >= timeout) {
-        // Auto-move to answered state — user clicks Send Response manually
-        stop();
         setSilenceProgress(0);
-        setVoiceState("answered");
-        if (recordingTimerRef.current) {
-          clearInterval(recordingTimerRef.current);
-          recordingTimerRef.current = null;
+
+        const isIntroAutoMode =
+          !hasIntroResponseRef.current &&
+          (messagesRef.current.filter((m) => m.role === "ai").slice(-1)[0]?.questionIndex ?? 0) === 0;
+
+        if (isIntroAutoMode) {
+          // ── Intro phase: auto-submit directly, no manual step ──
+          handleSubmit();
+        } else {
+          // ── Q&A phase: move to "answered" state, let candidate click Send Response ──
+          const captured = finalTranscriptRef.current.trim();
+          capturedTranscriptRef.current = captured;
+          stop();
+          setCapturedTranscript(captured);
+          setVoiceState("answered");
+          if (recordingTimerRef.current) {
+            clearInterval(recordingTimerRef.current);
+            recordingTimerRef.current = null;
+          }
         }
       } else {
         silenceAnimRef.current = requestAnimationFrame(tick);
@@ -455,6 +506,8 @@ export default function InterviewRoom({
   useEffect(() => {
     if (phase !== "LISTENING") {
       setVoiceState("idle");
+      setCapturedTranscript("");
+      capturedTranscriptRef.current = "";
       setRecordingDuration(0);
       if (recordingTimerRef.current) {
         clearInterval(recordingTimerRef.current);
@@ -730,9 +783,15 @@ export default function InterviewRoom({
     ? { text: "Listening… (pause to submit)", color: "text-green-400", dot: "bg-green-400" }
     : { text: messages.length === 0 ? "Starting interview…" : "Preparing…", color: "text-gray-500", dot: "bg-gray-500" };
 
+  /* ── Whether candidate has already responded to the intro question ── */
+  const hasIntroResponse = messages.some((m) => m.role === "candidate");
+
   /* ── Live transcript text (final + interim) ── */
+  // Keep showing capturedTranscript through PROCESSING so the chat doesn't briefly blank
   const liveText = phase === "LISTENING"
-    ? (transcript + " " + interimTranscript).trim()
+    ? (transcript + " " + interimTranscript).trim() || (voiceState === "answered" ? capturedTranscript : "")
+    : phase === "PROCESSING" && capturedTranscript
+    ? capturedTranscript
     : "";
 
   /* ═══════════════════════════════════════════════════════════════ */
@@ -975,12 +1034,12 @@ export default function InterviewRoom({
               </div>
             )}
 
-            {/* Live transcript bar — only visible while actively recording */}
-            {phase === "LISTENING" && voiceState === "recording" && liveText && (
+            {/* Live transcript bar — visible while recording or in answered state (Q&A only) */}
+            {phase === "LISTENING" && currentQuestionIndex > 0 && (voiceState === "recording" || voiceState === "answered") && (liveText || capturedTranscript) && (
               <div className="mx-4 mb-2 px-4 py-2.5 bg-gray-800/60 border border-gray-700/50 rounded-xl shrink-0">
                 <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse shrink-0" />
-                  <p className="text-gray-300 text-sm truncate">{liveText}</p>
+                  <div className={`w-2 h-2 rounded-full shrink-0 ${voiceState === "recording" ? "bg-green-400 animate-pulse" : "bg-blue-400"}`} />
+                  <p className="text-gray-300 text-sm line-clamp-2">{voiceState === "recording" ? liveText : capturedTranscript}</p>
                 </div>
               </div>
             )}
@@ -996,26 +1055,46 @@ export default function InterviewRoom({
             {!showCodeEditor && (
               <div className="px-4 pb-5 pt-2 shrink-0 flex flex-col items-center gap-3 border-t border-gray-800/60">
 
-                {/* BEGIN button — shown for avatar intro (questionIndex === 0, LISTENING) */}
-                {phase === "LISTENING" && currentQuestionIndex === 0 && (
+                {/* ── PHASE 1: Intro auto-listen ── */}
+                {/* Frictionless — no buttons, just a live waveform indicator */}
+                {phase === "LISTENING" && currentQuestionIndex === 0 && !hasIntroResponse && (
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="flex items-center gap-px h-8 w-40">
+                      {[4,7,3,8,5,9,4,6,8,3,7,5,9,4,6,8,3,7,5,6].map((h, i) => (
+                        <div
+                          key={i}
+                          className="flex-1 bg-green-400 rounded-full"
+                          style={{
+                            height: `${h * 8}%`,
+                            minHeight: "15%",
+                            maxHeight: "90%",
+                            animation: `pulse ${0.4 + (i % 5) * 0.08}s ease-in-out ${i * 0.04}s infinite alternate`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <p className="text-green-400 text-xs">
+                      Listening… speak your introduction
+                    </p>
+                  </div>
+                )}
+
+                {/* ── PHASE 2: Begin button (after intro feedback) ── */}
+                {phase === "LISTENING" && currentQuestionIndex === 0 && hasIntroResponse && (
                   <Button
                     onClick={handleBeginClick}
-                    className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-3 rounded-full text-base gap-2 font-medium"
+                    className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-3 rounded-full text-base gap-2 font-medium shadow-lg shadow-blue-900/30"
                   >
-                    Begin <ArrowRight className="w-5 h-5" />
+                    Begin Interview <ArrowRight className="w-5 h-5" />
                   </Button>
                 )}
 
-                {/* Q&A voice controls — shown when past intro */}
+                {/* ── PHASE 3: Q&A manual speaking controls ── */}
                 {phase === "LISTENING" && currentQuestionIndex > 0 && (
                   <>
-                    {/* Ask Doubt / Skip links */}
+                    {/* Skip link */}
                     {voiceState === "idle" && (
-                      <div className="flex items-center gap-6 text-sm">
-                        <button className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors">
-                          <HelpCircle className="w-4 h-4" />
-                          Ask Doubt
-                        </button>
+                      <div className="flex items-center text-sm">
                         <button
                           onClick={handleSkip}
                           className="flex items-center gap-1 text-gray-400 hover:text-white transition-colors"
@@ -1026,7 +1105,7 @@ export default function InterviewRoom({
                       </div>
                     )}
 
-                    {/* IDLE: Start Speaking button */}
+                    {/* IDLE: Start Speaking */}
                     {voiceState === "idle" && (
                       <Button
                         onClick={handleStartSpeaking}
@@ -1040,7 +1119,6 @@ export default function InterviewRoom({
                     {/* RECORDING: Waveform + timer + stop */}
                     {voiceState === "recording" && (
                       <div className="flex items-center gap-3 w-full max-w-xs px-4 py-2.5 bg-gray-800/80 border border-gray-700 rounded-full">
-                        {/* Waveform bars */}
                         <div className="flex-1 flex items-center gap-px h-7">
                           {[4,7,3,8,5,9,4,6,8,3,7,5,9,4,6,8,3,7,5,6].map((h, i) => (
                             <div
@@ -1071,7 +1149,7 @@ export default function InterviewRoom({
                     {voiceState === "answered" && (
                       <div className="flex items-center gap-3">
                         <button
-                          onClick={() => { reset(); setVoiceState("idle"); }}
+                          onClick={() => { reset(); capturedTranscriptRef.current = ""; setCapturedTranscript(""); setVoiceState("idle"); }}
                           className="w-10 h-10 border border-gray-600 hover:border-red-500 rounded-full flex items-center justify-center text-gray-400 hover:text-red-400 transition-colors"
                           title="Delete & Re-record"
                         >
@@ -1079,7 +1157,7 @@ export default function InterviewRoom({
                         </button>
                         <Button
                           onClick={handleSubmit}
-                          disabled={!finalTranscriptRef.current.trim() || finalTranscriptRef.current.trim().length < 3}
+                          disabled={!capturedTranscript || capturedTranscript.length < 3}
                           className="bg-blue-600 hover:bg-blue-500 text-white rounded-full px-6 py-3 gap-2 font-medium text-sm shadow-lg shadow-blue-900/30"
                         >
                           <Send className="w-4 h-4" />

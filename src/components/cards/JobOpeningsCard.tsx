@@ -257,72 +257,81 @@ export const JobsOpeningsCard = () => {
             filteredJobs.map((job) => (
               <Card
                 key={job.id}
-                className="px-2 transition-all duration-200 hover:shadow-md"
+                className="px-2 transition-all duration-200 hover:shadow-md flex flex-col"
               >
-                <CardHeader className="flex flex-row items-center justify-between pb-4 border-b">
-                  <div>
-                    <CardTitle className="text-lg font-semibold flex items-center gap-4">
-                      {job.title}
+                <CardHeader className="pb-4 border-b">
+                  <div className="flex items-start justify-between gap-3">
+                    {/* Left: title + location */}
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-base font-semibold leading-snug break-words">
+                        {job.title}
+                      </CardTitle>
+                      <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
+                        <MapPin className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{job.location} · {getPostedAgo(job.created_at)}</span>
+                      </p>
+                    </div>
+                    {/* Right: pencil on top, badge below */}
+                    <div className="flex flex-col items-end gap-1 shrink-0">
                       <PencilIcon
-                        className="w-5 h-5 text-gray-500 cursor-pointer hover:text-gray-700"
+                        className="w-4 h-4 text-gray-400 cursor-pointer hover:text-gray-600"
                         onClick={() => handleEditJob(job.id)}
                       />
-                    </CardTitle>
-                    <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
-                      <MapPin className="w-5 h-5" /> {job.location} ·{" "}
-                      {getPostedAgo(job.created_at)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span
-                      className={`px-3 py-1 rounded-full text-sm font-medium ${
-                        statusColors[job.status] || "bg-gray-200 text-gray-600"
-                      }`}
-                    >
-                      {job.status}
-                    </span>
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
+                          statusColors[job.status] || "bg-gray-200 text-gray-600"
+                        }`}
+                      >
+                        {job.status}
+                      </span>
+                    </div>
                   </div>
                 </CardHeader>
 
                 {/* Job stats */}
-                <CardContent className="p-0 px-6 space-y-3">
+                <CardContent className="p-0 px-6 space-y-3 flex-1">
                   <div className="flex items-center justify-between text-sm text-gray-700">
-                    <div className="flex items-center gap-4">
-                      <Briefcase className="w-5 h-5 text-gray-500" /> Openings
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Briefcase className="w-4 h-4 text-gray-500 shrink-0" />
+                      <span className="whitespace-nowrap">Openings</span>
                     </div>
-                    <span>{job.openings ?? 50}</span>
+                    <span className="font-medium">{job.openings ?? 50}</span>
                   </div>
 
                   <div className="flex items-center justify-between text-sm text-gray-700">
-                    <div className="flex items-center gap-4">
-                      <ClipboardList className="w-5 h-5 text-gray-500" /> Full Time
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ClipboardList className="w-4 h-4 text-gray-500 shrink-0" />
+                      <span className="whitespace-nowrap">Full Time</span>
                     </div>
-                    <span>{job.job_type}</span>
+                    <span className="font-medium">{job.job_type}</span>
                   </div>
 
                   <div className="flex items-center justify-between text-sm text-gray-700">
-                    <div className="flex items-center gap-4">
-                      <Send className="w-5 h-5 text-gray-500" /> Application Sent
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Send className="w-4 h-4 text-gray-500 shrink-0" />
+                      <span className="whitespace-nowrap">Application Sent</span>
                     </div>
-                    <span>{job.applications ?? 0}</span>
+                    <span className="font-medium">{job.applications ?? 0}</span>
                   </div>
 
                   <div className="flex items-center justify-between text-sm text-gray-700">
-                    <div className="flex items-center gap-4">
-                      <CheckCircle2 className="w-5 h-5 text-gray-500" /> Interview Completed
+                    <div className="flex items-center gap-2 min-w-0">
+                      <CheckCircle2 className="w-4 h-4 text-gray-500 shrink-0" />
+                      <span className="whitespace-nowrap">Interview Completed</span>
                     </div>
-                    <span>{job.interviews ?? 0}</span>
+                    <span className="font-medium">{job.interviews ?? 0}</span>
                   </div>
 
                   <div className="flex items-center justify-between text-sm text-gray-700">
-                    <div className="flex items-center gap-4">
-                      <Users className="w-5 h-5 text-gray-500" /> Top Candidate Identified
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Users className="w-4 h-4 text-gray-500 shrink-0" />
+                      <span className="whitespace-nowrap">Top Candidate Identified</span>
                     </div>
-                    <span>{job.candidates ?? 0}</span>
+                    <span className="font-medium">{job.candidates ?? 0}</span>
                   </div>
                 </CardContent>
                 {/* Footer */}
-                <CardFooter className="flex justify-between items-center pt-4">
+                <CardFooter className="flex justify-between items-center pt-4 mt-auto">
                   <Button
                     size="sm"
                     variant="primary"

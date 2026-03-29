@@ -131,7 +131,8 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
   const stop = useCallback(() => {
     if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
     isActiveRef.current = false;
-    setTranscript("");
+    // Intentionally preserve transcript (final text) so callers can read it
+    // after stopping. Use reset() to explicitly clear when starting fresh.
     setInterimTranscript("");
     setLastFinalAt(0);
     if (recognitionRef.current) {

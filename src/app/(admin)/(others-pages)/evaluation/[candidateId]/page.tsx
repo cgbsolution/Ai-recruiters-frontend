@@ -428,9 +428,10 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
     ? `${job.experience_min}-${job.experience_max} years` : null;
 
   const cheatingScore = scores.ai_cheating;
-  // ai_cheating_score: 0 = no cheating, 100 = max cheating. Display as X/10
+  // ai_cheating_score: 0 = no cheating, 100 = max cheating.
+  // Display as X/10 inverted: 10/10 = clean, 0/10 = max violations
   const cheatingDisplay = cheatingScore != null
-    ? `${Math.round(cheatingScore / 10)} / 10` : null;
+    ? `${Math.round((100 - cheatingScore) / 10)} / 10` : null;
 
   return (
     <div ref={contentRef} className="max-w-7xl mx-auto pb-12 min-w-0">

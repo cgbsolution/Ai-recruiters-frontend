@@ -785,8 +785,9 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                       {isCandidatesTab && (
                         <TableCell className="px-3">
                           {c.ai_cheating_score !== null ? (
-                            <span className="text-orange-500">
-                              ⚠ {c.ai_cheating_score.toFixed(0)}
+                            <span className={c.ai_cheating_score > 0 ? "text-orange-500" : "text-green-600"}>
+                              {c.ai_cheating_score > 0 ? "⚠ " : "✓ "}
+                              {Math.round((100 - c.ai_cheating_score) / 10)}/10
                             </span>
                           ) : (
                             <span className="text-gray-400">—</span>
@@ -927,9 +928,9 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                         {c.resume_path ? (
                           <a
                             href={
-                              c.resume_path.startsWith("/")
-                                ? `${API_BASE.replace(/\/api$/, "")}${c.resume_path}`
-                                : c.resume_path
+                              c.resume_path.startsWith("http")
+                                ? c.resume_path
+                                : `${API_BASE.replace(/\/api$/, "")}${c.resume_path.startsWith("/") ? "" : "/"}${c.resume_path}`
                             }
                             target="_blank"
                             rel="noreferrer"
