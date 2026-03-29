@@ -21,8 +21,9 @@ import { Input } from "@/components/ui/input";
 import { Calendar, Clock, Mail, MessageSquare, Info, ChevronLeft, ChevronRight, Timer } from "lucide-react";
 import { TimePicker } from "@/components/ui/time-picker";
 import EditEmailTemplateModal, { EmailTemplateData } from "./EditEmailTemplateModal";
-import { notifySuccess, notifyError } from "@/lib/notify";
+import { notifySuccess, notifyError, notifyInfo } from "@/lib/notify";
 import { apiPost } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 
 interface ScheduleInterviewModalProps {
   open: boolean;
@@ -83,6 +84,9 @@ export default function ScheduleInterviewModal({
   interviewUrl,
   onScheduled,
 }: ScheduleInterviewModalProps) {
+  const { hasRole } = useAuth();
+  const canUseWhatsapp = hasRole("super_admin");
+
   const today = new Date();
   const [tzValue, setTzValue] = useState("Asia/Calcutta");
   const [calYear, setCalYear] = useState(today.getFullYear());
@@ -452,14 +456,32 @@ export default function ScheduleInterviewModal({
                   <Checkbox
                     id="whatsapp"
                     checked={sendWhatsapp}
-                    onCheckedChange={(v) => setSendWhatsapp(v as boolean)}
+                    disabled={!canUseWhatsapp}
+                    onCheckedChange={(v) => {
+                      if (!canUseWhatsapp) {
+                        notifyInfo("Connect to your administration for full WhatsApp access.");
+                        return;
+                      }
+                      setSendWhatsapp(v as boolean);
+                    }}
                     className="mt-0.5"
                   />
-                  <Label htmlFor="whatsapp" className="text-sm font-normal text-gray-600 leading-snug">
-                    <span className="flex items-center gap-1.5">
-                      <MessageSquare className="w-3.5 h-3.5 text-green-500" />
-                      Send WhatsApp notification
-                    </span>
+                  <Label
+                    htmlFor="whatsapp"
+                    className={`text-sm font-normal leading-snug flex items-center gap-1.5 cursor-pointer ${canUseWhatsapp ? "text-gray-600" : "text-gray-400"}`}
+                    onClick={() => {
+                      if (!canUseWhatsapp) {
+                        notifyInfo("Connect to your administration for full WhatsApp access.");
+                      }
+                    }}
+                  >
+                    <MessageSquare className={`w-3.5 h-3.5 ${canUseWhatsapp ? "text-green-500" : "text-gray-300"}`} />
+                    Send WhatsApp notification
+                    {!canUseWhatsapp && (
+                      <span className="ml-1 text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded font-medium">
+                        Admin only
+                      </span>
+                    )}
                   </Label>
                 </div>
 

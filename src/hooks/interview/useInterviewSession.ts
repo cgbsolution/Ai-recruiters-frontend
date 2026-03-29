@@ -442,6 +442,7 @@ export function useInterviewSession(): InterviewSessionHook {
   const completeInterview = useCallback(async (earlyTermination: boolean = false, terminationReason?: string) => {
     if (!sessionId) return;
     setIsAiThinking(true);
+    setIsInterviewComplete(true);
     try {
       const params = new URLSearchParams();
       if (earlyTermination) params.set("early_termination", "true");
@@ -449,13 +450,26 @@ export function useInterviewSession(): InterviewSessionHook {
       const qs = params.toString();
       const path = `/interview/sessions/${sessionId}/complete${qs ? `?${qs}` : ""}`;
 
-      const data = await api<EvaluationResult>(path, { method: "POST", timeout: 60_000 });
-      setEvaluation(data);
-      setIsInterviewComplete(true);
+      // Backend returns 202 immediately and runs evaluation in background
+      await api(path, { method: "POST" });
+
+      // Poll /evaluation every 4s until it returns 200 (max 3 minutes)
+      const MAX_POLLS = 45;
+      for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise((r) => setTimeout(r, 4000));
+        try {
+          const evalData = await api<EvaluationResult>(`/interview/sessions/${sessionId}/evaluation`);
+          setEvaluation(evalData);
+          setIsAiThinking(false);
+          return;
+        } catch {
+          // 404 = not ready yet, keep polling
+        }
+      }
+      // Timed out polling — still show completion screen without scores
+      setIsAiThinking(false);
     } catch (e: any) {
-      const isTimeout = e instanceof ApiError && e.status === 408;
-      setError(isTimeout ? "Evaluation timed out" : (e instanceof ApiError ? e.detail : e.message));
-    } finally {
+      setError(e instanceof ApiError ? e.detail : e.message);
       setIsAiThinking(false);
     }
   }, [sessionId]);

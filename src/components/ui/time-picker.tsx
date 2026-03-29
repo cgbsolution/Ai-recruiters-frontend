@@ -2,16 +2,12 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface TimePickerProps {
   value: string; // "HH:mm" 24h format
   onChange: (value: string) => void;
   className?: string;
 }
-
-const HOURS_12 = Array.from({ length: 12 }, (_, i) => (i === 0 ? 12 : i));
-const MINUTES = [0, 15, 30, 45];
 
 function parse24(value: string) {
   const [hStr, mStr] = value.split(":");
@@ -32,67 +28,115 @@ function to24(h12: number, minute: number, period: "AM" | "PM") {
 export function TimePicker({ value, onChange, className }: TimePickerProps) {
   const { h12, minute, period } = parse24(value);
 
-  const setHour = (h: number) => onChange(to24(h, minute, period));
-  const setMinute = (m: number) => onChange(to24(h12, m, period));
-  const setPeriod = (p: "AM" | "PM") => onChange(to24(h12, minute, p));
+  const [hourInput, setHourInput] = React.useState(String(h12));
+  const [minInput, setMinInput] = React.useState(String(minute).padStart(2, "0"));
+
+  // Sync inputs when value changes externally
+  React.useEffect(() => {
+    const { h12: ph, minute: pm } = parse24(value);
+    setHourInput(String(ph));
+    setMinInput(String(pm).padStart(2, "0"));
+  }, [value]);
+
+  const commitHour = () => {
+    let h = parseInt(hourInput, 10);
+    if (isNaN(h) || h < 1) h = 1;
+    if (h > 12) h = 12;
+    setHourInput(String(h));
+    onChange(to24(h, minute, period));
+  };
+
+  const commitMinute = () => {
+    let m = parseInt(minInput, 10);
+    if (isNaN(m) || m < 0) m = 0;
+    if (m > 59) m = 59;
+    setMinInput(String(m).padStart(2, "0"));
+    onChange(to24(h12, m, period));
+  };
+
+  const togglePeriod = (p: "AM" | "PM") => {
+    onChange(to24(h12, minute, p));
+  };
 
   return (
-    <div className={cn("border rounded-xl bg-white overflow-hidden", className)}>
-      <div className="flex divide-x divide-gray-100" style={{ height: 200 }}>
-        {/* Hour column */}
-        <ScrollArea className="flex-1">
-          <div className="p-1 space-y-0.5">
-            {HOURS_12.map((h) => (
-              <button
-                key={h}
-                type="button"
-                onClick={() => setHour(h)}
-                className={cn(
-                  "w-full py-2 rounded-lg text-sm font-medium transition-colors",
-                  h === h12
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-600 hover:bg-blue-50 hover:text-blue-600"
-                )}
-              >
-                {h}
-              </button>
-            ))}
-          </div>
-        </ScrollArea>
+    <div className={cn("border rounded-xl bg-white p-3", className)}>
+      <div className="flex items-center gap-2">
+        {/* Hour input */}
+        <div className="flex flex-col items-center gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              const next = h12 === 12 ? 1 : h12 + 1;
+              setHourInput(String(next));
+              onChange(to24(next, minute, period));
+            }}
+            className="w-full text-gray-400 hover:text-blue-600 text-lg leading-none py-0.5"
+          >▲</button>
+          <input
+            type="text"
+            value={hourInput}
+            onChange={(e) => setHourInput(e.target.value.replace(/\D/g, "").slice(0, 2))}
+            onBlur={commitHour}
+            onKeyDown={(e) => e.key === "Enter" && commitHour()}
+            className="w-12 h-10 text-center text-lg font-semibold border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200"
+            maxLength={2}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const next = h12 === 1 ? 12 : h12 - 1;
+              setHourInput(String(next));
+              onChange(to24(next, minute, period));
+            }}
+            className="w-full text-gray-400 hover:text-blue-600 text-lg leading-none py-0.5"
+          >▼</button>
+        </div>
 
-        {/* Minute column */}
-        <ScrollArea className="flex-1">
-          <div className="p-1 space-y-0.5">
-            {MINUTES.map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMinute(m)}
-                className={cn(
-                  "w-full py-2 rounded-lg text-sm font-medium transition-colors",
-                  m === minute
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-600 hover:bg-blue-50 hover:text-blue-600"
-                )}
-              >
-                {String(m).padStart(2, "0")}
-              </button>
-            ))}
-          </div>
-        </ScrollArea>
+        <span className="text-2xl font-bold text-gray-400 mb-0.5">:</span>
 
-        {/* AM / PM column */}
-        <div className="flex flex-col p-1 space-y-0.5" style={{ width: 56 }}>
+        {/* Minute input */}
+        <div className="flex flex-col items-center gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              const next = (minute + 1) % 60;
+              setMinInput(String(next).padStart(2, "0"));
+              onChange(to24(h12, next, period));
+            }}
+            className="w-full text-gray-400 hover:text-blue-600 text-lg leading-none py-0.5"
+          >▲</button>
+          <input
+            type="text"
+            value={minInput}
+            onChange={(e) => setMinInput(e.target.value.replace(/\D/g, "").slice(0, 2))}
+            onBlur={commitMinute}
+            onKeyDown={(e) => e.key === "Enter" && commitMinute()}
+            className="w-12 h-10 text-center text-lg font-semibold border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200"
+            maxLength={2}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const next = minute === 0 ? 59 : minute - 1;
+              setMinInput(String(next).padStart(2, "0"));
+              onChange(to24(h12, next, period));
+            }}
+            className="w-full text-gray-400 hover:text-blue-600 text-lg leading-none py-0.5"
+          >▼</button>
+        </div>
+
+        {/* AM / PM toggle */}
+        <div className="flex flex-col gap-1.5 ml-1">
           {(["AM", "PM"] as const).map((p) => (
             <button
               key={p}
               type="button"
-              onClick={() => setPeriod(p)}
+              onClick={() => togglePeriod(p)}
               className={cn(
-                "flex-1 rounded-lg text-sm font-semibold transition-colors",
+                "w-12 h-10 rounded-lg text-sm font-semibold transition-colors",
                 p === period
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-500 hover:bg-blue-50 hover:text-blue-600"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "bg-gray-100 text-gray-500 hover:bg-blue-50 hover:text-blue-600"
               )}
             >
               {p}

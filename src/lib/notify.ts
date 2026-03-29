@@ -8,6 +8,10 @@ export const notifySuccess = (message: string) => {
   toast.success(message, { duration: 3000 });
 };
 
+export const notifyInfo = (message: string) => {
+  toast.info(message, { duration: 4000 });
+};
+
 export const notifyError = (message: string) => {
   // Dismiss any existing error toast before showing a new one
   if (activeErrorId !== undefined) {
