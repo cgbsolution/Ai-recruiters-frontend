@@ -4,10 +4,22 @@ const nextConfig: NextConfig = {
 
     // Enable static HTML export
   // output: "export",
-  
+
     // Disable Next.js built-in Image Optimization (required for static export)
   images: {
     unoptimized: true,
+  },
+
+  async headers() {
+    return [
+      {
+        source: "/models/:path*",
+        headers: [
+          { key: "Content-Type", value: "model/gltf-binary" },
+          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+        ],
+      },
+    ];
   },
 
   /* config options here */

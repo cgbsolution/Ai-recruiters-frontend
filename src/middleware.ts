@@ -65,6 +65,6 @@ export const config = {
      * - _next/image (image optimization)
      * - images, uploads, favicon, public assets
      */
-    "/((?!_next/static|_next/image|images|uploads|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff2?)$).*)",
+    "/((?!_next/static|_next/image|images|uploads|favicon.ico|models|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff2?|glb|gltf|bin)$).*)",
   ],
 };
