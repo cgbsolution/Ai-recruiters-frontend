@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { CheckCircle2, XCircle, Loader2, Clock } from "lucide-react"
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 
 type Status = "loading" | "success" | "already_verified" | "expired" | "error"
 
-export default function VerifyEmailPage() {
+function VerifyEmailContent() {
   const searchParams = useSearchParams()
   const token = searchParams.get("token")
   const uid = searchParams.get("uid")
@@ -136,5 +136,17 @@ export default function VerifyEmailPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function VerifyEmailPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex flex-col flex-1 lg:w-1/2 w-full items-center justify-center px-6">
+        <Loader2 className="h-16 w-16 text-blue-500 animate-spin mx-auto" />
+      </div>
+    }>
+      <VerifyEmailContent />
+    </Suspense>
   )
 }
