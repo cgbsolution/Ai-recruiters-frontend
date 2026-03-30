@@ -159,6 +159,7 @@ export default function InterviewRoom({
   const silenceAnimRef = useRef<number | null>(null);
   const processingStartRef = useRef<number | null>(null);
   const isSubmittingRef = useRef(false);
+  const isAutoCompletingRef = useRef(false);
   // Refs for values needed inside animation-frame callbacks
   const messagesRef = useRef(messages);
   const hasIntroResponseRef = useRef(false);
@@ -360,7 +361,19 @@ export default function InterviewRoom({
   useEffect(() => {
     if (phase !== "SPEAKING") return;
     if (isSpeaking || isThinking) return;
-    if (isInterviewComplete) return;
+
+    // Interview complete & avatar finished speaking → auto-trigger completion
+    if (isInterviewComplete) {
+      if (!isAutoCompletingRef.current) {
+        isAutoCompletingRef.current = true;
+        // Small delay so user sees the closing message before transition
+        const completeTimer = setTimeout(() => {
+          onComplete();
+        }, 1500);
+        return () => clearTimeout(completeTimer);
+      }
+      return;
+    }
 
     // When code editor is open, go to IDLE instead of LISTENING (no STT needed)
     if (showCodeEditor) {
@@ -384,7 +397,7 @@ export default function InterviewRoom({
     }, POST_SPEECH_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [phase, isSpeaking, isThinking, isInterviewComplete, showCodeEditor, reset, start]);
+  }, [phase, isSpeaking, isThinking, isInterviewComplete, showCodeEditor, reset, start, onComplete]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  EFFECT 3: Silence detection — ChatGPT voice mode style        */

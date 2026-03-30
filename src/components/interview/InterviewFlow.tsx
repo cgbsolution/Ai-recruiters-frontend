@@ -69,6 +69,17 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   const stepRef = useRef(step);
   useEffect(() => { stepRef.current = step; }, [step]);
 
+  // Warn user before closing tab during processing phase
+  useEffect(() => {
+    if (step !== "COMPLETION" || session.evaluationStatus !== "processing") return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "Your interview is being processed. Are you sure you want to leave?";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [step, session.evaluationStatus]);
+
   // Re-enter fullscreen when candidate returns to tab during interview
   useEffect(() => {
     const handleVisibility = () => {
@@ -265,11 +276,7 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     if (isCompletingRef.current) return;
     isCompletingRef.current = true;
 
-    const recording = await stopRecording();
-    if (recording && session.sessionId) {
-      await session.uploadRecording(recording.blob, session.sessionId, recording.duration);
-    }
-
+    // Stop media streams immediately
     if (webcamStream) {
       webcamStream.getTracks().forEach((t) => t.stop());
     }
@@ -289,10 +296,20 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
       terminationReason = "ended_by_candidate";
     }
 
-    if (!session.evaluation) {
-      await session.completeInterview(earlyTermination, terminationReason);
-    }
+    // Show completion screen immediately — don't wait for recording upload
     setStep("COMPLETION");
+
+    // Upload recording in background (non-blocking)
+    stopRecording().then((recording) => {
+      if (recording && session.sessionId) {
+        session.uploadRecording(recording.blob, session.sessionId, recording.duration).catch(() => {});
+      }
+    }).catch(() => {});
+
+    // Trigger backend completion & evaluation polling
+    if (!session.evaluation) {
+      session.completeInterview(earlyTermination, terminationReason);
+    }
   }, [session, webcamStream, screenStream, stopRecording]);
 
   // ── Render ───────────────────────────────────────────────────────────────
