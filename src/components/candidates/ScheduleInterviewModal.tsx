@@ -145,7 +145,20 @@ export default function ScheduleInterviewModal({
     setLoading(true);
     try {
       const [h, m] = selectedTime.split(":").map(Number);
-      const isoDate = new Date(calYear, calMonth, selectedDay, h, m).toISOString();
+      // Convert the selected local time in the chosen timezone to a UTC ISO string.
+      // We cannot use new Date(year, month, day, h, m) because that uses the
+      // browser's local timezone, which may differ from the selected timezone.
+      const guessUtc = new Date(Date.UTC(calYear, calMonth, selectedDay, h, m));
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: tzValue,
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", hour12: false,
+      }).formatToParts(guessUtc);
+      const get = (type: string) => parseInt(parts.find((p) => p.type === type)?.value ?? "0");
+      const offsetMs =
+        Date.UTC(calYear, calMonth, selectedDay, h, m) -
+        Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"));
+      const isoDate = new Date(guessUtc.getTime() + offsetMs).toISOString();
 
       // Build candidate-specific interview link
       const candidateInterviewUrl = interviewUrl || "";
