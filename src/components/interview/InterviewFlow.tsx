@@ -66,6 +66,20 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   const isCompletingRef = useRef(false);
   const isResumingRef = useRef(false);
   const autoVerifiedRef = useRef(false);
+  const stepRef = useRef(step);
+  useEffect(() => { stepRef.current = step; }, [step]);
+
+  // Re-enter fullscreen when candidate returns to tab during interview
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) return;
+      if (stepRef.current !== "INTERVIEW") return;
+      if (document.fullscreenElement) return;
+      document.documentElement.requestFullscreen().catch(() => {});
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, []);
 
   /**
    * Check if the candidate is allowed to join now based on scheduling settings.
@@ -439,6 +453,8 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
       return (
         <CompletionScreen
           evaluation={session.evaluation}
+          evaluationStatus={session.evaluationStatus}
+          onRetry={session.retryEvaluation}
           onFeedback={() => setStep("FEEDBACK")}
           onSchedule={() => setStep("SCHEDULE_MEETING")}
         />

@@ -80,10 +80,25 @@ export default function ViolationModal({ violationType, violationCount, threshol
         </div>
 
         {remaining > 0 && (
-          <AlertDialogFooter>
+          <AlertDialogFooter className="flex-col gap-2">
+            {violationType === "fullscreen_exit" && (
+              <Button
+                onClick={() => {
+                  document.documentElement.requestFullscreen().catch(() => {});
+                  onDismiss();
+                }}
+                className="w-full h-12 bg-blue-600 hover:bg-blue-700"
+              >
+                Return to Fullscreen
+              </Button>
+            )}
             <Button
               onClick={onDismiss}
-              className="w-full h-12 bg-blue-600 hover:bg-blue-700"
+              variant={violationType === "fullscreen_exit" ? "outline" : "default"}
+              className={violationType === "fullscreen_exit"
+                ? "w-full h-12 border-gray-600 text-gray-300 hover:bg-gray-800"
+                : "w-full h-12 bg-blue-600 hover:bg-blue-700"
+              }
             >
               I Understand, Continue
             </Button>

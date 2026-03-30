@@ -72,6 +72,8 @@ export interface MeetingSlot {
   is_booked: boolean;
 }
 
+export type EvaluationStatus = "idle" | "processing" | "completed" | "failed";
+
 interface InterviewSessionHook {
   sessionId: number | null;
   candidateId: number | null;
@@ -84,8 +86,10 @@ interface InterviewSessionHook {
   canResume: boolean;
   sessionStatus: string | null;
   evaluation: EvaluationResult | null;
+  evaluationStatus: EvaluationStatus;
   jobConfig: JobConfig | null;
   error: string | null;
+  retryEvaluation: () => Promise<void>;
   loadJobConfig: (token: string) => Promise<JobConfig | null>;
   registerCandidate: (
     token: string,
@@ -129,6 +133,7 @@ export function useInterviewSession(): InterviewSessionHook {
   const [canResume, setCanResume] = useState(false);
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
   const [evaluation, setEvaluation] = useState<EvaluationResult | null>(null);
+  const [evaluationStatus, setEvaluationStatus] = useState<EvaluationStatus>("idle");
   const [jobConfig, setJobConfig] = useState<JobConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -439,6 +444,26 @@ export function useInterviewSession(): InterviewSessionHook {
     return sendMessage("[SKIP] The candidate has chosen to skip this question.");
   }, [sessionId, sendMessage]);
 
+  const _pollForEvaluation = useCallback(async (sid: number) => {
+    setEvaluationStatus("processing");
+    const MAX_POLLS = 45; // 45 × 4s = 3 minutes
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise((r) => setTimeout(r, 4000));
+      try {
+        const evalData = await api<EvaluationResult>(`/interview/sessions/${sid}/evaluation`);
+        setEvaluation(evalData);
+        setEvaluationStatus("completed");
+        setIsAiThinking(false);
+        return;
+      } catch {
+        // 404 = not ready yet, keep polling
+      }
+    }
+    // Timed out — evaluation still not available
+    setEvaluationStatus("failed");
+    setIsAiThinking(false);
+  }, []);
+
   const completeInterview = useCallback(async (earlyTermination: boolean = false, terminationReason?: string) => {
     if (!sessionId) return;
     setIsAiThinking(true);
@@ -453,26 +478,21 @@ export function useInterviewSession(): InterviewSessionHook {
       // Backend returns 202 immediately and runs evaluation in background
       await api(path, { method: "POST" });
 
-      // Poll /evaluation every 4s until it returns 200 (max 3 minutes)
-      const MAX_POLLS = 45;
-      for (let i = 0; i < MAX_POLLS; i++) {
-        await new Promise((r) => setTimeout(r, 4000));
-        try {
-          const evalData = await api<EvaluationResult>(`/interview/sessions/${sessionId}/evaluation`);
-          setEvaluation(evalData);
-          setIsAiThinking(false);
-          return;
-        } catch {
-          // 404 = not ready yet, keep polling
-        }
-      }
-      // Timed out polling — still show completion screen without scores
-      setIsAiThinking(false);
+      // Poll until evaluation is ready
+      await _pollForEvaluation(sessionId);
     } catch (e: any) {
       setError(e instanceof ApiError ? e.detail : e.message);
+      setEvaluationStatus("failed");
       setIsAiThinking(false);
     }
-  }, [sessionId]);
+  }, [sessionId, _pollForEvaluation]);
+
+  const retryEvaluation = useCallback(async () => {
+    if (!sessionId) return;
+    setIsAiThinking(true);
+    setEvaluationStatus("processing");
+    await _pollForEvaluation(sessionId);
+  }, [sessionId, _pollForEvaluation]);
 
   const uploadRecording = useCallback(
     async (blob: Blob, sid: number, duration: string): Promise<void> => {
@@ -522,8 +542,10 @@ export function useInterviewSession(): InterviewSessionHook {
     canResume,
     sessionStatus,
     evaluation,
+    evaluationStatus,
     jobConfig,
     error,
+    retryEvaluation,
     loadJobConfig,
     verifyAccess,
     applyForJob,
