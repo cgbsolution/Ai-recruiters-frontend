@@ -352,7 +352,7 @@ export default function InterviewRoom({
   /*  EFFECT 2: SPEAKING → LISTENING transition (when TTS ends)     */
   /*                                                                  */
   /*  Flow modes:                                                     */
-  /*  • Intro phase (qIndex=0, no candidate msg): auto-listen         */
+  /*  • Intro phase (qIndex=0, no candidate msg): idle, show Start Speaking */
   /*  • Begin phase (qIndex=0, has candidate msg): idle, show Begin   */
   /*  • Q&A phase  (qIndex>0): idle, show manual speaking controls    */
   /* ═══════════════════════════════════════════════════════════════ */
@@ -379,12 +379,8 @@ export default function InterviewRoom({
       const latestQIndex = aiMsgs.length > 0 ? (aiMsgs[aiMsgs.length - 1].questionIndex ?? 0) : 0;
       const hasCandidateMsgYet = hasIntroResponseRef.current;
 
-      if (latestQIndex === 0 && !hasCandidateMsgYet) {
-        // ── Intro phase: auto-listen, no buttons ──
-        start();
-        setVoiceState("recording");
-      }
-      // else: Begin phase or Q&A → stay idle, let candidate click Start Speaking or Begin
+      // All phases stay idle — candidate clicks Start Speaking (or Begin after intro)
+      // No auto-listen: intro phase now uses the same manual Start Speaking flow as Q&A
     }, POST_SPEECH_DELAY_MS);
 
     return () => clearTimeout(timer);
@@ -448,24 +444,15 @@ export default function InterviewRoom({
       if (elapsed >= timeout) {
         setSilenceProgress(0);
 
-        const isIntroAutoMode =
-          !hasIntroResponseRef.current &&
-          (messagesRef.current.filter((m) => m.role === "ai").slice(-1)[0]?.questionIndex ?? 0) === 0;
-
-        if (isIntroAutoMode) {
-          // ── Intro phase: auto-submit directly, no manual step ──
-          handleSubmit();
-        } else {
-          // ── Q&A phase: move to "answered" state, let candidate click Send Response ──
-          const captured = finalTranscriptRef.current.trim();
-          capturedTranscriptRef.current = captured;
-          stop();
-          setCapturedTranscript(captured);
-          setVoiceState("answered");
-          if (recordingTimerRef.current) {
-            clearInterval(recordingTimerRef.current);
-            recordingTimerRef.current = null;
-          }
+        // All phases: move to "answered" state, let candidate click Send Response
+        const captured = finalTranscriptRef.current.trim();
+        capturedTranscriptRef.current = captured;
+        stop();
+        setCapturedTranscript(captured);
+        setVoiceState("answered");
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
+          recordingTimerRef.current = null;
         }
       } else {
         silenceAnimRef.current = requestAnimationFrame(tick);
@@ -1055,30 +1042,6 @@ export default function InterviewRoom({
             {!showCodeEditor && (
               <div className="px-4 pb-5 pt-2 shrink-0 flex flex-col items-center gap-3 border-t border-gray-800/60">
 
-                {/* ── PHASE 1: Intro auto-listen ── */}
-                {/* Frictionless — no buttons, just a live waveform indicator */}
-                {phase === "LISTENING" && currentQuestionIndex === 0 && !hasIntroResponse && (
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="flex items-center gap-px h-8 w-40">
-                      {[4,7,3,8,5,9,4,6,8,3,7,5,9,4,6,8,3,7,5,6].map((h, i) => (
-                        <div
-                          key={i}
-                          className="flex-1 bg-green-400 rounded-full"
-                          style={{
-                            height: `${h * 8}%`,
-                            minHeight: "15%",
-                            maxHeight: "90%",
-                            animation: `pulse ${0.4 + (i % 5) * 0.08}s ease-in-out ${i * 0.04}s infinite alternate`,
-                          }}
-                        />
-                      ))}
-                    </div>
-                    <p className="text-green-400 text-xs">
-                      Listening… speak your introduction
-                    </p>
-                  </div>
-                )}
-
                 {/* ── PHASE 2: Begin button (after intro feedback) ── */}
                 {phase === "LISTENING" && currentQuestionIndex === 0 && hasIntroResponse && (
                   <Button
@@ -1089,11 +1052,11 @@ export default function InterviewRoom({
                   </Button>
                 )}
 
-                {/* ── PHASE 3: Q&A manual speaking controls ── */}
-                {phase === "LISTENING" && currentQuestionIndex > 0 && (
+                {/* ── PHASE 3: Manual speaking controls (intro + Q&A) ── */}
+                {phase === "LISTENING" && !(currentQuestionIndex === 0 && hasIntroResponse) && (
                   <>
-                    {/* Skip link */}
-                    {voiceState === "idle" && (
+                    {/* Skip link — only during Q&A, not intro */}
+                    {voiceState === "idle" && currentQuestionIndex > 0 && (
                       <div className="flex items-center text-sm">
                         <button
                           onClick={handleSkip}
