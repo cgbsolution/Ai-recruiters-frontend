@@ -43,6 +43,7 @@ interface Organization {
   total_jobs_used: number;
   total_candidates_used: number;
   allow_resume_database: boolean;
+  allow_code_editor: boolean;
 }
 
 interface OrgStats {
@@ -70,6 +71,7 @@ export default function OrganizationsView() {
   const [formMaxJobs, setFormMaxJobs] = useState(0);
   const [formMaxCandidates, setFormMaxCandidates] = useState(0);
   const [formAllowResumeDb, setFormAllowResumeDb] = useState(false);
+  const [formAllowCodeEditor, setFormAllowCodeEditor] = useState(false);
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -107,6 +109,7 @@ export default function OrganizationsView() {
         max_jobs: formMaxJobs,
         max_candidates_per_job: formMaxCandidates,
         allow_resume_database: formAllowResumeDb,
+        allow_code_editor: formAllowCodeEditor,
       };
 
       if (editOrg) {
@@ -192,6 +195,7 @@ export default function OrganizationsView() {
     setFormMaxJobs(org.max_jobs ?? 0);
     setFormMaxCandidates(org.max_candidates_per_job ?? 0);
     setFormAllowResumeDb(org.allow_resume_database ?? false);
+    setFormAllowCodeEditor(org.allow_code_editor ?? false);
     setFormError("");
     setDialogOpen(true);
   };
@@ -202,6 +206,7 @@ export default function OrganizationsView() {
     setFormMaxJobs(0);
     setFormMaxCandidates(0);
     setFormAllowResumeDb(false);
+    setFormAllowCodeEditor(false);
     setFormError("");
   };
 
@@ -479,6 +484,20 @@ export default function OrganizationsView() {
               />
               <Label htmlFor="allowResumeDb" className="cursor-pointer">
                 Allow Resume Database Access
+              </Label>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="allowCodeEditor"
+                checked={formAllowCodeEditor}
+                onChange={(e) => setFormAllowCodeEditor(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <Label htmlFor="allowCodeEditor" className="cursor-pointer">
+                Allow Code Editor Access
+                <span className="ml-2 text-xs text-amber-600 font-medium bg-amber-50 px-1.5 py-0.5 rounded">Premium Pro</span>
               </Label>
             </div>
 

@@ -20,6 +20,8 @@ export interface AuthUser {
   is_email_verified: boolean;
   organization_id: number | null;
   organization_name: string | null;
+  allow_code_editor: boolean;
+  allow_whatsapp: boolean;
 }
 
 interface AuthContextType {
@@ -78,6 +80,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 is_email_verified: data.is_email_verified,
                 organization_id: data.organization_id,
                 organization_name: data.organization_name,
+                allow_code_editor: data.allow_code_editor ?? false,
+                allow_whatsapp: data.allow_whatsapp ?? false,
               };
               Cookies.set(USER_KEY, JSON.stringify(fresh), { expires: 7, sameSite: "Lax" });
               setUser(fresh);

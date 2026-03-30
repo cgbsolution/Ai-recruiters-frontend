@@ -141,7 +141,7 @@ export default function FitScoreBadge({
     if (fitLevel === "high" || fitLevel === "medium" || fitLevel === "low") return fitLevel;
     const pctVal = pctFromLevel ?? percentage ?? 0;
     if (pctVal >= 75) return "high";
-    if (pctVal >= 45) return "medium";
+    if (pctVal >= 40) return "medium";
     return "low";
   })();
 
@@ -256,38 +256,27 @@ export default function FitScoreBadge({
         </>
       )}
 
-      {/* ── AI 6-Dimension Score Breakdown ── */}
-      {aiScoreBreakdown && Object.keys(aiScoreBreakdown).length > 0 && (
+      {/* ── AI Insights: simple summary from strength mapping ── */}
+      {strengthMapping && (strengthMapping.strong_matches?.length || strengthMapping.gaps?.length) ? (
         <>
           <div className="border-t border-gray-600" />
-          <div>
-            <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide mb-2">
-              AI Score Breakdown
+          <div className="space-y-1.5">
+            <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
+              Recruiter Summary
             </p>
-            <div className="space-y-1.5">
-              {Object.entries(aiScoreBreakdown)
-                .filter(([, score]) => typeof score === "number")
-                .map(([key, score]) => {
-                const maxScore = key === "core_skills" ? 40
-                  : key === "experience_fit" || key === "responsibility_match" ? 15
-                  : 10;
-                const pctValue = Math.round((Number(score) / maxScore) * 100);
-                return (
-                  <div key={key} className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400 w-32 truncate">
-                      {DIMENSION_LABELS[key] || key}
-                    </span>
-                    <Progress value={pctValue} className="h-1.5 flex-1" />
-                    <span className="text-xs text-gray-400 w-12 text-right font-mono">
-                      {score}/{maxScore}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+            <p className="text-xs text-gray-300 leading-relaxed">
+              {(() => {
+                const strong = strengthMapping.strong_matches?.slice(0, 3) ?? [];
+                const gaps = strengthMapping.gaps?.slice(0, 2) ?? [];
+                const parts: string[] = [];
+                if (strong.length > 0) parts.push(`Strong in ${strong.join(", ")}.`);
+                if (gaps.length > 0) parts.push(`Lacks ${gaps.join(", ")}.`);
+                return parts.join(" ") || "See skill details below.";
+              })()}
+            </p>
           </div>
         </>
-      )}
+      ) : null}
 
       {/* ── Strength Mapping ── */}
       {strengthMapping && (strengthMapping.strong_matches?.length || strengthMapping.partial_matches?.length || strengthMapping.gaps?.length) ? (

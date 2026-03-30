@@ -36,7 +36,7 @@ import {
   RadioGroupItem,
 } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
-import { notifyError, notifySuccess } from "@/lib/notify";
+import { notifyError, notifySuccess, notifyInfo } from "@/lib/notify";
 import {
   TrashIcon,
   ChevronDownIcon,
@@ -65,7 +65,8 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
   const searchParams = useSearchParams();
   const openingType = searchParams?.get("openingType") || "technical";
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
+  const canUseCodeEditor = hasRole("super_admin") || (user?.allow_code_editor ?? false);
   const isEditMode = Boolean(jobId);
 
   // AI JD modal
@@ -92,7 +93,7 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
 
   // ---------- STEP 3 (Interview Setup + bottom: Skills & Criteria) ----------
   const [interviewSettings, setInterviewSettings] = useState({
-    codeEditor: true,
+    codeEditor: false,
     allowFromMobile: false,
     enableVirtualAvatar: true,
     resumeBased: true,
@@ -1091,11 +1092,28 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
                     <Checkbox
                       id="codeEditor"
                       checked={interviewSettings.codeEditor}
-                      onCheckedChange={() =>
-                        toggleInterviewSetting("codeEditor")
-                      }
+                      disabled={!canUseCodeEditor}
+                      onCheckedChange={() => {
+                        if (!canUseCodeEditor) {
+                          notifyInfo("This feature is available only in the Premium Pro plan. Please contact your admin.");
+                          return;
+                        }
+                        toggleInterviewSetting("codeEditor");
+                      }}
                     />
-                    <Label htmlFor="codeEditor">Code Editor Required</Label>
+                    <Label
+                      htmlFor="codeEditor"
+                      className={`flex items-center gap-1.5 ${!canUseCodeEditor ? "text-gray-400 cursor-pointer" : ""}`}
+                      onClick={() => {
+                        if (!canUseCodeEditor) notifyInfo("This feature is available only in the Premium Pro plan. Please contact your admin.");
+                      }}
+                    >
+                      {!canUseCodeEditor && <span>🔒</span>}
+                      Code Editor Required
+                      {!canUseCodeEditor && (
+                        <span className="text-xs bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded font-medium">Premium Pro</span>
+                      )}
+                    </Label>
                   </div>
 
                   <div className="flex items-center space-x-2">

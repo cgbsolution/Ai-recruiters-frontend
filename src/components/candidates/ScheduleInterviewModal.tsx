@@ -84,8 +84,8 @@ export default function ScheduleInterviewModal({
   interviewUrl,
   onScheduled,
 }: ScheduleInterviewModalProps) {
-  const { hasRole } = useAuth();
-  const canUseWhatsapp = hasRole("super_admin");
+  const { hasRole, user } = useAuth();
+  const canUseWhatsapp = hasRole("super_admin") || (user?.allow_whatsapp ?? false);
 
   const today = new Date();
   const [tzValue, setTzValue] = useState("Asia/Calcutta");
@@ -232,7 +232,7 @@ export default function ScheduleInterviewModal({
             </div>
 
             {/* Date & Time Row */}
-            <div className="grid grid-cols-1 sm:grid-cols-[1fr_180px] gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_220px] gap-5">
               {/* Calendar */}
               <div className="space-y-1.5">
                 <Label className="text-sm font-medium flex items-center gap-1.5">
@@ -459,7 +459,7 @@ export default function ScheduleInterviewModal({
                     disabled={!canUseWhatsapp}
                     onCheckedChange={(v) => {
                       if (!canUseWhatsapp) {
-                        notifyInfo("Connect to your administration for full WhatsApp access.");
+                        notifyInfo("This feature is available only in the Premium Pro plan. Please contact your admin.");
                         return;
                       }
                       setSendWhatsapp(v as boolean);
@@ -471,16 +471,15 @@ export default function ScheduleInterviewModal({
                     className={`text-sm font-normal leading-snug flex items-center gap-1.5 cursor-pointer ${canUseWhatsapp ? "text-gray-600" : "text-gray-400"}`}
                     onClick={() => {
                       if (!canUseWhatsapp) {
-                        notifyInfo("Connect to your administration for full WhatsApp access.");
+                        notifyInfo("This feature is available only in the Premium Pro plan. Please contact your admin.");
                       }
                     }}
                   >
+                    {!canUseWhatsapp && <span>🔒</span>}
                     <MessageSquare className={`w-3.5 h-3.5 ${canUseWhatsapp ? "text-green-500" : "text-gray-300"}`} />
                     Send WhatsApp notification
                     {!canUseWhatsapp && (
-                      <span className="ml-1 text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded font-medium">
-                        Admin only
-                      </span>
+                      <span className="ml-1 text-xs bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded font-medium">Premium Pro</span>
                     )}
                   </Label>
                 </div>

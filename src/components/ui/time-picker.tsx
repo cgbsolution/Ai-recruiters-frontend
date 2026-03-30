@@ -59,8 +59,8 @@ export function TimePicker({ value, onChange, className }: TimePickerProps) {
   };
 
   return (
-    <div className={cn("border rounded-xl bg-white p-3", className)}>
-      <div className="flex items-center gap-2">
+    <div className={cn("border rounded-xl bg-white p-3 w-full", className)}>
+      <div className="flex items-center gap-2 flex-wrap">
         {/* Hour input */}
         <div className="flex flex-col items-center gap-1">
           <button
