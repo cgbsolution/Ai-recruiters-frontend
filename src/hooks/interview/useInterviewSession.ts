@@ -491,6 +491,12 @@ export function useInterviewSession(): InterviewSessionHook {
     if (!sessionId) return;
     setIsAiThinking(true);
     setEvaluationStatus("processing");
+    try {
+      // Re-trigger the background evaluation task
+      await api(`/interview/sessions/${sessionId}/complete`, { method: "POST" });
+    } catch {
+      // 400 if already completed is fine — evaluation will still re-run
+    }
     await _pollForEvaluation(sessionId);
   }, [sessionId, _pollForEvaluation]);
 

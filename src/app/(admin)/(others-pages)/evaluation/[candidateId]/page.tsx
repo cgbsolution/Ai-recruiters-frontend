@@ -256,20 +256,33 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
   }, []);
 
   const generateEvaluation = useCallback(async () => {
-    if (!data?.session?.id) return;
     setGeneratingEval(true);
     try {
-      await api(`/interview/sessions/${data.session.id}/complete`, { method: "POST" });
-      // Reload data
-      const fresh = await api<EvaluationData>(`/candidates/${candidateId}/evaluation`);
-      setData(fresh);
-      notifySuccess("Evaluation generated successfully!");
+      // Use regenerate endpoint which deletes old evaluation and re-triggers background task
+      await api(`/candidates/${candidateId}/regenerate-evaluation`, { method: "POST" });
+
+      // Poll /candidates/{id}/evaluation until evaluation data appears (max 3 min)
+      const MAX_POLLS = 45;
+      for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise((r) => setTimeout(r, 4000));
+        try {
+          const fresh = await api<EvaluationData>(`/candidates/${candidateId}/evaluation`);
+          if (fresh.evaluation) {
+            setData(fresh);
+            notifySuccess("Evaluation generated successfully!");
+            return;
+          }
+        } catch {
+          // not ready yet
+        }
+      }
+      notifyError("Evaluation is taking longer than expected. Please check back in a few minutes.");
     } catch (err: any) {
-      setError(err.message || "Failed to generate evaluation");
+      notifyError(err.message || "Failed to generate evaluation");
     } finally {
       setGeneratingEval(false);
     }
-  }, [data?.session?.id, candidateId]);
+  }, [candidateId]);
 
   const copyRecordingUrl = useCallback(() => {
     if (!data?.recording.link) return;
@@ -697,12 +710,22 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
                   )}
 
                   {!evaluation && (
-                    <div className="text-center py-4 space-y-3">
-                      <p className="text-sm text-gray-400">
-                        {session?.status === "completed" || session?.status === "terminated"
-                          ? "Evaluation was not generated automatically."
-                          : "Evaluation will appear after the interview is completed."}
-                      </p>
+                    <div className="text-center py-6 space-y-4">
+                      <div className="w-12 h-12 rounded-full bg-yellow-50 border border-yellow-100 flex items-center justify-center mx-auto">
+                        <TrendingUp className="w-6 h-6 text-yellow-500" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">
+                          {session?.status === "completed" || session?.status === "terminated"
+                            ? "Evaluation report was not generated"
+                            : "Evaluation will appear after the interview is completed."}
+                        </p>
+                        {(session?.status === "completed" || session?.status === "terminated") && (
+                          <p className="text-xs text-gray-400 mt-1">
+                            Click below to regenerate it. This may take 1–3 minutes.
+                          </p>
+                        )}
+                      </div>
                       {session?.id && (session?.status === "completed" || session?.status === "terminated") && (
                         <Button
                           onClick={generateEvaluation}
@@ -712,12 +735,12 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
                           {generatingEval ? (
                             <>
                               <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                              Generating…
+                              Generating… (up to 3 min)
                             </>
                           ) : (
                             <>
                               <TrendingUp className="w-4 h-4" />
-                              Generate Evaluation
+                              Generate Evaluation Report
                             </>
                           )}
                         </Button>
