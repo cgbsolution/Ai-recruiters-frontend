@@ -39,6 +39,7 @@ interface EditEmailTemplateModalProps {
   initial?: Partial<EmailTemplateData>;
   candidateName: string;
   jobTitle: string;
+  organizationName?: string;
   interviewDate: string;
   interviewUrl: string;
   joiningFlexibility?: "scheduled_time" | "anytime";
@@ -51,14 +52,17 @@ export default function EditEmailTemplateModal({
   initial,
   candidateName,
   jobTitle,
+  organizationName,
   interviewDate,
   interviewUrl,
   joiningFlexibility = "anytime",
   onSave,
 }: EditEmailTemplateModalProps) {
+  const companyName = organizationName || "Our Company";
+
   const defaultTemplate: EmailTemplateData = {
     subject: `Your Interview Schedule for ${jobTitle}`,
-    introText: `You are shortlisted for an AI Interview round for the role ${jobTitle} at company CGBiz Solutions Private limited`,
+    introText: `You are shortlisted for an AI Interview round for the role of ${jobTitle} at ${companyName}.`,
     extraHeading: "",
     extraBody: "",
     ccEmails: "",
@@ -248,7 +252,16 @@ export default function EditEmailTemplateModal({
                 </p>
 
                 <p className="text-sm text-gray-600 leading-relaxed">
-                  {template.introText}
+                  {template.introText.split(jobTitle).map((part, i, arr) =>
+                    i < arr.length - 1 ? (
+                      <React.Fragment key={i}>
+                        {part}
+                        <span className="font-semibold text-blue-700">{jobTitle}</span>
+                      </React.Fragment>
+                    ) : (
+                      part
+                    )
+                  )}
                 </p>
 
                 {/* Interview details card */}

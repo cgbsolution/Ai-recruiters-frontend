@@ -540,6 +540,7 @@ export default function ScheduleInterviewModal({
         onClose={() => setShowEmailModal(false)}
         candidateName={candidateName}
         jobTitle={jobTitle}
+        organizationName={user?.organization_name || ""}
         interviewDate={formattedDate}
         interviewUrl={interviewUrl || ""}
         joiningFlexibility={flexibility}
