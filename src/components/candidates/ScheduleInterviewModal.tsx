@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Calendar, Clock, Mail, MessageSquare, Info, ChevronLeft, ChevronRight, Timer } from "lucide-react";
+import { Calendar, Clock, Mail, MessageSquare, Info, ChevronLeft, ChevronRight, Timer, Video } from "lucide-react";
 import { TimePicker } from "@/components/ui/time-picker";
 import EditEmailTemplateModal, { EmailTemplateData } from "./EditEmailTemplateModal";
 import { notifySuccess, notifyError, notifyInfo } from "@/lib/notify";
@@ -97,6 +97,7 @@ export default function ScheduleInterviewModal({
   const [flexibility, setFlexibility] = useState<"scheduled_time" | "anytime">("anytime");
   const [allowReschedule, setAllowReschedule] = useState(false);
   const [sendWhatsapp, setSendWhatsapp] = useState(false);
+  const [createGoogleMeet, setCreateGoogleMeet] = useState(false);
   const [linkExpiry, setLinkExpiry] = useState<"never" | "custom">("never");
   const [expiryValue, setExpiryValue] = useState(7);
   const [expiryUnit, setExpiryUnit] = useState<"hours" | "days">("days");
@@ -170,6 +171,7 @@ export default function ScheduleInterviewModal({
         allow_candidate_reschedule: allowReschedule,
         allow_joining_early: joinBefore,
         send_whatsapp: sendWhatsapp,
+        create_google_meet: createGoogleMeet,
         interview_url: candidateInterviewUrl,
         link_expiry: linkExpiry === "custom" ? { value: expiryValue, unit: expiryUnit } : null,
         ...(emailTemplate && {
@@ -187,13 +189,14 @@ export default function ScheduleInterviewModal({
       // Build notification message based on actual send results
       const emailOk = data.email_sent === true;
       const whatsappOk = data.whatsapp_sent === true;
+      const meetOk = !!data.google_meet_link;
+      const notifs: string[] = [];
+      if (emailOk) notifs.push("Email sent");
+      if (whatsappOk) notifs.push("WhatsApp sent");
+      if (meetOk) notifs.push("Google Meet created");
 
-      if (emailOk && whatsappOk) {
-        notifySuccess("Interview scheduled! Email and WhatsApp notifications sent.");
-      } else if (emailOk) {
-        notifySuccess("Interview scheduled! Email notification sent.");
-      } else if (whatsappOk) {
-        notifySuccess("Interview scheduled! WhatsApp sent, but email failed to send.");
+      if (notifs.length > 0) {
+        notifySuccess(`Interview scheduled! ${notifs.join(", ")}.`);
       } else {
         notifySuccess("Interview scheduled! But email notification failed — check SMTP settings.");
       }
@@ -506,6 +509,29 @@ export default function ScheduleInterviewModal({
                   <Mail className="w-3.5 h-3.5" />
                   Edit Email Body
                 </Button>
+              </div>
+
+              {/* Google Meet toggle */}
+              <div className="flex items-start gap-2.5">
+                <Checkbox
+                  id="google-meet"
+                  checked={createGoogleMeet}
+                  disabled={!user?.google_connected}
+                  onCheckedChange={(v) => setCreateGoogleMeet(v as boolean)}
+                  className="mt-0.5"
+                />
+                <Label
+                  htmlFor="google-meet"
+                  className={`text-sm font-normal leading-snug flex items-center gap-1.5 cursor-pointer ${user?.google_connected ? "text-gray-600" : "text-gray-400"}`}
+                >
+                  <Video className={`w-3.5 h-3.5 ${user?.google_connected ? "text-green-600" : "text-gray-300"}`} />
+                  Create Google Meet link
+                  {!user?.google_connected && (
+                    <span className="ml-1 text-xs text-gray-400">
+                      (Connect Google in <a href="/profile" className="text-brand-600 underline">Profile</a>)
+                    </span>
+                  )}
+                </Label>
               </div>
 
               {emailTemplate && (
