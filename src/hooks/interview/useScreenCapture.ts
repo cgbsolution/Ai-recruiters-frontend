@@ -14,6 +14,7 @@ export function useScreenCapture(
   sessionId: number | null,
   webcamStream: MediaStream | null,
   isActive: boolean,
+  lastFaceCountRef?: React.MutableRefObject<number>,
 ) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -67,6 +68,9 @@ export function useScreenCapture(
       const form = new FormData();
       form.append("file", blob, `screenshot_${Date.now()}.jpg`);
       form.append("timestamp", new Date().toISOString());
+      if (lastFaceCountRef) {
+        form.append("face_count", String(lastFaceCountRef.current));
+      }
 
       // Fire-and-forget — never await to block the interview
       fetch(`${API_BASE}/interview/sessions/${sessionId}/screenshot`, {

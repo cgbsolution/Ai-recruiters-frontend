@@ -15,6 +15,7 @@ interface ViolationDetectionHook {
   shouldTerminate: boolean;
   resetViolations: () => void;
   disable: () => void;
+  lastFaceCountRef: React.MutableRefObject<number>;
 }
 
 const TERMINATE_THRESHOLD = 5;
@@ -29,6 +30,7 @@ export function useViolationDetection(
   const [lastViolation, setLastViolation] = useState<ViolationType | null>(null);
   const [shouldTerminate, setShouldTerminate] = useState(false);
   const disabledRef = useRef(false);
+  const lastFaceCountRef = useRef<number>(1); // latest face count from MediaPipe
   const faceDetectorRef = useRef<any>(null);
   const faceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -117,6 +119,7 @@ export function useViolationDetection(
         faceDetection.onResults((results: any) => {
           if (!isActive || cancelled) return;
           const count = results.detections?.length ?? 0;
+          lastFaceCountRef.current = count;
           if (count === 0) {
             consecutiveMissRef.current += 1;
             if (consecutiveMissRef.current >= MISS_THRESHOLD) {
@@ -176,5 +179,5 @@ export function useViolationDetection(
     setShouldTerminate(false);
   }, []);
 
-  return { violationCount, lastViolation, shouldTerminate, resetViolations, disable };
+  return { violationCount, lastViolation, shouldTerminate, resetViolations, disable, lastFaceCountRef };
 }

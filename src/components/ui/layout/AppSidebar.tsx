@@ -8,6 +8,7 @@ import { useAuth, type UserRole } from "@/context/AuthContext";
 import SidebarWidget from "./SidebarWidget";
 import {
   ChevronDownIcon,
+  FolderIcon,
   GridIcon,
   GroupIcon,
   HorizontaLDots,
@@ -74,6 +75,12 @@ const AppSidebar: React.FC = () => {
         name: "Access Control",
         path: "/access-control",
         roles: ["super_admin", "admin"],
+      },
+      {
+        icon: <FolderIcon />,
+        name: "File Manager",
+        path: "/file-manager",
+        roles: ["super_admin"],
       },
       {
         icon: <SignOut />,

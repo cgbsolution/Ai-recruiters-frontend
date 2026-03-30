@@ -172,8 +172,8 @@ export default function InterviewRoom({
   /* ── Hooks ── */
   const { transcript, interimTranscript, isListening, isSupported, lastFinalAt, start, stop, reset } = useSpeechRecognition();
   const { speak, cancel, isSpeaking } = useSpeechSynthesis();
-  const { violationCount, lastViolation, shouldTerminate, disable: disableViolations } = useViolationDetection(sessionId, true, webcamStream, jobConfig.face_match);
-  useScreenCapture(sessionId, webcamStream, !isInterviewComplete);
+  const { violationCount, lastViolation, shouldTerminate, disable: disableViolations, lastFaceCountRef } = useViolationDetection(sessionId, true, webcamStream, jobConfig.face_match);
+  useScreenCapture(sessionId, webcamStream, !isInterviewComplete, lastFaceCountRef);
 
   /* ── Keep transcriptRef in sync ── */
   useEffect(() => {
