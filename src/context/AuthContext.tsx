@@ -1,12 +1,18 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import Cookies from "js-cookie";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 const TOKEN_KEY = "auth_token";
 const USER_KEY = "auth_user";
+const EXPIRES_AT_KEY = "auth_expires_at"; // epoch ms when token expires
+
+// How often to check if session is still valid (ms)
+const SESSION_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
+// Inactivity timeout — log out if no mouse/keyboard/touch for this long
+const INACTIVITY_TIMEOUT = 60 * 60 * 1000; // 60 minutes
 
 export type UserRole = "super_admin" | "admin" | "recruiter";
 
@@ -41,13 +47,97 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const lastActivityRef = useRef(Date.now());
+  const sessionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Restore session from cookies on mount, then sync with backend
+  // ── Force logout helper ────────────────────────────────────────────────────
+  const forceLogout = useCallback(() => {
+    Cookies.remove(TOKEN_KEY);
+    Cookies.remove(USER_KEY);
+    Cookies.remove(EXPIRES_AT_KEY);
+    setToken(null);
+    setUser(null);
+    if (typeof window !== "undefined" && !window.location.pathname.startsWith("/signin")) {
+      window.location.href = "/signin";
+    }
+  }, []);
+
+  // ── Activity tracking — reset inactivity timer on user interaction ─────────
+  useEffect(() => {
+    const resetActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
+    const events = ["mousedown", "keydown", "touchstart", "scroll"];
+    events.forEach((e) => window.addEventListener(e, resetActivity, { passive: true }));
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, resetActivity));
+    };
+  }, []);
+
+  // ── Periodic session check — token expiry + inactivity ─────────────────────
+  useEffect(() => {
+    if (!token) {
+      if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
+      return;
+    }
+
+    const check = () => {
+      // 1. Check token expiry
+      const expiresAt = parseInt(Cookies.get(EXPIRES_AT_KEY) || "0", 10);
+      if (expiresAt > 0 && Date.now() >= expiresAt) {
+        console.warn("[Auth] Session expired");
+        forceLogout();
+        return;
+      }
+
+      // 2. Check inactivity
+      const idle = Date.now() - lastActivityRef.current;
+      if (idle >= INACTIVITY_TIMEOUT) {
+        console.warn("[Auth] Logged out due to inactivity");
+        forceLogout();
+        return;
+      }
+
+      // 3. Validate token with backend periodically
+      const savedToken = Cookies.get(TOKEN_KEY);
+      if (!savedToken) {
+        forceLogout();
+        return;
+      }
+      fetch(`${API_BASE}/auth/me`, {
+        headers: { Authorization: `Bearer ${savedToken}` },
+      }).then((res) => {
+        if (res.status === 401 || res.status === 403) {
+          console.warn("[Auth] Backend rejected token");
+          forceLogout();
+        }
+      }).catch(() => {
+        // Network error — don't log out, might be transient
+      });
+    };
+
+    sessionTimerRef.current = setInterval(check, SESSION_CHECK_INTERVAL);
+    return () => {
+      if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
+    };
+  }, [token, forceLogout]);
+
+  // ── Restore session from cookies on mount, then sync with backend ──────────
   useEffect(() => {
     const savedToken = Cookies.get(TOKEN_KEY);
     const savedUser = Cookies.get(USER_KEY);
 
     if (savedToken && savedUser) {
+      // Check if token has expired
+      const expiresAt = parseInt(Cookies.get(EXPIRES_AT_KEY) || "0", 10);
+      if (expiresAt > 0 && Date.now() >= expiresAt) {
+        Cookies.remove(TOKEN_KEY);
+        Cookies.remove(USER_KEY);
+        Cookies.remove(EXPIRES_AT_KEY);
+        setIsLoading(false);
+        return;
+      }
+
       try {
         const parsed = JSON.parse(savedUser) as AuthUser;
         setToken(savedToken);
@@ -62,6 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               // Token expired or user deactivated — force logout
               Cookies.remove(TOKEN_KEY);
               Cookies.remove(USER_KEY);
+              Cookies.remove(EXPIRES_AT_KEY);
               setToken(null);
               setUser(null);
               return null;
@@ -83,7 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 allow_code_editor: data.allow_code_editor ?? false,
                 allow_whatsapp: data.allow_whatsapp ?? false,
               };
-              Cookies.set(USER_KEY, JSON.stringify(fresh), { expires: 7, sameSite: "Lax" });
+              Cookies.set(USER_KEY, JSON.stringify(fresh), { expires: 1, sameSite: "Lax" });
               setUser(fresh);
             }
           })
@@ -93,24 +184,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch {
         Cookies.remove(TOKEN_KEY);
         Cookies.remove(USER_KEY);
+        Cookies.remove(EXPIRES_AT_KEY);
       }
     }
     setIsLoading(false);
   }, []);
 
-  const saveSession = useCallback((accessToken: string, userData: AuthUser) => {
-    // Cookie expires in 7 days, sameSite strict for security
-    Cookies.set(TOKEN_KEY, accessToken, { expires: 7, sameSite: "Lax" });
-    Cookies.set(USER_KEY, JSON.stringify(userData), { expires: 7, sameSite: "Lax" });
+  const saveSession = useCallback((accessToken: string, userData: AuthUser, expiresInSec?: number) => {
+    // Cookie expires when token expires (default 1 day)
+    const cookieDays = expiresInSec ? expiresInSec / 86400 : 1;
+    Cookies.set(TOKEN_KEY, accessToken, { expires: cookieDays, sameSite: "Lax" });
+    Cookies.set(USER_KEY, JSON.stringify(userData), { expires: cookieDays, sameSite: "Lax" });
+    if (expiresInSec) {
+      const expiresAt = Date.now() + expiresInSec * 1000;
+      Cookies.set(EXPIRES_AT_KEY, String(expiresAt), { expires: cookieDays, sameSite: "Lax" });
+    }
     setToken(accessToken);
     setUser(userData);
+    lastActivityRef.current = Date.now();
   }, []);
 
   const updateUser = useCallback((updates: Partial<AuthUser>) => {
     setUser((prev) => {
       if (!prev) return prev;
       const updated = { ...prev, ...updates };
-      Cookies.set(USER_KEY, JSON.stringify(updated), { expires: 7, sameSite: "Lax" });
+      Cookies.set(USER_KEY, JSON.stringify(updated), { expires: 1, sameSite: "Lax" });
       return updated;
     });
   }, []);
@@ -128,7 +226,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const data = await res.json();
-    saveSession(data.access_token, data.user as AuthUser);
+    saveSession(data.access_token, data.user as AuthUser, data.expires_in);
   }, [saveSession]);
 
   const signup = useCallback(async (name: string, email: string, password: string) => {
@@ -149,12 +247,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(data.detail || "Signup failed");
     }
 
-    saveSession(data.access_token, data.user as AuthUser);
+    saveSession(data.access_token, data.user as AuthUser, data.expires_in);
   }, [saveSession]);
 
   const logout = useCallback(() => {
     Cookies.remove(TOKEN_KEY);
     Cookies.remove(USER_KEY);
+    Cookies.remove(EXPIRES_AT_KEY);
     setToken(null);
     setUser(null);
     window.location.href = "/signin";
