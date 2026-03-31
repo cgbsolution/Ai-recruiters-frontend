@@ -16,6 +16,9 @@ export default function SecondaryCamConnectPage() {
   const [error, setError] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [cameraActive, setCameraActive] = useState(false);
+  const [sessionEnded, setSessionEnded] = useState(false);
+  const [personDetected, setPersonDetected] = useState(false);
+  const [screenDetected, setScreenDetected] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -61,14 +64,15 @@ export default function SecondaryCamConnectPage() {
     (async () => {
       try {
         // Try rear camera first, fallback to any camera
+        // Use FRONT camera — shows candidate's face + laptop behind them
         let stream: MediaStream;
         try {
           stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+            video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
             audio: false,
           });
         } catch {
-          // Fallback — some devices don't support environment facing mode
+          // Fallback — any available camera
           stream = await navigator.mediaDevices.getUserMedia({
             video: { width: { ideal: 1280 }, height: { ideal: 720 } },
             audio: false,
@@ -228,6 +232,68 @@ export default function SecondaryCamConnectPage() {
     }
   };
 
+  // ── Real-time frame verification — detect person + laptop ──
+  useEffect(() => {
+    if (!cameraActive || phase === "confirmed") return;
+
+    const verifyRef = { current: null as ReturnType<typeof setInterval> | null };
+
+    verifyRef.current = setInterval(async () => {
+      if (!canvasRef.current || !videoRef.current) return;
+      const video = videoRef.current;
+      if (video.videoWidth === 0) return;
+
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0);
+
+      const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.4));
+      if (!blob) return;
+
+      const fd = new FormData();
+      fd.append("frame", blob, "frame.jpg");
+      try {
+        const res = await fetch(`${API_BASE}/secondary-cam/connect/${codeRef.current}/verify-frame`, {
+          method: "POST", body: fd,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setPersonDetected(data.person_detected);
+          setScreenDetected(data.screen_detected);
+        }
+      } catch { /* retry next interval */ }
+    }, 2500);
+
+    return () => {
+      if (verifyRef.current) clearInterval(verifyRef.current);
+    };
+  }, [cameraActive, phase]);
+
+  // ── Poll session status — detect when interview ends on desktop ──
+  useEffect(() => {
+    if (phase !== "camera" && phase !== "confirmed") return;
+
+    const checkSession = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/secondary-cam/connect/${codeRef.current}`);
+        if (!res.ok) {
+          // Session deleted or invalid — interview ended
+          setSessionEnded(true);
+          return;
+        }
+        const data = await res.json();
+        if (data.status === "completed") {
+          setSessionEnded(true);
+        }
+      } catch { /* retry */ }
+    }, 5000);
+
+    return () => clearInterval(checkSession);
+  }, [phase]);
+
   // ── Cleanup on unmount ──
   useEffect(() => {
     return () => {
@@ -238,6 +304,26 @@ export default function SecondaryCamConnectPage() {
   }, []);
 
   // ═══════════════════ RENDER ═══════════════════
+
+  // Interview ended on desktop — show on phone too
+  if (sessionEnded) {
+    // Stop everything
+    if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
+    if (snapshotRef.current) { clearInterval(snapshotRef.current); snapshotRef.current = null; }
+    if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
+
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 rounded-full bg-green-50 border border-green-200 flex items-center justify-center mb-4">
+          <CheckCircle className="w-8 h-8 text-green-500" />
+        </div>
+        <h1 className="text-xl font-bold text-gray-900 mb-2">Interview Completed</h1>
+        <p className="text-gray-500 text-sm max-w-xs">
+          The interview session has ended. You can now close this page.
+        </p>
+      </div>
+    );
+  }
 
   if (phase === "loading") {
     return (
@@ -272,19 +358,19 @@ export default function SecondaryCamConnectPage() {
         <ol className="text-left text-sm text-gray-700 space-y-3 mb-8 max-w-xs">
           <li className="flex gap-2">
             <span className="font-semibold text-gray-400">1.</span>
-            Ensure your browser has camera permissions enabled.
+            Allow camera permission when prompted. The front camera will be used.
           </li>
           <li className="flex gap-2">
             <span className="font-semibold text-gray-400">2.</span>
-            Position your phone behind you facing your laptop screen and keyboard.
+            Place your phone on the side so both <strong>you and your laptop screen</strong> are visible in the camera.
           </li>
           <li className="flex gap-2">
             <span className="font-semibold text-gray-400">3.</span>
-            Once confirmed, the primary device will update automatically.
+            Once your position is accurate, the primary device will update automatically.
           </li>
           <li className="flex gap-2">
             <span className="font-semibold text-gray-400">4.</span>
-            Keep this page open during the entire interview. Do not switch apps.
+            Keep this page open during the entire interview. Do not switch tabs or close the app.
           </li>
         </ol>
         <Button
@@ -337,7 +423,7 @@ export default function SecondaryCamConnectPage() {
         {phase === "camera" && cameraActive && (
           <div className="absolute top-3 left-0 right-0 text-center">
             <p className="text-white text-xs bg-black/60 inline-block px-4 py-2 rounded-full">
-              Position phone so laptop screen &amp; keyboard are visible
+              Make sure both you and your laptop screen are visible
             </p>
           </div>
         )}
@@ -353,32 +439,53 @@ export default function SecondaryCamConnectPage() {
       </div>
 
       <div className="bg-white rounded-t-2xl p-5 shadow-lg">
-        <div className="space-y-3 mb-4">
-          <div className="flex items-center justify-between">
+        <div className="space-y-2.5 mb-4">
+          <div className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-gray-100 bg-gray-50">
             <span className="text-sm text-gray-700 font-medium">Second Camera</span>
             <span className={`flex items-center gap-1.5 text-sm font-semibold ${cameraActive ? "text-green-600" : "text-orange-500"}`}>
               {cameraActive ? "Connected" : "Starting..."}
               <span className={`w-2.5 h-2.5 rounded-full ${cameraActive ? "bg-green-500" : "bg-orange-400 animate-pulse"}`} />
             </span>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-700 font-medium">Device Position</span>
-            {phase === "confirmed" ? (
+
+          {phase === "camera" && cameraActive && (
+            <>
+              <div className={`flex items-center justify-between px-3 py-2.5 rounded-lg border ${personDetected ? "border-green-200 bg-green-50" : "border-orange-200 bg-orange-50"}`}>
+                <span className="text-sm text-gray-700 font-medium">Person visible</span>
+                <span className={`flex items-center gap-1.5 text-sm font-semibold ${personDetected ? "text-green-600" : "text-orange-500"}`}>
+                  {personDetected ? "Detected" : "Checking..."}
+                  {personDetected ? <CheckCircle className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
+                </span>
+              </div>
+              <div className={`flex items-center justify-between px-3 py-2.5 rounded-lg border ${screenDetected ? "border-green-200 bg-green-50" : "border-orange-200 bg-orange-50"}`}>
+                <span className="text-sm text-gray-700 font-medium">Laptop screen visible</span>
+                <span className={`flex items-center gap-1.5 text-sm font-semibold ${screenDetected ? "text-green-600" : "text-orange-500"}`}>
+                  {screenDetected ? "Detected" : "Checking..."}
+                  {screenDetected ? <CheckCircle className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
+                </span>
+              </div>
+            </>
+          )}
+
+          {phase === "confirmed" && (
+            <div className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-green-200 bg-green-50">
+              <span className="text-sm text-gray-700 font-medium">Position</span>
               <span className="flex items-center gap-1.5 text-sm font-semibold text-green-600">
                 Verified <CheckCircle className="w-4 h-4" />
               </span>
-            ) : (
-              <span className="text-sm font-semibold text-orange-500">Confirm below</span>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {phase === "camera" && cameraActive && (
           <Button
             onClick={handleConfirm}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-full text-sm font-semibold"
+            disabled={!personDetected || !screenDetected}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-3 rounded-full text-sm font-semibold"
           >
-            I&apos;ve Positioned My Phone Correctly
+            {personDetected && screenDetected
+              ? "Confirm Position"
+              : "Waiting for person & laptop detection..."}
           </Button>
         )}
 

@@ -115,7 +115,12 @@ export default function SecondaryCamStep({ sessionId, onVerified }: Props) {
       checking: !isCameraActive,
     },
     {
-      label: "Position verified",
+      label: "Person visible",
+      done: isPositionVerified,
+      checking: isDeviceConnected && !isPositionVerified,
+    },
+    {
+      label: "Laptop screen visible",
       done: isPositionVerified,
       checking: isDeviceConnected && !isPositionVerified,
     },
@@ -157,7 +162,7 @@ export default function SecondaryCamStep({ sessionId, onVerified }: Props) {
           <div className="w-52 h-36 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center border border-gray-200">
             <div className="text-center p-4">
               <Smartphone className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-              <p className="text-xs text-gray-400">Position phone behind you,<br />facing your laptop screen</p>
+              <p className="text-xs text-gray-400">Place phone on the side so<br />you &amp; laptop are both visible</p>
             </div>
           </div>
 
