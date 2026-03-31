@@ -1197,15 +1197,24 @@ export default function InterviewRoom({
           <AlertDialogContent className="bg-gray-900 border-gray-700 max-w-sm">
             <AlertDialogHeader className="text-center">
               <div className="w-12 h-12 rounded-full bg-red-900/40 flex items-center justify-center mx-auto mb-2">
-                <Mic className="w-6 h-6 text-red-400" />
+                <PhoneOff className="w-6 h-6 text-red-400" />
               </div>
               <AlertDialogTitle className="text-white font-semibold text-lg">
                 Secondary Camera Disconnected
               </AlertDialogTitle>
               <AlertDialogDescription className="text-gray-400 text-sm">
-                Your secondary device has lost connection. Please check your phone
-                and ensure the camera page is still open.
+                {secondaryCam.disconnectedSeconds < 60
+                  ? `Your phone has been disconnected for ${secondaryCam.disconnectedSeconds}s. Please reconnect within ${60 - secondaryCam.disconnectedSeconds}s or the interview will be paused.`
+                  : "Your phone has been disconnected for too long. Please reconnect your secondary camera to continue the interview."}
               </AlertDialogDescription>
+              {secondaryCam.disconnectedSeconds < 60 && (
+                <div className="w-full bg-gray-700 rounded-full h-2 mt-3">
+                  <div
+                    className="bg-red-500 h-2 rounded-full transition-all duration-1000"
+                    style={{ width: `${Math.min(100, (secondaryCam.disconnectedSeconds / 60) * 100)}%` }}
+                  />
+                </div>
+              )}
             </AlertDialogHeader>
           </AlertDialogContent>
         </AlertDialog>
