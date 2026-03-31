@@ -11,14 +11,13 @@ interface Props {
   onVerified: () => void;
 }
 
-type PairingStatus = "pending" | "connected" | "verified" | "active" | "disconnected" | "completed";
-
 export default function SecondaryCamStep({ sessionId, onVerified }: Props) {
   const [pairingCode, setPairingCode] = useState<string | null>(null);
-  const [status, setStatus] = useState<PairingStatus>("pending");
+  const [status, setStatus] = useState("pending");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const proceededRef = useRef(false);
 
   // Initialize pairing on mount
   useEffect(() => {
@@ -30,7 +29,7 @@ export default function SecondaryCamStep({ sessionId, onVerified }: Props) {
         if (!res.ok) throw new Error("Failed to initialize pairing");
         const data = await res.json();
         setPairingCode(data.pairing_code);
-        setStatus(data.status);
+        setStatus(data.status || "pending");
       } catch (err: any) {
         setError(err.message || "Failed to initialize secondary camera");
       } finally {
@@ -40,22 +39,40 @@ export default function SecondaryCamStep({ sessionId, onVerified }: Props) {
     init();
   }, [sessionId]);
 
-  // Poll for status updates
+  // Poll for status updates — keep polling until verified
   useEffect(() => {
-    if (!pairingCode || status === "verified" || status === "active") return;
+    if (!pairingCode) return;
+
+    // Already verified — stop polling
+    if (status === "verified" || status === "active") {
+      if (pollRef.current) clearInterval(pollRef.current);
+      return;
+    }
 
     const poll = async () => {
       try {
         const res = await fetch(`${API_BASE}/secondary-cam/${sessionId}/status`);
         if (!res.ok) return;
         const data = await res.json();
-        setStatus(data.status);
+        const newStatus = data.status;
+
+        // Only update if changed
+        setStatus((prev) => {
+          if (prev !== newStatus) return newStatus;
+          return prev;
+        });
+
+        // If heartbeat is stale and was "connected", mark as disconnected
+        if (data.heartbeat_stale && newStatus === "connected") {
+          setStatus("pending");
+        }
       } catch {
         // Silently retry
       }
     };
 
-    pollRef.current = setInterval(poll, 2000);
+    // Poll every 1.5 seconds for faster response
+    pollRef.current = setInterval(poll, 1500);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
@@ -63,33 +80,44 @@ export default function SecondaryCamStep({ sessionId, onVerified }: Props) {
 
   // Auto-proceed when verified
   useEffect(() => {
-    if (status === "verified" || status === "active") {
+    if ((status === "verified" || status === "active") && !proceededRef.current) {
+      proceededRef.current = true;
       if (pollRef.current) clearInterval(pollRef.current);
-      // Small delay so user sees the green checkmarks
       const timer = setTimeout(() => onVerified(), 1500);
       return () => clearTimeout(timer);
     }
   }, [status, onVerified]);
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
   const qrUrl = pairingCode
     ? `${window.location.origin}/secondary-cam/connect/${pairingCode}`
     : "";
 
+  const isDeviceConnected = status === "connected" || status === "verified" || status === "active";
+  const isCameraActive = status === "connected" || status === "verified" || status === "active";
+  const isPositionVerified = status === "verified" || status === "active";
+
   const checks = [
     {
       label: "Second device connected",
-      done: status === "connected" || status === "verified" || status === "active",
-      checking: status === "pending",
+      done: isDeviceConnected,
+      checking: !isDeviceConnected,
     },
     {
       label: "Camera active",
-      done: status === "connected" || status === "verified" || status === "active",
-      checking: status === "pending",
+      done: isCameraActive,
+      checking: !isCameraActive,
     },
     {
       label: "Position verified",
-      done: status === "verified" || status === "active",
-      checking: status === "connected",
+      done: isPositionVerified,
+      checking: isDeviceConnected && !isPositionVerified,
     },
   ];
 
@@ -114,21 +142,17 @@ export default function SecondaryCamStep({ sessionId, onVerified }: Props) {
 
   return (
     <div className="flex flex-col items-center justify-center py-8 px-6 text-center max-w-2xl mx-auto">
-      {/* Icon */}
       <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center mb-5">
         <Camera className="w-7 h-7 text-blue-600" />
       </div>
 
-      {/* Title */}
       <h2 className="text-2xl font-bold text-gray-900 mb-2">Connect Secondary Camera</h2>
       <p className="text-gray-500 text-sm mb-8 max-w-md leading-relaxed">
         To keep the interview process fair and secure, ensuring no unauthorized assistance{" "}
         <strong>Scan the QR Code</strong> using your mobile.
       </p>
 
-      {/* Content: QR + Status */}
       <div className="flex flex-col md:flex-row items-center gap-8 w-full">
-        {/* Left: Reference image + QR */}
         <div className="flex flex-col items-center gap-4">
           <div className="w-52 h-36 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center border border-gray-200">
             <div className="text-center p-4">
@@ -139,17 +163,11 @@ export default function SecondaryCamStep({ sessionId, onVerified }: Props) {
 
           {pairingCode && (
             <div className="p-3 bg-white rounded-lg border border-gray-200 shadow-sm">
-              <QRCodeSVG
-                value={qrUrl}
-                size={160}
-                level="M"
-                includeMargin
-              />
+              <QRCodeSVG value={qrUrl} size={160} level="M" includeMargin />
             </div>
           )}
         </div>
 
-        {/* Right: Status checklist */}
         <div className="flex-1 w-full md:w-auto">
           <div className="border border-gray-200 rounded-xl bg-white p-5">
             <h3 className="font-semibold text-gray-800 mb-4 text-left">Second Device Status</h3>
@@ -184,8 +202,7 @@ export default function SecondaryCamStep({ sessionId, onVerified }: Props) {
             </div>
           </div>
 
-          {/* Continue button (only when all verified) */}
-          {(status === "verified" || status === "active") && (
+          {isPositionVerified && (
             <Button
               onClick={onVerified}
               className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-full text-sm font-semibold"

@@ -56,46 +56,7 @@ export default function SecondaryCamConnectPage() {
     validate();
   }, [code]);
 
-  // Start camera when ready
-  const startCamera = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-      setCameraReady(true);
-
-      // Register device
-      const formData = new FormData();
-      formData.append("device_info", JSON.stringify({
-        userAgent: navigator.userAgent,
-        screen: `${screen.width}x${screen.height}`,
-        platform: navigator.platform,
-      }));
-      await fetch(`${API_BASE}/secondary-cam/connect/${code}/register`, {
-        method: "POST",
-        body: formData,
-      });
-      setStatus("connected");
-
-      // Request wake lock to keep screen on
-      try {
-        if ("wakeLock" in navigator) {
-          wakeLockRef.current = await navigator.wakeLock.request("screen");
-        }
-      } catch {
-        // Wake lock not supported — continue
-      }
-    } catch {
-      setError("Camera permission denied. Please allow camera access and reload.");
-    }
-  }, [code]);
-
-  // Heartbeat every 5s
+  // Heartbeat every 5s — declared first since startCamera uses it
   const startHeartbeat = useCallback(() => {
     if (heartbeatRef.current) clearInterval(heartbeatRef.current);
     heartbeatRef.current = setInterval(async () => {
@@ -139,6 +100,47 @@ export default function SecondaryCamConnectPage() {
       }
     }, 30000);
   }, [code]);
+
+  // Start camera when ready
+  const startCamera = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setCameraReady(true);
+
+      // Register device
+      const formData = new FormData();
+      formData.append("device_info", JSON.stringify({
+        userAgent: navigator.userAgent,
+        screen: `${screen.width}x${screen.height}`,
+      }));
+      await fetch(`${API_BASE}/secondary-cam/connect/${code}/register`, {
+        method: "POST",
+        body: formData,
+      });
+      setStatus("connected");
+
+      // Start heartbeat immediately so desktop knows phone is alive
+      startHeartbeat();
+
+      // Request wake lock to keep screen on
+      try {
+        if ("wakeLock" in navigator) {
+          wakeLockRef.current = await navigator.wakeLock.request("screen");
+        }
+      } catch {
+        // Wake lock not supported
+      }
+    } catch {
+      setError("Camera permission denied. Please allow camera access and reload.");
+    }
+  }, [code, startHeartbeat]);
 
   // Confirm positioning
   const confirmPosition = useCallback(async () => {
