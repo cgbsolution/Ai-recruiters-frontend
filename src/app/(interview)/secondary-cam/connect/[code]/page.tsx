@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { Camera, CheckCircle, Loader2, AlertTriangle, WifiOff } from "lucide-react";
+import { Camera, CheckCircle, Loader2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { API_BASE } from "@/lib/api";
 
@@ -90,43 +90,8 @@ export default function SecondaryCamConnectPage() {
       } catch {
         // Wake lock not supported — continue
       }
-    } catch (err: any) {
-      setError("Camera permission denied. Please allow camera access and reload.");
-    }
-  }, [code]);
-
-  // Confirm positioning
-  const confirmPosition = useCallback(async () => {
-    if (!canvasRef.current || !videoRef.current) return;
-
-    const canvas = canvasRef.current;
-    const video = videoRef.current;
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/jpeg", 0.7)
-    );
-    if (!blob) return;
-
-    const formData = new FormData();
-    formData.append("snapshot", blob, "position.jpg");
-
-    try {
-      const res = await fetch(`${API_BASE}/secondary-cam/connect/${code}/confirm-position`, {
-        method: "POST",
-        body: formData,
-      });
-      if (res.ok) {
-        setStatus("verified");
-        startHeartbeat();
-        startSnapshots();
-      }
     } catch {
-      setError("Failed to confirm position. Please try again.");
+      setError("Camera permission denied. Please allow camera access and reload.");
     }
   }, [code]);
 
@@ -174,6 +139,41 @@ export default function SecondaryCamConnectPage() {
       }
     }, 30000);
   }, [code]);
+
+  // Confirm positioning
+  const confirmPosition = useCallback(async () => {
+    if (!canvasRef.current || !videoRef.current) return;
+
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", 0.7)
+    );
+    if (!blob) return;
+
+    const formData = new FormData();
+    formData.append("snapshot", blob, "position.jpg");
+
+    try {
+      const res = await fetch(`${API_BASE}/secondary-cam/connect/${code}/confirm-position`, {
+        method: "POST",
+        body: formData,
+      });
+      if (res.ok) {
+        setStatus("verified");
+        startHeartbeat();
+        startSnapshots();
+      }
+    } catch {
+      setError("Failed to confirm position. Please try again.");
+    }
+  }, [code, startHeartbeat, startSnapshots]);
 
   // Cleanup on unmount
   useEffect(() => {

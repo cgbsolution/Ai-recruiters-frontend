@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Camera, CheckCircle, Loader2, Smartphone, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";

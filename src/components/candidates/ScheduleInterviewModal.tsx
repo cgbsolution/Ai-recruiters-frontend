@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from "react";
+import Link from "next/link";
 import {
   Dialog,
   DialogContent,
@@ -528,7 +529,7 @@ export default function ScheduleInterviewModal({
                   Create Google Meet link
                   {!user?.google_connected && (
                     <span className="ml-1 text-xs text-gray-400">
-                      (Connect Google in <a href="/profile" className="text-brand-600 underline">Profile</a>)
+                      (Connect Google in <Link href="/profile" className="text-brand-600 underline">Profile</Link>)
                     </span>
                   )}
                 </Label>
