@@ -1,16 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Camera, CheckCircle, AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { API_BASE } from "@/lib/api";
 
+type Phase = "loading" | "invalid" | "instructions" | "camera" | "confirmed";
+
 export default function SecondaryCamConnectPage() {
   const params = useParams();
   const code = params.code as string;
 
-  const [phase, setPhase] = useState<"loading" | "invalid" | "instructions" | "camera" | "confirmed">("loading");
+  const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [cameraActive, setCameraActive] = useState(false);
@@ -20,140 +22,197 @@ export default function SecondaryCamConnectPage() {
   const streamRef = useRef<MediaStream | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const snapshotRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const codeRef = useRef(code);
+  codeRef.current = code;
 
-  // ── Step 1: Validate code + auto-start camera ──
+  // ── Validate pairing code on mount ──
   useEffect(() => {
-    let cancelled = false;
-
-    const init = async () => {
-      // Validate pairing code
+    (async () => {
       try {
         const res = await fetch(`${API_BASE}/secondary-cam/connect/${code}`);
         if (!res.ok) {
           setPhase("invalid");
-          setError(res.status === 410
-            ? "This pairing code has expired."
-            : "Invalid pairing code.");
+          setError(res.status === 410 ? "Pairing code expired." : "Invalid pairing code.");
           return;
         }
         const data = await res.json();
         setJobTitle(data.job_title || "");
 
-        // If already confirmed from a previous visit, go to confirmed
         if (data.status === "verified" || data.status === "active") {
-          setPhase("confirmed");
-          startCamera();
-          return;
+          setPhase("camera");
+          // Will auto-start camera via the effect below
+        } else {
+          setPhase("instructions");
         }
       } catch {
         setPhase("invalid");
         setError("Unable to connect. Check your internet.");
-        return;
       }
-
-      if (cancelled) return;
-
-      // Show instructions first
-      setPhase("instructions");
-    };
-
-    init();
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    })();
   }, [code]);
 
-  // ── Start camera ──
-  const startCamera = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      });
-      streamRef.current = stream;
+  // ── Start camera when phase becomes "camera" ──
+  useEffect(() => {
+    if (phase !== "camera" && phase !== "confirmed") return;
+    if (streamRef.current) return; // already started
 
-      // Wait for video element to be available
-      const waitForVideo = () => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // Try rear camera first, fallback to any camera
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false,
+          });
+        } catch {
+          // Fallback — some devices don't support environment facing mode
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false,
+          });
+        }
+
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.play().catch(() => {});
-          setCameraActive(true);
-        } else {
-          setTimeout(waitForVideo, 100);
         }
-      };
-      waitForVideo();
+        setCameraActive(true);
 
-      // Register device with backend
-      const formData = new FormData();
-      formData.append("device_info", JSON.stringify({
-        userAgent: navigator.userAgent,
-        screen: `${screen.width}x${screen.height}`,
-      }));
-      await fetch(`${API_BASE}/secondary-cam/connect/${code}/register`, {
-        method: "POST",
-        body: formData,
-      });
-
-      // Start heartbeat immediately
-      startHeartbeat();
-
-      // Keep screen on
-      try {
-        if ("wakeLock" in navigator) {
-          await navigator.wakeLock.request("screen");
-        }
-      } catch { /* not supported */ }
-    } catch {
-      setError("Camera permission denied. Please allow camera access and reload this page.");
-    }
-  }, [code]);
-
-  // ── Heartbeat every 3s ──
-  const startHeartbeat = useCallback(() => {
-    if (heartbeatRef.current) clearInterval(heartbeatRef.current);
-    heartbeatRef.current = setInterval(async () => {
-      try {
-        await fetch(`${API_BASE}/secondary-cam/connect/${code}/heartbeat`, {
+        // Register device
+        const fd = new FormData();
+        fd.append("device_info", JSON.stringify({
+          userAgent: navigator.userAgent,
+          screen: `${screen.width}x${screen.height}`,
+        }));
+        fetch(`${API_BASE}/secondary-cam/connect/${codeRef.current}/register`, {
           method: "POST",
-        });
-      } catch { /* retry next interval */ }
-    }, 3000);
-  }, [code]);
+          body: fd,
+        }).catch(() => {});
 
-  // ── Periodic snapshots every 30s ──
-  const startSnapshots = useCallback(() => {
-    if (snapshotRef.current) clearInterval(snapshotRef.current);
+        // Keep screen on
+        if ("wakeLock" in navigator) {
+          navigator.wakeLock.request("screen").catch(() => {});
+        }
+      } catch {
+        if (!cancelled) {
+          setError("Camera permission denied. Allow camera access and tap Retry.");
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [phase]);
+
+  // ── Heartbeat every 3s (only when camera is active) ──
+  useEffect(() => {
+    if (!cameraActive) return;
+
+    const send = () => {
+      fetch(`${API_BASE}/secondary-cam/connect/${codeRef.current}/heartbeat`, {
+        method: "POST",
+      }).catch(() => {});
+    };
+
+    // Send first heartbeat immediately
+    send();
+    heartbeatRef.current = setInterval(send, 3000);
+
+    return () => {
+      if (heartbeatRef.current) {
+        clearInterval(heartbeatRef.current);
+        heartbeatRef.current = null;
+      }
+    };
+  }, [cameraActive]);
+
+  // ── Detect tab switch — stop heartbeat when hidden, restart when visible ──
+  useEffect(() => {
+    const handler = () => {
+      if (document.hidden) {
+        // Tab hidden — stop heartbeat so desktop detects disconnect
+        if (heartbeatRef.current) {
+          clearInterval(heartbeatRef.current);
+          heartbeatRef.current = null;
+        }
+      } else {
+        // Tab visible again — check if camera is still alive
+        if (streamRef.current) {
+          const tracks = streamRef.current.getVideoTracks();
+          if (tracks.length === 0 || tracks[0].readyState === "ended") {
+            // Camera was killed by OS — need to restart
+            streamRef.current = null;
+            setCameraActive(false);
+            // Re-trigger camera start by toggling phase
+            setPhase((prev) => prev === "confirmed" ? "confirmed" : "camera");
+          } else {
+            // Camera still alive — restart heartbeat
+            setCameraActive(true); // triggers heartbeat effect
+          }
+        }
+
+        // Reassign video srcObject (some mobile browsers lose it)
+        if (videoRef.current && streamRef.current) {
+          videoRef.current.srcObject = streamRef.current;
+          videoRef.current.play().catch(() => {});
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, []);
+
+  // ── Periodic snapshots every 30s (only when confirmed) ──
+  useEffect(() => {
+    if (phase !== "confirmed" || !cameraActive) return;
+
     snapshotRef.current = setInterval(async () => {
       if (!canvasRef.current || !videoRef.current) return;
       const canvas = canvasRef.current;
       const video = videoRef.current;
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
+      if (video.videoWidth === 0) return; // no video data yet
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(video, 0, 0);
       const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.5));
       if (!blob) return;
       const fd = new FormData();
       fd.append("snapshot", blob, "snap.jpg");
-      try {
-        await fetch(`${API_BASE}/secondary-cam/connect/${code}/snapshot`, {
-          method: "POST", body: fd,
-        });
-      } catch { /* best effort */ }
+      fetch(`${API_BASE}/secondary-cam/connect/${codeRef.current}/snapshot`, {
+        method: "POST", body: fd,
+      }).catch(() => {});
     }, 30000);
-  }, [code]);
 
-  // ── Confirm position ──
-  const confirmPosition = useCallback(async () => {
+    return () => {
+      if (snapshotRef.current) {
+        clearInterval(snapshotRef.current);
+        snapshotRef.current = null;
+      }
+    };
+  }, [phase, cameraActive]);
+
+  // ── Confirm position button handler ──
+  const handleConfirm = async () => {
     if (!canvasRef.current || !videoRef.current) return;
     const canvas = canvasRef.current;
     const video = videoRef.current;
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
+    if (video.videoWidth === 0) return;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, 0, 0);
     const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.7));
     if (!blob) return;
 
@@ -163,37 +222,13 @@ export default function SecondaryCamConnectPage() {
       const res = await fetch(`${API_BASE}/secondary-cam/connect/${code}/confirm-position`, {
         method: "POST", body: fd,
       });
-      if (res.ok) {
-        setPhase("confirmed");
-        startSnapshots();
-      }
+      if (res.ok) setPhase("confirmed");
     } catch {
-      setError("Failed to confirm position.");
+      setError("Failed to confirm. Try again.");
     }
-  }, [code, startSnapshots]);
+  };
 
-  // ── Detect tab switch / visibility change ──
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.hidden) {
-        // User switched away — camera might stop on mobile
-        // Heartbeat will stop being sent, desktop will detect disconnection
-      } else {
-        // User came back — restart camera if needed
-        if (streamRef.current) {
-          const tracks = streamRef.current.getVideoTracks();
-          if (tracks.length === 0 || tracks[0].readyState === "ended") {
-            // Camera was killed by OS — restart
-            startCamera();
-          }
-        }
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, [startCamera]);
-
-  // ── Cleanup ──
+  // ── Cleanup on unmount ──
   useEffect(() => {
     return () => {
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
@@ -202,7 +237,7 @@ export default function SecondaryCamConnectPage() {
     };
   }, []);
 
-  // ── RENDER ──
+  // ═══════════════════ RENDER ═══════════════════
 
   if (phase === "loading") {
     return (
@@ -223,7 +258,6 @@ export default function SecondaryCamConnectPage() {
     );
   }
 
-  // ── Instructions ──
   if (phase === "instructions") {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
@@ -231,11 +265,9 @@ export default function SecondaryCamConnectPage() {
           <Camera className="w-7 h-7 text-blue-600" />
         </div>
         <h1 className="text-xl font-bold text-gray-900 mb-2">Second Device Instructions</h1>
-        {jobTitle && (
-          <p className="text-gray-500 text-sm mb-4">Interview: {jobTitle}</p>
-        )}
+        {jobTitle && <p className="text-gray-500 text-sm mb-4">Interview: {jobTitle}</p>}
         <p className="text-gray-500 text-sm mb-6 max-w-xs leading-relaxed">
-          Please familiarize yourself with the key instructions to ensure a smooth interview process.
+          Please read the instructions below to ensure a smooth interview process.
         </p>
         <ol className="text-left text-sm text-gray-700 space-y-3 mb-8 max-w-xs">
           <li className="flex gap-2">
@@ -248,19 +280,15 @@ export default function SecondaryCamConnectPage() {
           </li>
           <li className="flex gap-2">
             <span className="font-semibold text-gray-400">3.</span>
-            Once your position is confirmed, the primary device will update automatically.
+            Once confirmed, the primary device will update automatically.
           </li>
           <li className="flex gap-2">
             <span className="font-semibold text-gray-400">4.</span>
             Keep this page open during the entire interview. Do not switch apps.
           </li>
         </ol>
-
         <Button
-          onClick={async () => {
-            setPhase("camera");
-            await startCamera();
-          }}
+          onClick={() => setPhase("camera")}
           className="w-full max-w-xs bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-full text-sm font-semibold"
         >
           Start Camera &rarr;
@@ -269,6 +297,7 @@ export default function SecondaryCamConnectPage() {
     );
   }
 
+  // Camera error
   if (error && !cameraActive) {
     return (
       <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-6 text-center">
@@ -276,7 +305,14 @@ export default function SecondaryCamConnectPage() {
         <h1 className="text-xl font-bold text-white mb-2">Camera Required</h1>
         <p className="text-gray-400 text-sm max-w-xs mb-6">{error}</p>
         <Button
-          onClick={() => { setError(""); startCamera(); }}
+          onClick={() => {
+            setError("");
+            streamRef.current = null;
+            setCameraActive(false);
+            // Re-trigger camera effect
+            setPhase("instructions");
+            setTimeout(() => setPhase("camera"), 100);
+          }}
           className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-full"
         >
           Retry Camera Access
@@ -285,10 +321,9 @@ export default function SecondaryCamConnectPage() {
     );
   }
 
-  // ── Camera view (both "camera" and "confirmed" phases) ──
+  // ── Camera view ──
   return (
     <div className="min-h-screen bg-gray-900 flex flex-col">
-      {/* Camera preview */}
       <div className="flex-1 relative">
         <video
           ref={videoRef}
@@ -299,16 +334,14 @@ export default function SecondaryCamConnectPage() {
           style={{ minHeight: "60vh" }}
         />
 
-        {/* Overlay instruction */}
-        {phase === "camera" && (
+        {phase === "camera" && cameraActive && (
           <div className="absolute top-3 left-0 right-0 text-center">
             <p className="text-white text-xs bg-black/60 inline-block px-4 py-2 rounded-full">
-              Position your phone so laptop screen &amp; keyboard are visible
+              Position phone so laptop screen &amp; keyboard are visible
             </p>
           </div>
         )}
 
-        {/* Camera loading state */}
         {!cameraActive && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
             <div className="text-center">
@@ -319,8 +352,7 @@ export default function SecondaryCamConnectPage() {
         )}
       </div>
 
-      {/* Bottom panel */}
-      <div className="bg-white rounded-t-2xl p-5 shadow-lg safe-area-bottom">
+      <div className="bg-white rounded-t-2xl p-5 shadow-lg">
         <div className="space-y-3 mb-4">
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-700 font-medium">Second Camera</span>
@@ -336,16 +368,14 @@ export default function SecondaryCamConnectPage() {
                 Verified <CheckCircle className="w-4 h-4" />
               </span>
             ) : (
-              <span className="text-sm font-semibold text-orange-500">
-                Confirm below
-              </span>
+              <span className="text-sm font-semibold text-orange-500">Confirm below</span>
             )}
           </div>
         </div>
 
         {phase === "camera" && cameraActive && (
           <Button
-            onClick={confirmPosition}
+            onClick={handleConfirm}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-full text-sm font-semibold"
           >
             I&apos;ve Positioned My Phone Correctly
