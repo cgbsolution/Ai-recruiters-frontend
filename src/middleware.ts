@@ -22,6 +22,7 @@ const PUBLIC_PATHS = [
   "/verify-email",
   "/update-password",
   "/interview",
+  "/secondary-cam",
   "/avatar-debug",
 ];
 
