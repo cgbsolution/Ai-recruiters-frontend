@@ -20,6 +20,7 @@ import { useSpeechSynthesis } from "@/hooks/interview/useSpeechSynthesis";
 import { useViolationDetection } from "@/hooks/interview/useViolationDetection";
 import { useScreenCapture } from "@/hooks/interview/useScreenCapture";
 import { useSecondaryCamMonitor } from "@/hooks/interview/useSecondaryCamMonitor";
+import SecondCamReconnectModal from "./SecondCamReconnectModal";
 import type { Message, JobConfig, QuestionState, CodingQuestion } from "@/hooks/interview/useInterviewSession";
 import { API_BASE } from "@/lib/api";
 
@@ -1191,33 +1192,12 @@ export default function InterviewRoom({
         />
       )}
 
-      {/* ── Secondary Camera Disconnected Warning ── */}
+      {/* ── Secondary Camera Disconnected Warning with Reconnect QR ── */}
       {secondaryCam.isDisconnected && (
-        <AlertDialog open>
-          <AlertDialogContent className="bg-gray-900 border-gray-700 max-w-sm">
-            <AlertDialogHeader className="text-center">
-              <div className="w-12 h-12 rounded-full bg-red-900/40 flex items-center justify-center mx-auto mb-2">
-                <PhoneOff className="w-6 h-6 text-red-400" />
-              </div>
-              <AlertDialogTitle className="text-white font-semibold text-lg">
-                Secondary Camera Disconnected
-              </AlertDialogTitle>
-              <AlertDialogDescription className="text-gray-400 text-sm">
-                {secondaryCam.disconnectedSeconds < 60
-                  ? `Your phone has been disconnected for ${secondaryCam.disconnectedSeconds}s. Please reconnect within ${60 - secondaryCam.disconnectedSeconds}s or the interview will be paused.`
-                  : "Your phone has been disconnected for too long. Please reconnect your secondary camera to continue the interview."}
-              </AlertDialogDescription>
-              {secondaryCam.disconnectedSeconds < 60 && (
-                <div className="w-full bg-gray-700 rounded-full h-2 mt-3">
-                  <div
-                    className="bg-red-500 h-2 rounded-full transition-all duration-1000"
-                    style={{ width: `${Math.min(100, (secondaryCam.disconnectedSeconds / 60) * 100)}%` }}
-                  />
-                </div>
-              )}
-            </AlertDialogHeader>
-          </AlertDialogContent>
-        </AlertDialog>
+        <SecondCamReconnectModal
+          sessionId={sessionId}
+          disconnectedSeconds={secondaryCam.disconnectedSeconds}
+        />
       )}
 
       {/* ── Screen Share Lost Modal ── */}
