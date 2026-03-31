@@ -10,7 +10,7 @@ export default function SecondaryCamConnectPage() {
   const params = useParams();
   const code = params.code as string;
 
-  const [phase, setPhase] = useState<"loading" | "invalid" | "camera" | "confirmed">("loading");
+  const [phase, setPhase] = useState<"loading" | "invalid" | "instructions" | "camera" | "confirmed">("loading");
   const [error, setError] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [cameraActive, setCameraActive] = useState(false);
@@ -53,9 +53,8 @@ export default function SecondaryCamConnectPage() {
 
       if (cancelled) return;
 
-      // Auto-start camera immediately
-      setPhase("camera");
-      await startCamera();
+      // Show instructions first
+      setPhase("instructions");
     };
 
     init();
@@ -220,6 +219,52 @@ export default function SecondaryCamConnectPage() {
         <AlertTriangle className="w-12 h-12 text-red-400 mb-4" />
         <h1 className="text-xl font-bold text-white mb-2">Connection Failed</h1>
         <p className="text-gray-400 text-sm max-w-xs">{error}</p>
+      </div>
+    );
+  }
+
+  // ── Instructions ──
+  if (phase === "instructions") {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center mb-5">
+          <Camera className="w-7 h-7 text-blue-600" />
+        </div>
+        <h1 className="text-xl font-bold text-gray-900 mb-2">Second Device Instructions</h1>
+        {jobTitle && (
+          <p className="text-gray-500 text-sm mb-4">Interview: {jobTitle}</p>
+        )}
+        <p className="text-gray-500 text-sm mb-6 max-w-xs leading-relaxed">
+          Please familiarize yourself with the key instructions to ensure a smooth interview process.
+        </p>
+        <ol className="text-left text-sm text-gray-700 space-y-3 mb-8 max-w-xs">
+          <li className="flex gap-2">
+            <span className="font-semibold text-gray-400">1.</span>
+            Ensure your browser has camera permissions enabled.
+          </li>
+          <li className="flex gap-2">
+            <span className="font-semibold text-gray-400">2.</span>
+            Position your phone behind you facing your laptop screen and keyboard.
+          </li>
+          <li className="flex gap-2">
+            <span className="font-semibold text-gray-400">3.</span>
+            Once your position is confirmed, the primary device will update automatically.
+          </li>
+          <li className="flex gap-2">
+            <span className="font-semibold text-gray-400">4.</span>
+            Keep this page open during the entire interview. Do not switch apps.
+          </li>
+        </ol>
+
+        <Button
+          onClick={async () => {
+            setPhase("camera");
+            await startCamera();
+          }}
+          className="w-full max-w-xs bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-full text-sm font-semibold"
+        >
+          Start Camera &rarr;
+        </Button>
       </div>
     );
   }
