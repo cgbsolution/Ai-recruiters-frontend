@@ -19,6 +19,7 @@ import { useSpeechRecognition } from "@/hooks/interview/useSpeechRecognition";
 import { useSpeechSynthesis } from "@/hooks/interview/useSpeechSynthesis";
 import { useViolationDetection } from "@/hooks/interview/useViolationDetection";
 import { useScreenCapture } from "@/hooks/interview/useScreenCapture";
+import { useSecondaryCamMonitor } from "@/hooks/interview/useSecondaryCamMonitor";
 import type { Message, JobConfig, QuestionState, CodingQuestion } from "@/hooks/interview/useInterviewSession";
 import { API_BASE } from "@/lib/api";
 
@@ -175,6 +176,7 @@ export default function InterviewRoom({
   const { speak, cancel, isSpeaking } = useSpeechSynthesis();
   const { violationCount, lastViolation, shouldTerminate, disable: disableViolations, lastFaceCountRef } = useViolationDetection(sessionId, true, webcamStream, jobConfig.face_match);
   useScreenCapture(sessionId, webcamStream, !isInterviewComplete, lastFaceCountRef);
+  const secondaryCam = useSecondaryCamMonitor(sessionId, !!jobConfig.secondary_cam);
 
   /* ── Keep transcriptRef in sync ── */
   useEffect(() => {
@@ -1187,6 +1189,26 @@ export default function InterviewRoom({
           threshold={VIOLATION_THRESHOLD}
           onDismiss={() => setShowViolationModal(false)}
         />
+      )}
+
+      {/* ── Secondary Camera Disconnected Warning ── */}
+      {secondaryCam.isDisconnected && (
+        <AlertDialog open>
+          <AlertDialogContent className="bg-gray-900 border-gray-700 max-w-sm">
+            <AlertDialogHeader className="text-center">
+              <div className="w-12 h-12 rounded-full bg-red-900/40 flex items-center justify-center mx-auto mb-2">
+                <Mic className="w-6 h-6 text-red-400" />
+              </div>
+              <AlertDialogTitle className="text-white font-semibold text-lg">
+                Secondary Camera Disconnected
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-gray-400 text-sm">
+                Your secondary device has lost connection. Please check your phone
+                and ensure the camera page is still open.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
 
       {/* ── Screen Share Lost Modal ── */}

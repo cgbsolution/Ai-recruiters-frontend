@@ -49,11 +49,37 @@ export default function UploadResumesModal({
 
   const addFiles = (newFiles: FileList | null) => {
     if (!newFiles) return;
-    const allowed = Array.from(newFiles).filter((f) =>
-      ["application/pdf", "application/msword",
-       "application/vnd.openxmlformats-officedocument.wordprocessingml.document"].includes(f.type)
-    );
-    setFiles((prev) => [...prev, ...allowed]);
+    const allFiles = Array.from(newFiles);
+    const allowedTypes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+    const allowed: File[] = [];
+    const rejected: string[] = [];
+
+    for (const f of allFiles) {
+      if (allowedTypes.includes(f.type)) {
+        allowed.push(f);
+      } else {
+        // Get a friendly file type description
+        const ext = f.name.split(".").pop()?.toUpperCase() || "Unknown";
+        rejected.push(`${f.name} (.${ext})`);
+      }
+    }
+
+    if (rejected.length > 0) {
+      const fileList = rejected.length <= 3
+        ? rejected.join(", ")
+        : `${rejected.slice(0, 3).join(", ")} and ${rejected.length - 3} more`;
+      notifyError(
+        `Unsupported file${rejected.length > 1 ? "s" : ""} skipped: ${fileList}. Only PDF, DOC, and DOCX files are accepted.`
+      );
+    }
+
+    if (allowed.length > 0) {
+      setFiles((prev) => [...prev, ...allowed]);
+    }
   };
 
   const removeFile = (idx: number) => {
@@ -362,6 +388,11 @@ export default function UploadResumesModal({
                          !c.email.endsWith("@resume.local") && (
                           <p className="text-xs text-gray-500 truncate">{c.email}</p>
                         )}
+                        {c.parsing_status === "failed" && (
+                          <p className="text-xs text-red-500">
+                            Could not parse this file. Please check the format and try again.
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -415,6 +446,7 @@ export default function UploadResumesModal({
                   className="hidden"
                   onChange={(e) => addFiles(e.target.files)}
                 />
+                <p className="text-xs text-gray-400 mt-2">Accepted: PDF, DOC, DOCX only</p>
               </div>
 
               {/* File list */}

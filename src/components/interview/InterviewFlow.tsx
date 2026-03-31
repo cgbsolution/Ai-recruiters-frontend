@@ -14,6 +14,7 @@ import InstructionsStep from "./steps/InstructionsStep";
 import WarningStep from "./steps/WarningStep";
 import CapturePhotoStep from "./steps/CapturePhotoStep";
 import InterviewRoom from "./InterviewRoom";
+import SecondaryCamStep from "./steps/SecondaryCamStep";
 import PreInterviewLayout from "./PreInterviewLayout";
 import CompletionScreen from "./CompletionScreen";
 import FeedbackForm from "./FeedbackForm";
@@ -29,6 +30,7 @@ type FlowStep =
   | "CAPTURE_PHOTO"
   | "PERMISSION_SCREEN"
   | "DEVICE_TEST"
+  | "SECONDARY_CAM"
   | "INSTRUCTIONS"
   | "WARNING"
   | "INTERVIEW"
@@ -409,12 +411,32 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     case "DEVICE_TEST":
       if (!webcamStream) {
         // No webcam — skip device test
-        setStep("INSTRUCTIONS");
+        if (jobConfig.secondary_cam) {
+          setStep("SECONDARY_CAM");
+        } else {
+          setStep("INSTRUCTIONS");
+        }
         return null;
       }
       return (
         <PreInterviewLayout currentStep={3}>
-          <DeviceTestStep stream={webcamStream} onNext={() => setStep("INSTRUCTIONS")} />
+          <DeviceTestStep stream={webcamStream} onNext={() => {
+            if (jobConfig.secondary_cam) {
+              setStep("SECONDARY_CAM");
+            } else {
+              setStep("INSTRUCTIONS");
+            }
+          }} />
+        </PreInterviewLayout>
+      );
+
+    case "SECONDARY_CAM":
+      return (
+        <PreInterviewLayout currentStep={3}>
+          <SecondaryCamStep
+            sessionId={session.sessionId!}
+            onVerified={() => setStep("INSTRUCTIONS")}
+          />
         </PreInterviewLayout>
       );
 

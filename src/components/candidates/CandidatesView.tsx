@@ -439,15 +439,17 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
     const allIds = new Set(toRefresh.map((c) => c.id));
     setRecomputingIds((prev) => new Set([...prev, ...allIds]));
     try {
-      // Use batch endpoint for faster AI scoring
-      await apiPost<any>(`/candidates/batch-recompute-scores?job_id=${jobId}`, {});
+      // Batch AI scoring — allow up to 5 min for large candidate lists
+      await apiPost<any>(`/candidates/batch-recompute-scores?job_id=${jobId}`, {}, {
+        timeout: 300_000,
+      });
       // Reload all candidates to get updated scores
       const updated = await api<Candidate[]>(`/candidates/?job_id=${jobId}`);
       setCandidates(updated);
       setRecomputingIds(new Set());
-      notifySuccess("All fit scores updated with AI scoring");
+      notifySuccess("All fit scores updated with AI analysis");
     } catch {
-      notifyError("Failed to refresh some scores");
+      notifyError("Score refresh timed out. Refresh the page to see updated scores.");
     } finally {
       setRefreshingAll(false);
       setRecomputingIds(new Set());
