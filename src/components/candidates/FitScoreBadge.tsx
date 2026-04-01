@@ -199,18 +199,21 @@ export default function FitScoreBadge({
           )}
         </div>
         <p className="text-xs text-gray-300/90 leading-relaxed">
-          {parsed?.summary || cfg.tagline}
+          {(() => {
+            const s = parsed?.summary || cfg.tagline;
+            return s.length > 150 ? s.slice(0, 147) + "..." : s;
+          })()}
         </p>
       </div>
 
       {/* ── AI Reasoning Bullets ── */}
       {reasoningBullets.length > 0 && (
         <div className="px-4 py-3">
-          <ul className="space-y-2.5">
-            {reasoningBullets.slice(0, 7).map((point, i) => (
+          <ul className="space-y-2">
+            {reasoningBullets.slice(0, 5).map((point, i) => (
               <li key={i} className="flex gap-2 text-xs leading-relaxed text-gray-200">
                 <span className="text-gray-400 mt-0.5 shrink-0">{"\u2022"}</span>
-                <span>{point}</span>
+                <span>{point.length > 120 ? point.slice(0, 117) + "..." : point}</span>
               </li>
             ))}
           </ul>
