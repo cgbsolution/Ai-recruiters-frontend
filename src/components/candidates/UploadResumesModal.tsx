@@ -213,7 +213,7 @@ export default function UploadResumesModal({
     const uploadingTracks: CandidateTrack[] = files.map((f, i) => ({
       id: -(i + 1), // temporary negative IDs
       fileName: f.name,
-      name: f.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " "),
+      name: f.name.replace(/\.[^.]+$/, "").replace(/^\d{10,}_/, "").replace(/[_-]/g, " ").trim(),
       email: "",
       parsing_status: "processing" as ParseStatus,
       resume_fit_score: null,
@@ -247,7 +247,7 @@ export default function UploadResumesModal({
         return {
           id: -(i + 1),
           fileName: f.name,
-          name: f.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " "),
+          name: f.name.replace(/\.[^.]+$/, "").replace(/^\d{10,}_/, "").replace(/[_-]/g, " ").trim(),
           email: "",
           parsing_status: "failed" as ParseStatus,
           resume_fit_score: null,
@@ -382,7 +382,7 @@ export default function UploadResumesModal({
                         <p className="text-sm font-medium text-gray-700 truncate">
                           {c.parsing_status === "completed" && c.name
                             ? c.name
-                            : c.fileName}
+                            : c.name || c.fileName}
                         </p>
                         {c.parsing_status === "completed" && c.email &&
                          !c.email.endsWith("@resume.local") && (
