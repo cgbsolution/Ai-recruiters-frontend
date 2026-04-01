@@ -396,17 +396,6 @@ export default function UploadResumesModal({
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {c.parsing_status === "completed" && c.resume_fit_score && (
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
-                          parseInt(c.resume_fit_score) >= 70
-                            ? "bg-green-100 text-green-700"
-                            : parseInt(c.resume_fit_score) >= 40
-                            ? "bg-yellow-100 text-yellow-700"
-                            : "bg-red-100 text-red-700"
-                        }`}>
-                          {c.resume_fit_score.replace("%", "")}% Fit
-                        </span>
-                      )}
                       <span className={`text-xs font-medium px-2 py-0.5 rounded ${statusColor(c.parsing_status)}`}>
                         {statusLabel(c.parsing_status)}
                       </span>
