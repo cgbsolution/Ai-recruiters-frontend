@@ -304,12 +304,12 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     // Show completion screen immediately
     setStep("COMPLETION");
 
-    // Upload recording in background (non-blocking)
+    // Upload recording FIRST (with retry), then trigger evaluation
     if (recording && session.sessionId) {
-      session.uploadRecording(recording.blob, session.sessionId, recording.duration).catch(() => {});
+      await session.uploadRecording(recording.blob, session.sessionId, recording.duration);
     }
 
-    // Trigger backend completion & evaluation polling
+    // Trigger backend completion & evaluation polling AFTER recording is saved
     if (!session.evaluation) {
       session.completeInterview(earlyTermination, terminationReason);
     }

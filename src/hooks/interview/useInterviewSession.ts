@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { api, apiPost, apiUpload, ApiError } from "@/lib/api";
+import { api, apiPost, apiUpload, ApiError, API_BASE } from "@/lib/api";
 
 export interface CodingQuestion {
   title: string;
@@ -382,7 +382,22 @@ export function useInterviewSession(): InterviewSessionHook {
       setIsAiThinking(true);
 
       try {
-        const data = await apiPost<any>(`/interview/sessions/${sessionId}/message`, { content: text }, { timeout: 30_000 });
+        // Retry up to 2 times on failure (3 total attempts)
+        let data: any;
+        let lastErr: any;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            data = await apiPost<any>(`/interview/sessions/${sessionId}/message`, { content: text }, { timeout: 45_000 });
+            lastErr = null;
+            break;
+          } catch (retryErr) {
+            lastErr = retryErr;
+            if (attempt < 2) {
+              await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+            }
+          }
+        }
+        if (lastErr) throw lastErr;
 
         const aiMsg: Message = {
           role: "ai",
@@ -446,7 +461,7 @@ export function useInterviewSession(): InterviewSessionHook {
 
   const _pollForEvaluation = useCallback(async (sid: number) => {
     setEvaluationStatus("processing");
-    const MAX_POLLS = 45; // 45 × 4s = 3 minutes
+    const MAX_POLLS = 150; // 150 × 4s = 10 minutes
     for (let i = 0; i < MAX_POLLS; i++) {
       await new Promise((r) => setTimeout(r, 4000));
       try {
@@ -502,13 +517,33 @@ export function useInterviewSession(): InterviewSessionHook {
 
   const uploadRecording = useCallback(
     async (blob: Blob, sid: number, duration: string): Promise<void> => {
-      try {
-        const form = new FormData();
-        form.append("file", blob, `interview_${sid}.webm`);
-        form.append("duration", duration);
-        await apiUpload(`/interview/sessions/${sid}/upload-recording`, form);
-      } catch {
-        // non-blocking — don't fail the flow if upload fails
+      const MAX_RETRIES = 3;
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        try {
+          const form = new FormData();
+          form.append("file", blob, `interview_${sid}.webm`);
+          form.append("duration", duration);
+          await apiUpload(`/interview/sessions/${sid}/upload-recording`, form, {
+            timeout: 120_000, // 2 min timeout for large files
+          });
+          return; // success
+        } catch (err) {
+          if (attempt < MAX_RETRIES - 1) {
+            // Wait before retry: 2s, 4s
+            await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+          } else {
+            console.error("[uploadRecording] All retries failed", err);
+            // Last resort: try sendBeacon for small recordings
+            if (blob.size < 64000) {
+              try {
+                const form = new FormData();
+                form.append("file", blob, `interview_${sid}.webm`);
+                form.append("duration", duration);
+                navigator.sendBeacon(`${API_BASE}/interview/sessions/${sid}/upload-recording`, form);
+              } catch { /* truly failed */ }
+            }
+          }
+        }
       }
     },
     []
