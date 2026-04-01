@@ -9,7 +9,7 @@ interface SpeechSynthesisHook {
   isSupported: boolean;
 }
 
-const CHARS_PER_SECOND = 14;
+const CHARS_PER_SECOND = 14; // conservative estimate for TTS at rate 0.95
 const WATCHDOG_MARGIN_MS = 4000;
 
 /**
@@ -18,6 +18,7 @@ const WATCHDOG_MARGIN_MS = 4000;
  * speechSynthesis stops working after ~15 min. Chunking prevents both.
  */
 function splitIntoChunks(text: string): string[] {
+  // Split on sentence-ending punctuation followed by whitespace
   const raw = text.match(/[^.!?]+[.!?]*[\s]*/g) ?? [text];
   const chunks: string[] = [];
   let current = "";
@@ -30,99 +31,45 @@ function splitIntoChunks(text: string): string[] {
     }
   }
   if (current.trim()) chunks.push(current.trim());
-  return chunks.filter(Boolean);
+  return chunks.length ? chunks : [text];
 }
 
-/**
- * Find the best Indian English female voice available in the browser.
- * Priority:
- * 1. en-IN female voices (Google, Microsoft Neural)
- * 2. Any en-IN voice
- * 3. Any female English voice with "Google" or "Natural" in name
- * 4. First English voice available
- */
-function findBestVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
-  if (!voices.length) return null;
-
-  // Priority 1: Indian English female voices
-  const indianFemale = voices.filter(
-    (v) => v.lang === "en-IN" && /female|neerja|aditi|raveena/i.test(v.name)
-  );
-  if (indianFemale.length > 0) {
-    // Prefer Google or Microsoft Neural
-    return indianFemale.find((v) => /google|natural|neural|online/i.test(v.name)) || indianFemale[0];
-  }
-
-  // Priority 2: Any en-IN voice (even if gender unknown)
-  const indian = voices.filter((v) => v.lang === "en-IN");
-  if (indian.length > 0) {
-    return indian.find((v) => /google|natural|neural/i.test(v.name)) || indian[0];
-  }
-
-  // Priority 3: English female voices with natural quality
-  const englishFemale = voices.filter(
-    (v) => v.lang.startsWith("en") && /female|samantha|karen|moira|fiona|google.*female/i.test(v.name)
-  );
-  if (englishFemale.length > 0) return englishFemale[0];
-
-  // Priority 4: Any high-quality English voice (NOT male-sounding names)
-  const maleNames = /daniel|james|david|thomas|aaron|guy|rishi|mark|lee|fred|alex|junior/i;
-  const englishNonMale = voices.filter(
-    (v) => v.lang.startsWith("en") && !maleNames.test(v.name) && /google|natural|neural/i.test(v.name)
-  );
-  if (englishNonMale.length > 0) return englishNonMale[0];
-
-  // Priority 5: Any English voice, filtering out known male voices
-  const anyEnglish = voices.filter((v) => v.lang.startsWith("en") && !maleNames.test(v.name));
-  if (anyEnglish.length > 0) return anyEnglish[0];
-
-  // Last resort
-  return voices.find((v) => v.lang.startsWith("en")) || voices[0];
-}
-
-/**
- * Text-to-Speech hook using browser Web Speech API.
- * Selects Indian English female voice for natural accent.
- * Instant playback — perfectly synced with avatar lip-sync.
- */
 export function useSpeechSynthesis(): SpeechSynthesisHook {
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const queueRef = useRef<string[]>([]);
-  const activeRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const keepAliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
-  const voicesLoadedRef = useRef(false);
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queueRef = useRef<string[]>([]);
+  const speakingRef = useRef(false); // internal flag, separate from React state
 
-  // Load voices — may happen async in some browsers
+  const isSupported =
+    typeof window !== "undefined" && "speechSynthesis" in window;
+
+  // ── Load preferred voice ──────────────────────────────────────────────────
   useEffect(() => {
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
-
-    const loadVoices = () => {
+    if (!isSupported) return;
+    const loadVoice = () => {
       const voices = window.speechSynthesis.getVoices();
-      if (voices.length > 0) {
-        voiceRef.current = findBestVoice(voices);
-        voicesLoadedRef.current = true;
-        if (voiceRef.current) {
-          console.log(`TTS voice selected: ${voiceRef.current.name} (${voiceRef.current.lang})`);
-        }
-      }
+      const preferred = voices.find(
+        (v) =>
+          v.lang.startsWith("en") &&
+          (v.name.includes("Google") || v.name.includes("Natural") || v.name.includes("Samantha"))
+      );
+      voiceRef.current = preferred || voices.find((v) => v.lang.startsWith("en")) || null;
     };
+    loadVoice();
+    window.speechSynthesis.onvoiceschanged = loadVoice;
+  }, [isSupported]);
 
-    loadVoices();
-    window.speechSynthesis.onvoiceschanged = loadVoices;
-
-    // Chrome keepalive — prevents speech from freezing after ~15s
-    keepAliveRef.current = setInterval(() => {
-      if (window.speechSynthesis.speaking && window.speechSynthesis.paused) {
+  // ── Chrome keepalive: resume if paused every 5 s (prevents 15-min freeze) ──
+  useEffect(() => {
+    if (!isSupported) return;
+    const id = setInterval(() => {
+      if (window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
       }
     }, 5000);
-
-    return () => {
-      if (keepAliveRef.current) clearInterval(keepAliveRef.current);
-    };
-  }, []);
+    return () => clearInterval(id);
+  }, [isSupported]);
 
   const clearWatchdog = useCallback(() => {
     if (watchdogRef.current) {
@@ -131,74 +78,113 @@ export function useSpeechSynthesis(): SpeechSynthesisHook {
     }
   }, []);
 
-  const speakNext = useCallback(() => {
-    if (queueRef.current.length === 0) {
-      setIsSpeaking(false);
-      activeRef.current = null;
+  // ── Speak one chunk, then recurse through the queue ───────────────────────
+  const speakChunk = useCallback(
+    (chunk: string) => {
+      if (!isSupported || !speakingRef.current) return;
+
+      const utterance = new SpeechSynthesisUtterance(chunk);
+      utterance.rate = 0.95;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+      if (voiceRef.current) utterance.voice = voiceRef.current;
+
+      utterance.onend = () => {
+        clearWatchdog();
+        if (!speakingRef.current) {
+          setIsSpeaking(false);
+          return;
+        }
+        const next = queueRef.current.shift();
+        if (next) {
+          speakChunk(next);
+        } else {
+          speakingRef.current = false;
+          setIsSpeaking(false);
+        }
+      };
+
+      utterance.onerror = (e) => {
+        clearWatchdog();
+        // 'interrupted' means cancel() was called — not a real error
+        if (e.error === "interrupted" || e.error === "canceled") {
+          speakingRef.current = false;
+          setIsSpeaking(false);
+          return;
+        }
+        console.warn("[TTS] utterance error:", e.error);
+        // Try next chunk anyway
+        const next = queueRef.current.shift();
+        if (next && speakingRef.current) {
+          speakChunk(next);
+        } else {
+          speakingRef.current = false;
+          setIsSpeaking(false);
+        }
+      };
+
+      window.speechSynthesis.speak(utterance);
+
+      // Watchdog per chunk — if onend never fires (Chrome bug), force advance
+      const estimatedMs = (chunk.length / CHARS_PER_SECOND) * 1000 + WATCHDOG_MARGIN_MS;
       clearWatchdog();
-      return;
-    }
+      watchdogRef.current = setTimeout(() => {
+        if (!speakingRef.current) return;
+        console.warn("[TTS Watchdog] Chunk timed out, advancing queue");
+        window.speechSynthesis.cancel();
+        const next = queueRef.current.shift();
+        if (next) {
+          speakChunk(next);
+        } else {
+          speakingRef.current = false;
+          setIsSpeaking(false);
+        }
+      }, estimatedMs);
+    },
+    [isSupported, clearWatchdog]
+  );
 
-    const chunk = queueRef.current.shift()!;
-    const utterance = new SpeechSynthesisUtterance(chunk);
-    utterance.rate = 0.95;
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
+  // ── Public: speak full text ───────────────────────────────────────────────
+  const speak = useCallback(
+    (text: string) => {
+      if (!isSupported || !text.trim()) return;
 
-    if (voiceRef.current) {
-      utterance.voice = voiceRef.current;
-    }
-
-    utterance.onend = () => {
-      clearWatchdog();
-      speakNext();
-    };
-
-    utterance.onerror = (e) => {
-      if (e.error === "canceled" || e.error === "interrupted") return;
-      clearWatchdog();
-      speakNext();
-    };
-
-    activeRef.current = utterance;
-
-    // Watchdog: if Chrome's onend doesn't fire, force advance
-    const estimatedMs = (chunk.length / CHARS_PER_SECOND) * 1000 + WATCHDOG_MARGIN_MS;
-    clearWatchdog();
-    watchdogRef.current = setTimeout(() => {
-      window.speechSynthesis?.cancel();
-      speakNext();
-    }, estimatedMs);
-
-    window.speechSynthesis.speak(utterance);
-  }, [clearWatchdog]);
-
-  const speak = useCallback((text: string) => {
-    if (!text.trim()) return;
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
-
-    // Cancel any ongoing speech
-    window.speechSynthesis.cancel();
-    clearWatchdog();
-    queueRef.current = [];
-
-    // Split into chunks and queue
-    queueRef.current = splitIntoChunks(text);
-    setIsSpeaking(true);
-    speakNext();
-  }, [speakNext, clearWatchdog]);
-
-  const cancel = useCallback(() => {
-    if (typeof window !== "undefined" && window.speechSynthesis) {
+      // Cancel any ongoing speech
       window.speechSynthesis.cancel();
-    }
-    queueRef.current = [];
-    activeRef.current = null;
-    clearWatchdog();
-    setIsSpeaking(false);
-  }, [clearWatchdog]);
+      clearWatchdog();
+      queueRef.current = [];
+      speakingRef.current = false;
 
-  const isSupported = typeof window !== "undefined" && "speechSynthesis" in window;
+      const chunks = splitIntoChunks(text);
+      if (!chunks.length) return;
+
+      speakingRef.current = true;
+      setIsSpeaking(true);
+
+      // Load first chunk immediately, rest into queue
+      const [first, ...rest] = chunks;
+      queueRef.current = rest;
+      speakChunk(first);
+    },
+    [isSupported, clearWatchdog, speakChunk]
+  );
+
+  // ── Public: cancel all speech ─────────────────────────────────────────────
+  const cancel = useCallback(() => {
+    if (!isSupported) return;
+    clearWatchdog();
+    speakingRef.current = false;
+    queueRef.current = [];
+    window.speechSynthesis.cancel();
+    setIsSpeaking(false);
+  }, [isSupported, clearWatchdog]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (watchdogRef.current) clearTimeout(watchdogRef.current);
+    };
+  }, []);
 
   return { speak, cancel, isSpeaking, isSupported };
 }
