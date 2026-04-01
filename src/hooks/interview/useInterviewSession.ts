@@ -524,7 +524,7 @@ export function useInterviewSession(): InterviewSessionHook {
           form.append("file", blob, `interview_${sid}.webm`);
           form.append("duration", duration);
           await apiUpload(`/interview/sessions/${sid}/upload-recording`, form, {
-            timeout: 120_000, // 2 min timeout for large files
+            timeout: 3600_000, // 1 hour — recordings can be very large
           });
           return; // success
         } catch (err) {
