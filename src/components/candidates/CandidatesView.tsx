@@ -260,6 +260,24 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
   useEffect(() => { fetchJob(); }, [fetchJob]);
   useEffect(() => { fetchCandidates(); }, [fetchCandidates]);
 
+  // Auto-refresh candidates every 15s if any have smart scoring (waiting for AI score)
+  useEffect(() => {
+    const hasSmartOnly = candidates.some((c) => {
+      if (!c.fit_score_details) return false;
+      try {
+        const d = JSON.parse(c.fit_score_details);
+        return d.source === "smart_scoring";
+      } catch { return false; }
+    });
+    if (!hasSmartOnly || !jobId) return;
+
+    const interval = setInterval(() => {
+      fetchCandidates();
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [candidates, jobId, fetchCandidates]);
+
   // ── Tab change handler ────────────────────────────────────────────────────
   const handleTabChange = useCallback((tab: string) => {
     setActiveTab(tab);

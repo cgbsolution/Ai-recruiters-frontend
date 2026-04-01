@@ -225,10 +225,7 @@ export default function UploadResumesModal({
       formData.append("job_id", String(jobId));
       files.forEach((f) => formData.append("files", f));
 
-      // AI scoring takes ~40s per resume — allow enough time
-      const data = await apiUpload<any[]>("/candidates/upload-resume", formData, {
-        timeout: 600_000, // 10 min for AI scoring
-      });
+      const data = await apiUpload<any[]>("/candidates/upload-resume", formData);
       const returnedIds = new Set((data || []).map((c: any) => c.id));
 
       // Map results back to uploaded files
