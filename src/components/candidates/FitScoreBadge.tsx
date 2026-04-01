@@ -110,8 +110,8 @@ export default function FitScoreBadge({
   const resolvedLevel: "high" | "medium" | "low" = (() => {
     if (fitLevel === "high" || fitLevel === "medium" || fitLevel === "low") return fitLevel;
     const pctVal = pctFromLevel ?? percentage ?? 0;
-    if (pctVal >= 75) return "high";
-    if (pctVal >= 40) return "medium";
+    if (pctVal >= 70) return "high";
+    if (pctVal >= 50) return "medium";
     return "low";
   })();
 
