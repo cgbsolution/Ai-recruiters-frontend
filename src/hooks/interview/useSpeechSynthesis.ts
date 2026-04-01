@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { API_BASE } from "@/lib/api";
 
 interface SpeechSynthesisHook {
   speak: (text: string) => void;
@@ -9,182 +10,131 @@ interface SpeechSynthesisHook {
   isSupported: boolean;
 }
 
-const CHARS_PER_SECOND = 14; // conservative estimate for TTS at rate 0.95
-const WATCHDOG_MARGIN_MS = 4000;
-
 /**
- * Split text into sentence-boundary chunks ≤ 200 chars.
- * Chrome silently truncates long utterances and has a known bug where
- * speechSynthesis stops working after ~15 min. Chunking prevents both.
+ * Text-to-Speech hook using backend edge-tts (Indian accent neural voice).
+ *
+ * Flow:
+ * 1. speak(text) → fetch /tts/speak?text=... as streaming audio
+ * 2. Play MP3 via HTML5 Audio element
+ * 3. Set isSpeaking=true during playback, false when done
+ *
+ * Falls back to browser Web Speech API if backend TTS fails.
  */
-function splitIntoChunks(text: string): string[] {
-  // Split on sentence-ending punctuation followed by whitespace
-  const raw = text.match(/[^.!?]+[.!?]*[\s]*/g) ?? [text];
-  const chunks: string[] = [];
-  let current = "";
-  for (const s of raw) {
-    if (current && (current + s).length > 200) {
-      chunks.push(current.trim());
-      current = s;
-    } else {
-      current += s;
-    }
-  }
-  if (current.trim()) chunks.push(current.trim());
-  return chunks.length ? chunks : [text];
-}
-
 export function useSpeechSynthesis(): SpeechSynthesisHook {
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
-  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const queueRef = useRef<string[]>([]);
-  const speakingRef = useRef(false); // internal flag, separate from React state
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const fallbackUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
-  const isSupported =
-    typeof window !== "undefined" && "speechSynthesis" in window;
-
-  // ── Load preferred voice ──────────────────────────────────────────────────
-  useEffect(() => {
-    if (!isSupported) return;
-    const loadVoice = () => {
-      const voices = window.speechSynthesis.getVoices();
-      const preferred = voices.find(
-        (v) =>
-          v.lang.startsWith("en") &&
-          (v.name.includes("Google") || v.name.includes("Natural") || v.name.includes("Samantha"))
-      );
-      voiceRef.current = preferred || voices.find((v) => v.lang.startsWith("en")) || null;
-    };
-    loadVoice();
-    window.speechSynthesis.onvoiceschanged = loadVoice;
-  }, [isSupported]);
-
-  // ── Chrome keepalive: resume if paused every 5 s (prevents 15-min freeze) ──
-  useEffect(() => {
-    if (!isSupported) return;
-    const id = setInterval(() => {
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-      }
-    }, 5000);
-    return () => clearInterval(id);
-  }, [isSupported]);
-
-  const clearWatchdog = useCallback(() => {
-    if (watchdogRef.current) {
-      clearTimeout(watchdogRef.current);
-      watchdogRef.current = null;
-    }
-  }, []);
-
-  // ── Speak one chunk, then recurse through the queue ───────────────────────
-  const speakChunk = useCallback(
-    (chunk: string) => {
-      if (!isSupported || !speakingRef.current) return;
-
-      const utterance = new SpeechSynthesisUtterance(chunk);
-      utterance.rate = 0.95;
-      utterance.pitch = 1.0;
-      utterance.volume = 1.0;
-      if (voiceRef.current) utterance.voice = voiceRef.current;
-
-      utterance.onend = () => {
-        clearWatchdog();
-        if (!speakingRef.current) {
-          setIsSpeaking(false);
-          return;
-        }
-        const next = queueRef.current.shift();
-        if (next) {
-          speakChunk(next);
-        } else {
-          speakingRef.current = false;
-          setIsSpeaking(false);
-        }
-      };
-
-      utterance.onerror = (e) => {
-        clearWatchdog();
-        // 'interrupted' means cancel() was called — not a real error
-        if (e.error === "interrupted" || e.error === "canceled") {
-          speakingRef.current = false;
-          setIsSpeaking(false);
-          return;
-        }
-        console.warn("[TTS] utterance error:", e.error);
-        // Try next chunk anyway
-        const next = queueRef.current.shift();
-        if (next && speakingRef.current) {
-          speakChunk(next);
-        } else {
-          speakingRef.current = false;
-          setIsSpeaking(false);
-        }
-      };
-
-      window.speechSynthesis.speak(utterance);
-
-      // Watchdog per chunk — if onend never fires (Chrome bug), force advance
-      const estimatedMs = (chunk.length / CHARS_PER_SECOND) * 1000 + WATCHDOG_MARGIN_MS;
-      clearWatchdog();
-      watchdogRef.current = setTimeout(() => {
-        if (!speakingRef.current) return;
-        console.warn("[TTS Watchdog] Chunk timed out, advancing queue");
-        window.speechSynthesis.cancel();
-        const next = queueRef.current.shift();
-        if (next) {
-          speakChunk(next);
-        } else {
-          speakingRef.current = false;
-          setIsSpeaking(false);
-        }
-      }, estimatedMs);
-    },
-    [isSupported, clearWatchdog]
-  );
-
-  // ── Public: speak full text ───────────────────────────────────────────────
-  const speak = useCallback(
-    (text: string) => {
-      if (!isSupported || !text.trim()) return;
-
-      // Cancel any ongoing speech
-      window.speechSynthesis.cancel();
-      clearWatchdog();
-      queueRef.current = [];
-      speakingRef.current = false;
-
-      const chunks = splitIntoChunks(text);
-      if (!chunks.length) return;
-
-      speakingRef.current = true;
-      setIsSpeaking(true);
-
-      // Load first chunk immediately, rest into queue
-      const [first, ...rest] = chunks;
-      queueRef.current = rest;
-      speakChunk(first);
-    },
-    [isSupported, clearWatchdog, speakChunk]
-  );
-
-  // ── Public: cancel all speech ─────────────────────────────────────────────
   const cancel = useCallback(() => {
-    if (!isSupported) return;
-    clearWatchdog();
-    speakingRef.current = false;
-    queueRef.current = [];
-    window.speechSynthesis.cancel();
+    // Cancel backend audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current = null;
+    }
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    // Cancel browser fallback
+    if (fallbackUtteranceRef.current) {
+      window.speechSynthesis?.cancel();
+      fallbackUtteranceRef.current = null;
+    }
     setIsSpeaking(false);
-  }, [isSupported, clearWatchdog]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (watchdogRef.current) clearTimeout(watchdogRef.current);
-    };
   }, []);
 
-  return { speak, cancel, isSpeaking, isSupported };
+  const speakWithBrowserFallback = useCallback((text: string) => {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.95;
+    utterance.pitch = 1.0;
+
+    // Try to find an English voice
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find((v) =>
+      v.lang.startsWith("en") && (v.name.includes("Google") || v.name.includes("Natural"))
+    ) || voices.find((v) => v.lang.startsWith("en"));
+    if (preferred) utterance.voice = preferred;
+
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    fallbackUtteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  }, []);
+
+  const speak = useCallback((text: string) => {
+    // Cancel any ongoing speech
+    cancel();
+
+    if (!text.trim()) return;
+
+    // Create abort controller for this request
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setIsSpeaking(true);
+
+    // Build TTS URL
+    const params = new URLSearchParams({
+      text: text.trim(),
+      voice: "neerja-expressive",
+      rate: "+5%",
+    });
+    const url = `${API_BASE}/tts/speak?${params.toString()}`;
+
+    // Create audio element and play streamed MP3
+    const audio = new Audio();
+    audioRef.current = audio;
+
+    audio.onended = () => {
+      setIsSpeaking(false);
+      audioRef.current = null;
+    };
+
+    audio.onerror = () => {
+      // Backend TTS failed — fall back to browser Speech API
+      console.warn("Backend TTS failed, falling back to browser speech");
+      audioRef.current = null;
+      speakWithBrowserFallback(text);
+    };
+
+    // Use fetch to get audio with abort support, then play via blob URL
+    fetch(url, { signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error("TTS request failed");
+        return res.blob();
+      })
+      .then((blob) => {
+        if (controller.signal.aborted) return;
+        const blobUrl = URL.createObjectURL(blob);
+        audio.src = blobUrl;
+        audio.play().catch(() => {
+          // Autoplay blocked — fall back
+          URL.revokeObjectURL(blobUrl);
+          speakWithBrowserFallback(text);
+        });
+        // Clean up blob URL when audio ends
+        audio.onended = () => {
+          setIsSpeaking(false);
+          URL.revokeObjectURL(blobUrl);
+          audioRef.current = null;
+        };
+      })
+      .catch((err) => {
+        if (err.name === "AbortError") return;
+        // Fall back to browser
+        speakWithBrowserFallback(text);
+      });
+  }, [cancel, speakWithBrowserFallback]);
+
+  return {
+    speak,
+    cancel,
+    isSpeaking,
+    isSupported: true, // Always supported — backend TTS + browser fallback
+  };
 }
