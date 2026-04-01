@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import React from "react";
-// import PageBreadcrumb from "@/components/common/PageBreadCrumb";
-// import { JobsDataCard } from "@/components/cards/JobsDataCard";
-// import HiringFunnelCharts from "@/components/charts/HiringFunnelCharts";
+import { JobsDataCard } from "@/components/cards/JobsDataCard";
 import { JobsOpeningsCard } from "@/components/cards/JobOpeningsCard";
 
 export const metadata: Metadata = {
@@ -12,13 +10,9 @@ export const metadata: Metadata = {
 
 export default function JobOpenings() {
   return (
-    <>
-      <div>
-        {/* <PageBreadcrumb pageTitle="Dashboard" /> */}
-        <div className="col-span-12 space-y-6 xl:col-span-12">
-          <JobsOpeningsCard />
-        </div>
-      </div>
-    </>
+    <div className="space-y-6">
+      <JobsDataCard />
+      <JobsOpeningsCard />
+    </div>
   );
 }

@@ -477,10 +477,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
           notifyError("Job Title is required");
           return false;
         }
-        if (!department.trim()) {
-          notifyError("Department is required");
-          return false;
-        }
         if (!location.trim()) {
           notifyError("Location is required");
           return false;
@@ -937,13 +933,12 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label className="block text-sm font-medium mb-2">
-                  Department <span className="text-red-500">*</span>
+                  Department
                 </Label>
                 <Input
                   placeholder="Department"
                   value={department}
                   onChange={(e) => setDepartment(e.target.value)}
-                  required
                 />
               </div>
 
