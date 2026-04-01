@@ -146,10 +146,25 @@ export default function FitScoreBadge({
     if (bd.role_alignment) reasoningBullets.push(bd.role_alignment);
   }
 
+  // Priority 4: Build from matching/missing skills (smart scoring fallback)
+  const matchedSkills = parsed?.key_matching_skills ?? [];
+  const missingSkills = parsed?.missing_skills ?? parsed?.missing_weak_areas ?? [];
+
+  if (reasoningBullets.length === 0) {
+    if (matchedSkills.length > 0) {
+      reasoningBullets.push(`Matching skills: ${matchedSkills.slice(0, 5).join(", ")}${matchedSkills.length > 5 ? ` and ${matchedSkills.length - 5} more` : ""}`);
+    }
+    if (missingSkills.length > 0) {
+      reasoningBullets.push(`Missing skills: ${missingSkills.slice(0, 5).join(", ")}${missingSkills.length > 5 ? ` and ${missingSkills.length - 5} more` : ""}`);
+    }
+  }
+
   const hasContent =
     parsed !== null &&
     (resolvedPct !== null ||
       reasoningBullets.length > 0 ||
+      matchedSkills.length > 0 ||
+      missingSkills.length > 0 ||
       !!parsed.summary);
 
   if (!fitLevel) {
