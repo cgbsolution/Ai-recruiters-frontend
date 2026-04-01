@@ -46,6 +46,7 @@ interface FitScoreBadgeProps {
   details?: string | null;
   onRecompute?: () => void;
   recomputing?: boolean;
+  showPercentage?: boolean;
 }
 
 const FIT_CONFIG = {
@@ -87,6 +88,7 @@ export default function FitScoreBadge({
   details,
   onRecompute,
   recomputing,
+  showPercentage = true,
 }: FitScoreBadgeProps) {
   let parsed: FitScoreReasoning | null = null;
   let parsedDetails: FitScoreDetails | null = null;
@@ -178,7 +180,7 @@ export default function FitScoreBadge({
 
   const cfg = FIT_CONFIG[resolvedLevel] ?? FIT_CONFIG.low;
   const badgeLabel =
-    resolvedPct !== null ? `${resolvedPct}% \u2013 ${cfg.label}` : cfg.label;
+    resolvedPct !== null && showPercentage ? `${resolvedPct}% \u2013 ${cfg.label}` : cfg.label;
 
   const TooltipBody = (
     <div
@@ -192,7 +194,7 @@ export default function FitScoreBadge({
           <span className={`text-sm font-bold ${cfg.headerText} uppercase tracking-wide`}>
             {cfg.label}
           </span>
-          {resolvedPct !== null && (
+          {resolvedPct !== null && showPercentage && (
             <span className={`text-sm font-bold ${cfg.headerText} ml-auto`}>
               {resolvedPct}%
             </span>

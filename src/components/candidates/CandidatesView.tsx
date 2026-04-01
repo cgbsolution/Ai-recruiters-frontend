@@ -1,6 +1,7 @@
 "use client";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -190,6 +191,8 @@ function ScoreCell({ value }: { value: number | null }) {
 
 export default function CandidatesView({ jobId }: { jobId: number }) {
   const router = useRouter();
+  const { user } = useAuth();
+  const canSeeFitPercent = user?.role === "super_admin" || user?.allow_fit_score === true;
 
   const [job, setJob] = useState<Job | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -896,6 +899,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                               : undefined
                           }
                           recomputing={recomputingIds.has(c.id)}
+                          showPercentage={canSeeFitPercent}
                         />
                       </TableCell>
 

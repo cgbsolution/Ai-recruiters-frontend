@@ -44,6 +44,7 @@ interface Organization {
   total_candidates_used: number;
   allow_resume_database: boolean;
   allow_code_editor: boolean;
+  allow_fit_score: boolean;
 }
 
 interface OrgStats {
@@ -72,6 +73,7 @@ export default function OrganizationsView() {
   const [formMaxCandidates, setFormMaxCandidates] = useState(0);
   const [formAllowResumeDb, setFormAllowResumeDb] = useState(false);
   const [formAllowCodeEditor, setFormAllowCodeEditor] = useState(false);
+  const [formAllowFitScore, setFormAllowFitScore] = useState(false);
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -110,6 +112,7 @@ export default function OrganizationsView() {
         max_candidates_per_job: formMaxCandidates,
         allow_resume_database: formAllowResumeDb,
         allow_code_editor: formAllowCodeEditor,
+        allow_fit_score: formAllowFitScore,
       };
 
       if (editOrg) {
@@ -196,6 +199,7 @@ export default function OrganizationsView() {
     setFormMaxCandidates(org.max_candidates_per_job ?? 0);
     setFormAllowResumeDb(org.allow_resume_database ?? false);
     setFormAllowCodeEditor(org.allow_code_editor ?? false);
+    setFormAllowFitScore(org.allow_fit_score ?? false);
     setFormError("");
     setDialogOpen(true);
   };
@@ -498,6 +502,19 @@ export default function OrganizationsView() {
               <Label htmlFor="allowCodeEditor" className="cursor-pointer">
                 Allow Code Editor Access
                 <span className="ml-2 text-xs text-amber-600 font-medium bg-amber-50 px-1.5 py-0.5 rounded">Premium Pro</span>
+              </Label>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="allowFitScore"
+                checked={formAllowFitScore}
+                onChange={(e) => setFormAllowFitScore(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <Label htmlFor="allowFitScore" className="cursor-pointer">
+                Allow Fit Score Percentage
               </Label>
             </div>
 

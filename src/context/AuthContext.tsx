@@ -28,6 +28,7 @@ export interface AuthUser {
   organization_name: string | null;
   allow_code_editor: boolean;
   allow_whatsapp: boolean;
+  allow_fit_score: boolean;
   google_connected: boolean;
   google_email: string | null;
 }
@@ -175,6 +176,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 organization_name: data.organization_name,
                 allow_code_editor: data.allow_code_editor ?? false,
                 allow_whatsapp: data.allow_whatsapp ?? false,
+                allow_fit_score: data.allow_fit_score ?? false,
                 google_connected: data.google_connected ?? false,
                 google_email: data.google_email ?? null,
               };
