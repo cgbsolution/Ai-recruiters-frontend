@@ -1058,18 +1058,8 @@ export default function InterviewRoom({
             {!showCodeEditor && (
               <div className="px-4 pb-5 pt-2 shrink-0 flex flex-col items-center gap-3 border-t border-gray-800/60">
 
-                {/* ── PHASE 2: Begin button (after intro feedback) ── */}
-                {phase === "LISTENING" && currentQuestionIndex === 0 && hasIntroResponse && (
-                  <Button
-                    onClick={handleBeginClick}
-                    className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-3 rounded-full text-base gap-2 font-medium shadow-lg shadow-blue-900/30"
-                  >
-                    Begin Interview <ArrowRight className="w-5 h-5" />
-                  </Button>
-                )}
-
-                {/* ── PHASE 3: Manual speaking controls (intro + Q&A) ── */}
-                {phase === "LISTENING" && !(currentQuestionIndex === 0 && hasIntroResponse) && (
+                {/* ── Manual speaking controls (intro + Q&A) ── */}
+                {phase === "LISTENING" && (
                   <>
                     {/* Skip link — only during Q&A, not intro */}
                     {voiceState === "idle" && currentQuestionIndex > 0 && (
