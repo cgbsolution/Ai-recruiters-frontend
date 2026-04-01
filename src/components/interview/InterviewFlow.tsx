@@ -278,7 +278,10 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     if (isCompletingRef.current) return;
     isCompletingRef.current = true;
 
-    // Stop media streams immediately
+    // Stop recording FIRST (before killing streams) so the blob is complete
+    const recording = await stopRecording();
+
+    // Now stop media streams
     if (webcamStream) {
       webcamStream.getTracks().forEach((t) => t.stop());
     }
@@ -298,15 +301,13 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
       terminationReason = "ended_by_candidate";
     }
 
-    // Show completion screen immediately — don't wait for recording upload
+    // Show completion screen immediately
     setStep("COMPLETION");
 
     // Upload recording in background (non-blocking)
-    stopRecording().then((recording) => {
-      if (recording && session.sessionId) {
-        session.uploadRecording(recording.blob, session.sessionId, recording.duration).catch(() => {});
-      }
-    }).catch(() => {});
+    if (recording && session.sessionId) {
+      session.uploadRecording(recording.blob, session.sessionId, recording.duration).catch(() => {});
+    }
 
     // Trigger backend completion & evaluation polling
     if (!session.evaluation) {
