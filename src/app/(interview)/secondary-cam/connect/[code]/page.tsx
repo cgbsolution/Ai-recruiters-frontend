@@ -17,9 +17,6 @@ export default function SecondaryCamConnectPage() {
   const [jobTitle, setJobTitle] = useState("");
   const [cameraActive, setCameraActive] = useState(false);
   const [sessionEnded, setSessionEnded] = useState(false);
-  const [personDetected, setPersonDetected] = useState(false);
-  const [screenDetected, setScreenDetected] = useState(false);
-
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -232,46 +229,6 @@ export default function SecondaryCamConnectPage() {
     }
   };
 
-  // ── Real-time frame verification — detect person + laptop ──
-  useEffect(() => {
-    if (!cameraActive || phase === "confirmed") return;
-
-    const verifyRef = { current: null as ReturnType<typeof setInterval> | null };
-
-    verifyRef.current = setInterval(async () => {
-      if (!canvasRef.current || !videoRef.current) return;
-      const video = videoRef.current;
-      if (video.videoWidth === 0) return;
-
-      const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      ctx.drawImage(video, 0, 0);
-
-      const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.4));
-      if (!blob) return;
-
-      const fd = new FormData();
-      fd.append("frame", blob, "frame.jpg");
-      try {
-        const res = await fetch(`${API_BASE}/secondary-cam/connect/${codeRef.current}/verify-frame`, {
-          method: "POST", body: fd,
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setPersonDetected(data.person_detected);
-          setScreenDetected(data.screen_detected);
-        }
-      } catch { /* retry next interval */ }
-    }, 2500);
-
-    return () => {
-      if (verifyRef.current) clearInterval(verifyRef.current);
-    };
-  }, [cameraActive, phase]);
-
   // ── Poll session status — detect when interview ends on desktop ──
   useEffect(() => {
     if (phase !== "camera" && phase !== "confirmed") return;
@@ -448,44 +405,26 @@ export default function SecondaryCamConnectPage() {
             </span>
           </div>
 
-          {phase === "camera" && cameraActive && (
-            <>
-              <div className={`flex items-center justify-between px-3 py-2.5 rounded-lg border ${personDetected ? "border-green-200 bg-green-50" : "border-orange-200 bg-orange-50"}`}>
-                <span className="text-sm text-gray-700 font-medium">Person visible</span>
-                <span className={`flex items-center gap-1.5 text-sm font-semibold ${personDetected ? "text-green-600" : "text-orange-500"}`}>
-                  {personDetected ? "Detected" : "Checking..."}
-                  {personDetected ? <CheckCircle className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
-                </span>
-              </div>
-              <div className={`flex items-center justify-between px-3 py-2.5 rounded-lg border ${screenDetected ? "border-green-200 bg-green-50" : "border-orange-200 bg-orange-50"}`}>
-                <span className="text-sm text-gray-700 font-medium">Laptop screen visible</span>
-                <span className={`flex items-center gap-1.5 text-sm font-semibold ${screenDetected ? "text-green-600" : "text-orange-500"}`}>
-                  {screenDetected ? "Detected" : "Checking..."}
-                  {screenDetected ? <CheckCircle className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
-                </span>
-              </div>
-            </>
-          )}
-
-          {phase === "confirmed" && (
-            <div className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-green-200 bg-green-50">
-              <span className="text-sm text-gray-700 font-medium">Position</span>
+          <div className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-gray-100 bg-gray-50">
+            <span className="text-sm text-gray-700 font-medium">Device Position</span>
+            {phase === "confirmed" ? (
               <span className="flex items-center gap-1.5 text-sm font-semibold text-green-600">
                 Verified <CheckCircle className="w-4 h-4" />
               </span>
-            </div>
-          )}
+            ) : (
+              <span className="text-sm font-semibold text-orange-500">
+                {cameraActive ? "Confirm below" : "Waiting..."}
+              </span>
+            )}
+          </div>
         </div>
 
         {phase === "camera" && cameraActive && (
           <Button
             onClick={handleConfirm}
-            disabled={!personDetected || !screenDetected}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-3 rounded-full text-sm font-semibold"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-full text-sm font-semibold"
           >
-            {personDetected && screenDetected
-              ? "Confirm Position"
-              : "Waiting for person & laptop detection..."}
+            I&apos;ve Positioned My Phone Correctly
           </Button>
         )}
 

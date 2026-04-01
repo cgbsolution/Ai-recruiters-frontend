@@ -105,22 +105,22 @@ export default function SecondaryCamStep({ sessionId, onVerified }: Props) {
 
   const checks = [
     {
-      label: "Second device connected",
+      label: "Is second device connected?",
       done: isDeviceConnected,
       checking: !isDeviceConnected,
     },
     {
-      label: "Camera active",
+      label: "Is camera active?",
       done: isCameraActive,
       checking: !isCameraActive,
     },
     {
-      label: "Person visible",
+      label: "Is laptop screen visible?",
       done: isPositionVerified,
       checking: isDeviceConnected && !isPositionVerified,
     },
     {
-      label: "Laptop screen visible",
+      label: "Is candidate visible?",
       done: isPositionVerified,
       checking: isDeviceConnected && !isPositionVerified,
     },
