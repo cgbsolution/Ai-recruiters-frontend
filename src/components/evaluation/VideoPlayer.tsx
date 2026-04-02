@@ -84,14 +84,37 @@ export default function VideoPlayer({ src }: Props) {
     [video]
   );
 
-  const handleSeek = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!video || !progressRef.current || duration <= 0) return;
+  const seekTo = useCallback(
+    (clientX: number) => {
+      if (!videoRef.current || !progressRef.current || duration <= 0) return;
       const rect = progressRef.current.getBoundingClientRect();
-      const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      video.currentTime = pct * duration;
+      const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      videoRef.current.currentTime = pct * duration;
+      setCurrentTime(pct * duration);
     },
-    [video, duration]
+    [duration]
+  );
+
+  const handleSeek = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => seekTo(e.clientX),
+    [seekTo]
+  );
+
+  // Drag to seek on progress bar
+  const handleSeekDragStart = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      seekTo(e.clientX);
+
+      const onMove = (ev: MouseEvent) => seekTo(ev.clientX);
+      const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    },
+    [seekTo]
   );
 
   const handleSpeed = useCallback(
@@ -115,8 +138,7 @@ export default function VideoPlayer({ src }: Props) {
 
   /**
    * Resolve WebM duration — MediaRecorder WebM files often report Infinity.
-   * Strategy: seek to a huge time (1e10), browser clamps to actual end,
-   * then read either the now-finite duration or use currentTime as fallback.
+   * Uses small incremental seek to find actual end without showing huge numbers.
    */
   const resolveDuration = useCallback((v: HTMLVideoElement) => {
     if (resolvedRef.current) return;
@@ -125,7 +147,6 @@ export default function VideoPlayer({ src }: Props) {
       if (resolvedRef.current) return;
       resolvedRef.current = true;
       setDuration(dur);
-      // Reset to beginning
       v.currentTime = 0;
       setCurrentTime(0);
       setResolving(false);
@@ -137,48 +158,67 @@ export default function VideoPlayer({ src }: Props) {
       return;
     }
 
-    // WebM workaround: seek to a very large time
-    const onSeeked = () => {
-      v.removeEventListener("seeked", onSeeked);
-
-      if (v.duration && isFinite(v.duration) && v.duration > 0.5) {
-        finishResolve(v.duration);
-      } else if (v.currentTime > 0.5) {
-        // duration is still Infinity, but currentTime got clamped to the actual end
-        finishResolve(v.currentTime);
-      } else {
-        // Last resort: try using buffered ranges
-        if (v.buffered.length > 0) {
-          finishResolve(v.buffered.end(v.buffered.length - 1));
-        } else {
-          // Give up — set a minimal duration so controls still work
-          setResolving(false);
-        }
+    // WebM workaround: use buffered ranges if available
+    if (v.buffered.length > 0) {
+      const bufferedEnd = v.buffered.end(v.buffered.length - 1);
+      if (bufferedEnd > 0.5) {
+        finishResolve(bufferedEnd);
+        return;
       }
-    };
+    }
 
-    v.addEventListener("seeked", onSeeked);
-    // Use 1e10 instead of MAX_SAFE_INTEGER — more browser-friendly
-    v.currentTime = 1e10;
+    // Binary search for duration: start at 1 hour, double until we overshoot,
+    // then narrow down. Much safer than seeking to 1e10.
+    let testTime = 3600; // start at 1 hour
+    let lastValid = 0;
+    let attempts = 0;
+    const maxAttempts = 15;
 
-    // Safety timeout: if seeked never fires within 3s, give up gracefully
-    setTimeout(() => {
-      if (!resolvedRef.current) {
+    const trySeek = () => {
+      if (resolvedRef.current || attempts >= maxAttempts) {
+        if (!resolvedRef.current) {
+          finishResolve(lastValid || 0);
+        }
+        return;
+      }
+      attempts++;
+
+      const onSeeked = () => {
         v.removeEventListener("seeked", onSeeked);
-        // Try reading whatever we have
+
+        // Check if duration became finite
         if (v.duration && isFinite(v.duration) && v.duration > 0.5) {
           finishResolve(v.duration);
-        } else if (v.currentTime > 0.5) {
-          finishResolve(v.currentTime);
-        } else if (v.buffered.length > 0) {
-          finishResolve(v.buffered.end(v.buffered.length - 1));
-        } else {
-          resolvedRef.current = true;
-          v.currentTime = 0;
-          setResolving(false);
+          return;
         }
+
+        // currentTime got clamped = we overshot the end
+        if (v.currentTime < testTime * 0.9) {
+          finishResolve(v.currentTime);
+        } else {
+          lastValid = v.currentTime;
+          testTime *= 2;
+          trySeek();
+        }
+      };
+
+      v.addEventListener("seeked", onSeeked, { once: true });
+      v.currentTime = testTime;
+    };
+
+    trySeek();
+
+    // Safety timeout
+    setTimeout(() => {
+      if (!resolvedRef.current) {
+        resolvedRef.current = true;
+        if (v.duration && isFinite(v.duration)) {
+          setDuration(v.duration);
+        }
+        v.currentTime = 0;
+        setResolving(false);
       }
-    }, 3000);
+    }, 5000);
   }, []);
 
   // Sync state from video events
@@ -309,6 +349,7 @@ export default function VideoPlayer({ src }: Props) {
           ref={progressRef}
           className="h-1.5 bg-white/25 rounded-full cursor-pointer mb-2 group/progress hover:h-2.5 transition-all"
           onClick={handleSeek}
+          onMouseDown={handleSeekDragStart}
         >
           <div
             className="h-full bg-blue-500 rounded-full relative"
