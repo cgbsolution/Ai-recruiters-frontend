@@ -49,15 +49,22 @@ const VIOLATION_THRESHOLD = 5;
 /**
  * Silence timeout: how long to wait AFTER the last final transcript
  * before auto-submitting. Only counts silence after confirmed speech.
+ *
+ * Scales continuously with transcript length so candidates can give
+ * long answers (5–10+ minutes) without being cut off during natural
+ * thinking pauses. Every 100 chars spoken adds 1 second of patience.
+ * Capped at MAX to avoid infinite waiting.
  */
-const SILENCE_TIMEOUT_MS = 3500;
-const INTRO_SILENCE_TIMEOUT_MS = 5000;
+const SILENCE_TIMEOUT_BASE_MS = 5000;
+const SILENCE_TIMEOUT_MAX_MS = 15000;
+const SILENCE_TIMEOUT_SCALE_PER_CHAR = 10;  // +1s per 100 chars
+const INTRO_SILENCE_TIMEOUT_MS = 8000;
 
 /** Delay after TTS finishes before starting STT — prevents echo pickup */
 const POST_SPEECH_DELAY_MS = 1200;
 
 /** If PROCESSING phase lasts longer than this, force-recover */
-const PROCESSING_TIMEOUT_MS = 35000;
+const PROCESSING_TIMEOUT_MS = 45000;
 
 /** Minimum characters of FINAL transcript required before auto-submit */
 const MIN_SUBMIT_LENGTH = 3;
@@ -239,9 +246,8 @@ export default function InterviewRoom({
     if (phaseRef.current !== "LISTENING") return;
     if (isSubmittingRef.current) return;
 
-    // Use final transcript — capturedTranscriptRef is the authoritative source
-    // when submitted via "Send Response" button (stop() preserves transcript now,
-    // but capturedTranscriptRef is the explicit capture at the moment recording ended)
+    // CRITICAL: Snapshot the transcript BEFORE stopping recognition or resetting state.
+    // Use capturedTranscriptRef (set when user clicks Stop) or fall back to live final transcript.
     const text = (capturedTranscriptRef.current || finalTranscriptRef.current).trim();
     if (!text || text.length < MIN_SUBMIT_LENGTH) return;
 
@@ -249,10 +255,15 @@ export default function InterviewRoom({
     isSubmittingRef.current = true;
     setPhase("PROCESSING");
     processingStartRef.current = Date.now();
+
+    // Stop recognition AFTER capturing text — order matters
     stop();
     cancel();
-    reset();
     cancelSilenceAnim();
+
+    // Keep capturedTranscript visible during PROCESSING so chat doesn't blank
+    setCapturedTranscript(text);
+    capturedTranscriptRef.current = text;
 
     try {
       // Check for end commands
@@ -272,6 +283,8 @@ export default function InterviewRoom({
       await onSendMessage(text);
     } finally {
       isSubmittingRef.current = false;
+      // Reset transcript state AFTER successful submission
+      reset();
     }
   }, [stop, cancel, reset, cancelSilenceAnim, onSendMessage, onSkipQuestion, onComplete, disableViolations]);
 
@@ -317,9 +330,11 @@ export default function InterviewRoom({
   }, [reset, start]);
 
   const handleStopSpeaking = useCallback(() => {
-    const captured = finalTranscriptRef.current.trim();
+    // Capture the FULL transcript including any interim text that hasn't been
+    // finalized yet. This prevents losing the last few words the user spoke.
+    const captured = transcriptRef.current.trim() || finalTranscriptRef.current.trim();
     capturedTranscriptRef.current = captured; // sync ref immediately
-    stop(); // stop() now preserves transcript state
+    stop(); // stop() preserves transcript state
     setCapturedTranscript(captured);
     setVoiceState("answered");
     if (recordingTimerRef.current) {
@@ -449,7 +464,14 @@ export default function InterviewRoom({
 
     // User has stopped speaking (no interim text, only final).
     // Start silence countdown from lastFinalAt.
-    const timeout = currentQuestionIndex === 0 ? INTRO_SILENCE_TIMEOUT_MS : SILENCE_TIMEOUT_MS;
+    // Timeout scales with transcript length — the more the candidate has said,
+    // the more patience we give for thinking pauses (up to MAX).
+    const timeout = currentQuestionIndex === 0
+      ? INTRO_SILENCE_TIMEOUT_MS
+      : Math.min(
+          SILENCE_TIMEOUT_MAX_MS,
+          SILENCE_TIMEOUT_BASE_MS + finalText.length * SILENCE_TIMEOUT_SCALE_PER_CHAR
+        );
 
     const tick = () => {
       if (phaseRef.current !== "LISTENING") return;
@@ -461,7 +483,8 @@ export default function InterviewRoom({
         setSilenceProgress(0);
 
         // All phases: move to "answered" state, let candidate click Send Response
-        const captured = finalTranscriptRef.current.trim();
+        // Use full transcript (final + any remaining interim) for maximum capture
+        const captured = (transcriptRef.current || finalTranscriptRef.current).trim();
         capturedTranscriptRef.current = captured;
         stop();
         setCapturedTranscript(captured);
