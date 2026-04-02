@@ -19,6 +19,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [googleConnecting, setGoogleConnecting] = useState(false);
   const [googleDisconnecting, setGoogleDisconnecting] = useState(false);
+  const [googleAvailable, setGoogleAvailable] = useState(true);
 
   // Listen for Google OAuth popup callback
   useEffect(() => {
@@ -39,17 +40,27 @@ export default function ProfilePage() {
     return () => window.removeEventListener("message", handleMessage);
   }, [updateUser]);
 
+  // Check if Google OAuth is configured on the server
+  useEffect(() => {
+    api<{ url: string }>("/auth/google/connect").catch((err: any) => {
+      if (err?.status === 501) setGoogleAvailable(false);
+    });
+  }, []);
+
   const handleGoogleConnect = useCallback(async () => {
     setGoogleConnecting(true);
     try {
       const data = await api<{ url: string }>("/auth/google/connect");
-      // Open Google OAuth in a popup
       const w = 500, h = 600;
       const left = window.screenX + (window.outerWidth - w) / 2;
       const top = window.screenY + (window.outerHeight - h) / 2;
       window.open(data.url, "google-oauth", `width=${w},height=${h},left=${left},top=${top}`);
     } catch (err: any) {
-      notifyError(err?.message || "Failed to start Google connection.");
+      if (err?.status === 501) {
+        setGoogleAvailable(false);
+      } else {
+        notifyError(err?.message || "Failed to start Google connection.");
+      }
       setGoogleConnecting(false);
     }
   }, []);
@@ -197,6 +208,10 @@ export default function ProfilePage() {
       </div>
       {/* Google Calendar Integration */}
       <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03] mt-6">
+        {!googleAvailable && !user?.google_connected ? (
+          <p className="text-sm text-gray-400 italic">Google Calendar integration is not configured on this server.</p>
+        ) : (
+        <>
         <div className="flex items-center gap-3 mb-4">
           <div className="w-9 h-9 rounded-lg bg-green-50 dark:bg-green-900/30 flex items-center justify-center">
             <Video className="w-4.5 h-4.5 text-green-600" />
@@ -269,6 +284,8 @@ export default function ProfilePage() {
               Connect Google
             </Button>
           </div>
+        )}
+        </>
         )}
       </div>
     </div>
