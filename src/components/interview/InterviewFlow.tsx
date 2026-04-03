@@ -190,8 +190,9 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   }, []);
 
   // When webcam is not required, request mic-only and skip device test
+  // Store the mic stream so recording can use its audio tracks
   const handleMicOnlyGranted = useCallback((stream: MediaStream) => {
-    // No webcam stream — mic-only
+    setWebcamStream(stream); // contains mic audio tracks even without video
     setStep("PERMISSION_SCREEN");
   }, []);
 
@@ -263,6 +264,10 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     setStep("INTERVIEW");
     await handleStartInterview();
   }, [handleStartInterview]);
+
+  const handleScreenStreamChanged = useCallback((stream: MediaStream) => {
+    setScreenStream(stream);
+  }, []);
 
   const handleSendMessage = useCallback(
     async (text: string): Promise<boolean> => session.sendMessage(text),
@@ -484,6 +489,7 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
           onSendMessage={handleSendMessage}
           onSkipQuestion={handleSkipQuestion}
           onComplete={handleInterviewComplete}
+          onScreenStreamChanged={handleScreenStreamChanged}
           webcamStream={webcamStream}
           screenStream={screenStream}
         />

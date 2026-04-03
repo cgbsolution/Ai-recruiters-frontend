@@ -141,6 +141,9 @@ export function useInterviewSession(): InterviewSessionHook {
   const isSendingRef = useRef(false);
   /** Track consecutive frontend fallbacks to vary messages */
   const consecutiveFallbacksRef = useRef(0);
+  /** Ref to latest messages for use in callbacks without stale closures */
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
 
   const loadJobConfig = useCallback(async (token: string): Promise<JobConfig | null> => {
     try {
@@ -317,7 +320,16 @@ export function useInterviewSession(): InterviewSessionHook {
 
   const updateQuestionStates = useCallback(
     (aiMessage: string, questionIndex: number, isComplete: boolean) => {
-      if (isComplete) return;
+      if (isComplete) {
+        // Interview ended — mark ALL remaining active questions as answered
+        // so the question counter reflects the true completed count
+        setQuestionStates((prev) =>
+          prev.map((q) =>
+            q.status === "active" ? { ...q, status: "answered" as const } : q
+          )
+        );
+        return;
+      }
       setQuestionStates((prev) => {
         const existing = prev.find((q) => q.index === questionIndex);
         if (!existing) {
@@ -420,7 +432,7 @@ export function useInterviewSession(): InterviewSessionHook {
         // On timeout or error, add a contextual fallback so the flow doesn't freeze
         const fallbackCount = consecutiveFallbacksRef.current;
         consecutiveFallbacksRef.current += 1;
-        const lastAiQi = messages.filter((m) => m.role === "ai").pop()?.questionIndex ?? 0;
+        const lastAiQi = messagesRef.current.filter((m) => m.role === "ai").pop()?.questionIndex ?? 0;
 
         // First timeout: ask to repeat. Second+: acknowledge and move forward
         let fallbackContent: string;
@@ -442,7 +454,7 @@ export function useInterviewSession(): InterviewSessionHook {
         isSendingRef.current = false;
       }
     },
-    [sessionId, updateQuestionStates, messages]
+    [sessionId, updateQuestionStates]
   );
 
   const skipQuestion = useCallback(async (): Promise<boolean> => {

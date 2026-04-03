@@ -10,7 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { PhoneOff, Mic, MicOff, GripVertical, SkipForward, Monitor, Square, Send, Trash2, ChevronRight, ArrowRight } from "lucide-react";
+import { PhoneOff, Mic, MicOff, GripVertical, SkipForward, Monitor, Square, Send, Trash2, ChevronRight } from "lucide-react";
 import dynamic from "next/dynamic";
 import AvatarScene from "./AvatarScene";
 import TranscriptPanel from "./TranscriptPanel";
@@ -40,6 +40,7 @@ interface Props {
   onSendMessage: (text: string) => Promise<boolean>;
   onSkipQuestion: () => Promise<boolean>;
   onComplete: () => void;
+  onScreenStreamChanged?: (stream: MediaStream) => void;
   webcamStream: MediaStream | null;
   screenStream: MediaStream | null;
 }
@@ -125,6 +126,7 @@ export default function InterviewRoom({
   onSendMessage,
   onSkipQuestion,
   onComplete,
+  onScreenStreamChanged,
   webcamStream,
   screenStream,
 }: Props) {
@@ -139,7 +141,6 @@ export default function InterviewRoom({
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [showScreenShareModal, setShowScreenShareModal] = useState(false);
   const [silenceProgress, setSilenceProgress] = useState(0);
-  const [answeredCount, setAnsweredCount] = useState(0);
 
   /* ── Manual voice interaction state ── */
   type VoiceState = "idle" | "recording" | "answered";
@@ -161,7 +162,6 @@ export default function InterviewRoom({
   /* ── Refs ── */
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSpokenIndexRef = useRef(-1);
-  const lastQuestionIndexRef = useRef(0);
   const transcriptRef = useRef("");
   const finalTranscriptRef = useRef("");
   const capturedTranscriptRef = useRef(""); // mirrors capturedTranscript state for use in callbacks
@@ -171,7 +171,6 @@ export default function InterviewRoom({
   const isAutoCompletingRef = useRef(false);
   // Refs for values needed inside animation-frame callbacks
   const messagesRef = useRef(messages);
-  const hasIntroResponseRef = useRef(false);
 
   /* ── Draggable PIP ── */
   const [pipPos, setPipPos] = useState({ x: 16, y: 16 });
@@ -197,10 +196,9 @@ export default function InterviewRoom({
     capturedTranscriptRef.current = capturedTranscript;
   }, [capturedTranscript]);
 
-  /* ── Keep messagesRef and hasIntroResponseRef in sync ── */
+  /* ── Keep messagesRef in sync ── */
   useEffect(() => {
     messagesRef.current = messages;
-    hasIntroResponseRef.current = messages.some((m) => m.role === "candidate");
   }, [messages]);
 
   /* ── Timer ── */
@@ -228,6 +226,11 @@ export default function InterviewRoom({
     return aiMsgs[aiMsgs.length - 1].questionIndex ?? 0;
   })();
 
+  /* ── Answered/skipped question count from questionStates (robust frontend tracking) ── */
+  const completedQuestionCount = questionStates.filter(
+    (q) => q.index > 0 && (q.status === "answered" || q.status === "skipped")
+  ).length;
+
   /* ── Cancel silence animation helper ── */
   const cancelSilenceAnim = useCallback(() => {
     setSilenceProgress(0);
@@ -247,8 +250,12 @@ export default function InterviewRoom({
     if (isSubmittingRef.current) return;
 
     // CRITICAL: Snapshot the transcript BEFORE stopping recognition or resetting state.
-    // Use capturedTranscriptRef (set when user clicks Stop) or fall back to live final transcript.
-    const text = (capturedTranscriptRef.current || finalTranscriptRef.current).trim();
+    // Try capturedTranscript first, then live final transcript, then full transcript (final + interim)
+    const text = (
+      capturedTranscriptRef.current ||
+      finalTranscriptRef.current ||
+      transcriptRef.current
+    ).trim();
     if (!text || text.length < MIN_SUBMIT_LENGTH) return;
 
     // Lock immediately to prevent double-submit
@@ -268,6 +275,7 @@ export default function InterviewRoom({
     try {
       // Check for end commands
       if (isEndCommand(text)) {
+        isAutoCompletingRef.current = true; // prevent Effect 4b from double-calling
         disableViolations();
         onComplete();
         return;
@@ -307,21 +315,6 @@ export default function InterviewRoom({
   }, [stop, cancel, reset, cancelSilenceAnim, onSkipQuestion]);
 
   /* ── Manual voice control handlers ── */
-  const handleBeginClick = useCallback(async () => {
-    if (isSubmittingRef.current) return;
-    isSubmittingRef.current = true;
-    setPhase("PROCESSING");
-    processingStartRef.current = Date.now();
-    stop();
-    cancel();
-    cancelSilenceAnim();
-    try {
-      await onSendMessage("Let's begin");
-    } finally {
-      isSubmittingRef.current = false;
-    }
-  }, [stop, cancel, cancelSilenceAnim, onSendMessage]);
-
   const handleStartSpeaking = useCallback(() => {
     reset();
     setRecordingDuration(0);
@@ -405,17 +398,12 @@ export default function InterviewRoom({
       setPhase("LISTENING");
       reset();
 
-      // Determine interview mode from latest AI message index and candidate history
-      const aiMsgs = messagesRef.current.filter((m) => m.role === "ai");
-      const latestQIndex = aiMsgs.length > 0 ? (aiMsgs[aiMsgs.length - 1].questionIndex ?? 0) : 0;
-      const hasCandidateMsgYet = hasIntroResponseRef.current;
-
-      // All phases stay idle — candidate clicks Start Speaking (or Begin after intro)
-      // No auto-listen: intro phase now uses the same manual Start Speaking flow as Q&A
+      // Manual flow: candidate clicks Start Speaking → Stop → Send Response
+      // voiceState stays "idle" until candidate clicks Start Speaking
     }, POST_SPEECH_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [phase, isSpeaking, isThinking, isInterviewComplete, showCodeEditor, reset, start, onComplete]);
+  }, [phase, isSpeaking, isThinking, isInterviewComplete, showCodeEditor, reset, onComplete]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  EFFECT 3: Silence detection — ChatGPT voice mode style        */
@@ -480,19 +468,10 @@ export default function InterviewRoom({
       setSilenceProgress(progress);
 
       if (elapsed >= timeout) {
-        setSilenceProgress(0);
-
-        // All phases: move to "answered" state, let candidate click Send Response
-        // Use full transcript (final + any remaining interim) for maximum capture
-        const captured = (transcriptRef.current || finalTranscriptRef.current).trim();
-        capturedTranscriptRef.current = captured;
-        stop();
-        setCapturedTranscript(captured);
-        setVoiceState("answered");
-        if (recordingTimerRef.current) {
-          clearInterval(recordingTimerRef.current);
-          recordingTimerRef.current = null;
-        }
+        // Manual mode: do NOT auto-stop recording.
+        // Just cap the progress bar at 100% as a visual hint.
+        // The candidate clicks Stop when they're done speaking.
+        setSilenceProgress(100);
       } else {
         silenceAnimRef.current = requestAnimationFrame(tick);
       }
@@ -509,22 +488,48 @@ export default function InterviewRoom({
   }, [transcript, interimTranscript, lastFinalAt, phase, currentQuestionIndex, showCodeEditor, stop, handleSubmit, handleSkip, cancelSilenceAnim]);
 
   /* ═══════════════════════════════════════════════════════════════ */
-  /*  EFFECT 4: Interview completion — stop everything              */
+  /*  EFFECT 4: Interview completion — cleanup only                 */
+  /*                                                                  */
+  /*  Does NOT call onComplete or cancel speech — those are handled */
+  /*  by Effect 2 (after closing message TTS) or by direct handlers */
+  /*  (handleEndInterview, violations, end commands).                */
+  /*  Calling cancel() here would kill the AI's closing message.    */
   /* ═══════════════════════════════════════════════════════════════ */
 
   useEffect(() => {
     if (!isInterviewComplete) return;
-    setPhase("IDLE");
     disableViolations();
-    cancel();
-    stop();
     if (timerRef.current) clearInterval(timerRef.current);
     if (questionTimerRef.current) { clearInterval(questionTimerRef.current); questionTimerRef.current = null; }
     cancelSilenceAnim();
     processingStartRef.current = null;
-    const t = setTimeout(() => onComplete(), 800);
-    return () => clearTimeout(t);
-  }, [isInterviewComplete, disableViolations, cancel, stop, onComplete, cancelSilenceAnim]);
+  }, [isInterviewComplete, disableViolations, cancelSilenceAnim]);
+
+  /* ═══════════════════════════════════════════════════════════════ */
+  /*  EFFECT 4b: Fallback completion — safety net if normal flow   */
+  /*  (Effect 1 → speak closing → Effect 2 → onComplete) doesn't  */
+  /*  trigger within 5 seconds. Uses a delay so it doesn't kill    */
+  /*  the closing message speech started by Effect 1.              */
+  /* ═══════════════════════════════════════════════════════════════ */
+
+  useEffect(() => {
+    if (!isInterviewComplete) return;
+    if (isAutoCompletingRef.current) return;
+
+    // Give the normal flow (Effect 1 speak → Effect 2 onComplete) time to work.
+    // Only force-complete if nothing happened after 5 seconds.
+    const fallback = setTimeout(() => {
+      if (isAutoCompletingRef.current) return; // Normal flow completed in time
+      console.warn("[InterviewRoom] Fallback completion — normal flow did not trigger in 5s");
+      isAutoCompletingRef.current = true;
+      stop();
+      cancel();
+      setPhase("IDLE");
+      onComplete();
+    }, 5000);
+
+    return () => clearTimeout(fallback);
+  }, [isInterviewComplete, stop, cancel, onComplete]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  EFFECT: Reset voiceState when leaving LISTENING phase          */
@@ -582,27 +587,14 @@ export default function InterviewRoom({
           isSubmittingRef.current = false;
           setPhase("LISTENING");
           reset();
-          start();
+          // Don't auto-start recognition — manual flow requires user to click Start Speaking
+          setVoiceState("idle");
         }
       }
     }, 5000);
 
     return () => clearInterval(checkStuck);
-  }, [phase, isThinking, reset, start]);
-
-  /* ═══════════════════════════════════════════════════════════════ */
-  /*  Track answered count from question index changes              */
-  /* ═══════════════════════════════════════════════════════════════ */
-
-  useEffect(() => {
-    const aiMsgs = messages.filter((m) => m.role === "ai");
-    if (aiMsgs.length === 0) return;
-    const qi = aiMsgs[aiMsgs.length - 1].questionIndex ?? 0;
-    if (qi > lastQuestionIndexRef.current) {
-      if (lastQuestionIndexRef.current > 0) setAnsweredCount((c) => c + 1);
-      lastQuestionIndexRef.current = qi;
-    }
-  }, [messages]);
+  }, [phase, isThinking, reset]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  EFFECT: Per-question auto-skip countdown timer                */
@@ -754,6 +746,7 @@ export default function InterviewRoom({
   }, []);
 
   const handleEndInterview = useCallback(() => {
+    isAutoCompletingRef.current = true; // prevent Effect 4b from double-calling
     setPhase("IDLE");
     disableViolations();
     cancel();
@@ -805,12 +798,11 @@ export default function InterviewRoom({
     ? { text: "Alex is thinking…", color: "text-blue-400", dot: "bg-blue-400" }
     : phase === "SPEAKING" || isSpeaking
     ? { text: "Alex is speaking…", color: "text-purple-400", dot: "bg-purple-400" }
+    : phase === "LISTENING" && voiceState === "recording"
+    ? { text: "Listening… (click stop when done)", color: "text-green-400", dot: "bg-green-400" }
     : phase === "LISTENING"
-    ? { text: "Listening… (pause to submit)", color: "text-green-400", dot: "bg-green-400" }
+    ? { text: "Click Start Speaking to respond", color: "text-green-400", dot: "bg-green-400" }
     : { text: messages.length === 0 ? "Starting interview…" : "Preparing…", color: "text-gray-500", dot: "bg-gray-500" };
-
-  /* ── Whether candidate has already responded to the intro question ── */
-  const hasIntroResponse = messages.some((m) => m.role === "candidate");
 
   /* ── Live transcript text (final + interim) ── */
   // Keep showing capturedTranscript through PROCESSING so the chat doesn't briefly blank
@@ -840,9 +832,9 @@ export default function InterviewRoom({
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Question progress */}
+          {/* Question progress — uses frontend-tracked completed count for reliability */}
           <div className="flex items-center gap-1.5 bg-gray-800/80 px-3 py-1.5 rounded-lg">
-            <span className="text-blue-400 text-xs font-bold">{Math.max(0, currentQuestionIndex)}</span>
+            <span className="text-blue-400 text-xs font-bold">{completedQuestionCount}</span>
             <span className="text-gray-600 text-xs">/</span>
             <span className="text-gray-400 text-xs">{jobConfig.max_questions}</span>
             <span className="text-gray-500 text-[10px] ml-1 uppercase tracking-wide">Questions</span>
@@ -990,12 +982,12 @@ export default function InterviewRoom({
                 <p className="text-gray-500 text-[11px]">Live conversation transcript</p>
               </div>
               <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs ${
-                phase === "LISTENING"
+                voiceState === "recording"
                   ? "bg-green-950/50 border border-green-800/50 text-green-400"
                   : "bg-gray-800/50 border border-gray-700/50 text-gray-500"
               }`}>
-                {phase === "LISTENING" ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
-                {phase === "LISTENING" ? "Mic Active" : "Mic Off"}
+                {voiceState === "recording" ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
+                {voiceState === "recording" ? "Mic Active" : "Mic Off"}
               </div>
             </div>
 
@@ -1060,8 +1052,8 @@ export default function InterviewRoom({
               </div>
             )}
 
-            {/* Live transcript bar — visible while recording or in answered state (Q&A only) */}
-            {phase === "LISTENING" && currentQuestionIndex > 0 && (voiceState === "recording" || voiceState === "answered") && (liveText || capturedTranscript) && (
+            {/* Live transcript bar — visible while recording or in answered state (all questions including intro) */}
+            {phase === "LISTENING" && (voiceState === "recording" || voiceState === "answered") && (liveText || capturedTranscript) && (
               <div className="mx-4 mb-2 px-4 py-2.5 bg-gray-800/60 border border-gray-700/50 rounded-xl shrink-0">
                 <div className="flex items-center gap-2">
                   <div className={`w-2 h-2 rounded-full shrink-0 ${voiceState === "recording" ? "bg-green-400 animate-pulse" : "bg-blue-400"}`} />
@@ -1097,15 +1089,20 @@ export default function InterviewRoom({
                       </div>
                     )}
 
-                    {/* IDLE: Start Speaking */}
+                    {/* IDLE: Instruction hint + Start Speaking */}
                     {voiceState === "idle" && (
-                      <Button
-                        onClick={handleStartSpeaking}
-                        className="bg-red-500 hover:bg-red-400 text-white rounded-full px-8 py-3 gap-2 font-medium text-sm shadow-lg shadow-red-900/30"
-                      >
-                        <Mic className="w-4 h-4" />
-                        Start Speaking
-                      </Button>
+                      <>
+                        <p className="text-gray-500 text-xs text-center max-w-xs">
+                          Click <span className="text-white font-medium">Start Speaking</span> to record your answer, then <span className="text-white font-medium">Stop</span> when done, and <span className="text-white font-medium">Send Response</span> to submit.
+                        </p>
+                        <Button
+                          onClick={handleStartSpeaking}
+                          className="bg-red-500 hover:bg-red-400 text-white rounded-full px-8 py-3 gap-2 font-medium text-sm shadow-lg shadow-red-900/30"
+                        >
+                          <Mic className="w-4 h-4" />
+                          Start Speaking
+                        </Button>
+                      </>
                     )}
 
                     {/* RECORDING: Waveform + timer + stop */}
@@ -1149,7 +1146,7 @@ export default function InterviewRoom({
                         </button>
                         <Button
                           onClick={handleSubmit}
-                          disabled={!capturedTranscript || capturedTranscript.length < 3}
+                          disabled={!(capturedTranscript || transcript) || (capturedTranscript || transcript).length < 3}
                           className="bg-blue-600 hover:bg-blue-500 text-white rounded-full px-6 py-3 gap-2 font-medium text-sm shadow-lg shadow-blue-900/30"
                         >
                           <Send className="w-4 h-4" />
@@ -1234,10 +1231,17 @@ export default function InterviewRoom({
                 try {
                   const stream = await navigator.mediaDevices.getDisplayMedia({
                     video: { displaySurface: "monitor" } as any,
-                    audio: false,
+                    audio: true,
                   });
                   setShowScreenShareModal(false);
-                  void stream;
+                  // Pass new stream back to parent so recording can use it
+                  onScreenStreamChanged?.(stream);
+                  // Resume to LISTENING phase so candidate can click Start Speaking
+                  if (phaseRef.current === "IDLE") {
+                    setPhase("LISTENING");
+                    reset();
+                    setVoiceState("idle");
+                  }
                 } catch {
                   // User denied — keep modal open
                 }

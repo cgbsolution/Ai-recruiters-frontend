@@ -407,9 +407,9 @@ export default function MatchCandidatesModal({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {candidates.map((c) => (
+                    {candidates.map((c, idx) => (
                       <TableRow
-                        key={c.candidate_email}
+                        key={`${c.candidate_email}-${c.resume_metadata_id ?? idx}`}
                         className={c.already_added ? "opacity-50" : ""}
                       >
                         <TableCell className="px-3">

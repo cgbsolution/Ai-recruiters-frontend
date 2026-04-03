@@ -110,10 +110,16 @@ export default function FitScoreBadge({
   const resolvedPct = percentage ?? pctFromLevel;
 
   const resolvedLevel: "high" | "medium" | "low" = (() => {
+    // Always recalculate from percentage if available — don't trust backend label
+    // since threshold definitions may differ
+    const pctVal = resolvedPct ?? pctFromLevel ?? percentage ?? 0;
+    if (pctVal > 0) {
+      if (pctVal >= 70) return "high";
+      if (pctVal >= 40) return "medium";
+      return "low";
+    }
+    // Fallback to backend label only when no percentage is available
     if (fitLevel === "high" || fitLevel === "medium" || fitLevel === "low") return fitLevel;
-    const pctVal = pctFromLevel ?? percentage ?? 0;
-    if (pctVal >= 70) return "high";
-    if (pctVal >= 50) return "medium";
     return "low";
   })();
 

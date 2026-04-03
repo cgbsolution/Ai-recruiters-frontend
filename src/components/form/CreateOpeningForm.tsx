@@ -188,9 +188,7 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       setExpandedGroups(new Set(mapped.map((g) => g.id)));
     }
 
-    if (jd.special_instructions) {
-      setSpecialInstructions(jd.special_instructions);
-    }
+    // Special instructions are manual-only — don't auto-fill from AI
 
     const qCount = jd.coding_questions_count ?? 5;
     setMaxQuestions(qCount);
@@ -437,7 +435,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
   const stepCompleted = useMemo(() => {
     const s0 =
       title.trim().length > 0 &&
-      department.trim().length > 0 &&
       location.trim().length > 0 &&
       openings > 0 &&
       empType.trim().length > 0;
@@ -458,7 +455,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     return [s0, s1, s2];
   }, [
     title,
-    department,
     location,
     openings,
     empType,
@@ -708,11 +704,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     // Final validation before submit
     if (!title.trim()) {
       notifyError("Please enter a job title.");
-      setStep(0);
-      return;
-    }
-    if (!department.trim()) {
-      notifyError("Please enter a department.");
       setStep(0);
       return;
     }
@@ -1362,9 +1353,10 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
                     </Tooltip>
                   </div>
                   <Textarea
-                    placeholder="Input your more Details"
+                    placeholder={"e.g.\n\u2022 Focus on React and Node.js practical knowledge\n\u2022 Ask about experience with microservices architecture\n\u2022 Evaluate problem-solving under time pressure"}
                     value={specialInstructions}
                     onChange={(e) => setSpecialInstructions(e.target.value)}
+                    rows={4}
                   />
                 </div>
               </CardContent>

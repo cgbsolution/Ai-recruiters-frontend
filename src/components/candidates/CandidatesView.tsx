@@ -156,6 +156,7 @@ const TERMINAL_STATUSES = new Set([
 // Statuses that allow (re)scheduling
 const SCHEDULE_ALLOWED_STATUSES = new Set([
   "New",
+  "Added from Database",
   "Cancelled",
   "Candidate Terminated Prematurely",
   "Ended by Candidate",
