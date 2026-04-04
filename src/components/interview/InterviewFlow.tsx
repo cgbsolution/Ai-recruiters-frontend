@@ -176,7 +176,8 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
 
         setStep("WELCOME");
       } else {
-        setLoadError("This interview link is invalid or has expired.");
+        // Use the specific error from the API (e.g., "expired" vs "not found")
+        setLoadError(session.error || "This interview link is invalid or has expired.");
         setStep("ERROR");
       }
     });
@@ -343,14 +344,22 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   }
 
   if (step === "ERROR") {
+    const isExpired = loadError?.toLowerCase().includes("expired");
     return (
       <div className="flex items-center justify-center min-h-screen px-6 text-center bg-white">
         <div>
           <div className="w-16 h-16 rounded-full bg-red-50 border border-red-100 flex items-center justify-center mx-auto mb-6">
             <span className="text-2xl">:/</span>
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Interview Not Found</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            {isExpired ? "Interview Link Expired" : "Interview Not Found"}
+          </h2>
           <p className="text-gray-500 max-w-md">{loadError || "This link is invalid or has expired."}</p>
+          {isExpired && (
+            <p className="text-gray-400 text-sm mt-3 max-w-md">
+              Please contact your recruiter to get a new interview link.
+            </p>
+          )}
         </div>
       </div>
     );
