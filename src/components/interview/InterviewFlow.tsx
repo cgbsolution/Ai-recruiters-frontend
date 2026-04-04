@@ -124,8 +124,9 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
 
   // Load job config on mount
   useEffect(() => {
-    session.loadJobConfig(token).then(async (config) => {
-      if (config) {
+    session.loadJobConfig(token).then(async (result) => {
+      if ("config" in result) {
+        const config = result.config;
         setJobConfig(config);
 
         // Block mobile devices if allow_mobile is disabled
@@ -142,14 +143,14 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
         // Auto-verify if candidateEmail is in the URL (?candidate=email)
         if (candidateEmail && !autoVerifiedRef.current) {
           autoVerifiedRef.current = true;
-          const result = await session.verifyAccess(token, candidateEmail);
-          if (result.access === "granted") {
+          const accessResult = await session.verifyAccess(token, candidateEmail);
+          if (accessResult.access === "granted") {
             // Store scheduling settings for enforcement
             const sInfo = {
-              interviewDate: result.interviewDate,
-              interviewTimezone: result.interviewTimezone,
-              joiningFlexibility: result.joiningFlexibility,
-              allowJoiningEarly: result.allowJoiningEarly,
+              interviewDate: accessResult.interviewDate,
+              interviewTimezone: accessResult.interviewTimezone,
+              joiningFlexibility: accessResult.joiningFlexibility,
+              allowJoiningEarly: accessResult.allowJoiningEarly,
             };
             setSchedulingInfo(sInfo);
 
@@ -161,13 +162,13 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
               return;
             }
 
-            if (result.canResume) {
+            if (accessResult.canResume) {
               isResumingRef.current = true;
             }
             setStep("PERMISSION_CAM_MIC");
             return;
-          } else if (result.access === "completed" || result.access === "terminated") {
-            setLoadError(result.message);
+          } else if (accessResult.access === "completed" || accessResult.access === "terminated") {
+            setLoadError(accessResult.message);
             setStep("ERROR");
             return;
           }
@@ -176,8 +177,8 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
 
         setStep("WELCOME");
       } else {
-        // Use the specific error from the API (e.g., "expired" vs "not found")
-        setLoadError(session.error || "This interview link is invalid or has expired.");
+        // Show the actual API error (e.g., "This interview link has expired")
+        setLoadError(result.error);
         setStep("ERROR");
       }
     });

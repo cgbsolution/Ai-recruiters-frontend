@@ -90,7 +90,7 @@ interface InterviewSessionHook {
   jobConfig: JobConfig | null;
   error: string | null;
   retryEvaluation: () => Promise<void>;
-  loadJobConfig: (token: string) => Promise<JobConfig | null>;
+  loadJobConfig: (token: string) => Promise<{ config: JobConfig } | { error: string }>;
   registerCandidate: (
     token: string,
     name: string,
@@ -145,14 +145,15 @@ export function useInterviewSession(): InterviewSessionHook {
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
 
-  const loadJobConfig = useCallback(async (token: string): Promise<JobConfig | null> => {
+  const loadJobConfig = useCallback(async (token: string): Promise<{ config: JobConfig } | { error: string }> => {
     try {
       const data = await api<JobConfig>(`/interview/${token}`);
       setJobConfig(data);
-      return data;
+      return { config: data };
     } catch (e: any) {
-      setError(e instanceof ApiError ? e.detail : e.message);
-      return null;
+      const msg = e instanceof ApiError ? e.detail : e.message;
+      setError(msg);
+      return { error: msg };
     }
   }, []);
 
