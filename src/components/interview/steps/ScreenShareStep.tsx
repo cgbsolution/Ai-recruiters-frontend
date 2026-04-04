@@ -51,7 +51,7 @@ export default function ScreenShareStep({ onNext, required = false }: Props) {
       <h2 className="text-2xl font-bold text-gray-900 mb-2">Screen Sharing</h2>
       <p className="text-gray-500 mb-4 max-w-sm text-sm">
         {required
-          ? "This interview requires you to share your entire screen to ensure a fair environment."
+          ? "This interview requires you to share your entire screen to ensure a fair environment Click on the screen share button below."
           : "Screen sharing is optional but helps ensure a fair interview environment."}
       </p>
       <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 w-full max-w-sm mb-6 text-left">

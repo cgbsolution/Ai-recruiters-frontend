@@ -63,7 +63,7 @@ export default function PermissionStep({ onPermissionsGranted, micOnly = false }
       <p className="text-gray-500 mb-8 max-w-sm text-sm">
         {micOnly
           ? "We need access to your microphone to conduct the interview."
-          : "We need access to your camera and microphone to conduct the interview."}
+          : "We need access to your camera and microphone to conduct the interview Click Allow Access button below."}
       </p>
 
       <div className="space-y-3 w-full max-w-sm mb-8">
