@@ -309,9 +309,18 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     // Show completion screen immediately
     setStep("COMPLETION");
 
-    // Upload recording FIRST (with retry), then trigger evaluation
+    // Upload recording FIRST (with retry), then trigger evaluation.
+    // The uploadRecording function handles its own beforeunload protection
+    // so users are warned if they try to close during upload.
     if (recording && session.sessionId) {
+      console.log(`[InterviewFlow] Starting recording upload — blob size: ${(recording.blob.size / (1024 * 1024)).toFixed(1)} MB`);
       await session.uploadRecording(recording.blob, session.sessionId, recording.duration);
+      console.log("[InterviewFlow] Recording upload completed");
+    } else {
+      console.warn("[InterviewFlow] No recording to upload:", {
+        hasRecording: !!recording,
+        sessionId: session.sessionId,
+      });
     }
 
     // Trigger backend completion & evaluation polling AFTER recording is saved

@@ -43,7 +43,7 @@ export function useScreenShare(): ScreenShareHook {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { displaySurface: "monitor" } as any,
-        audio: false,
+        audio: true,
       });
 
       const track = stream.getVideoTracks()[0];

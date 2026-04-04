@@ -48,8 +48,8 @@ export default function ViolationModal({ violationType, violationCount, threshol
 
   return (
     <AlertDialog open>
-      <AlertDialogContent className="bg-gray-900 border-red-800 max-w-md">
-        <AlertDialogHeader>
+      <AlertDialogContent className="bg-gray-900 border border-red-800 max-w-md p-6 rounded-2xl z-[9999]">
+        <AlertDialogHeader className="space-y-3">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-full bg-red-900/50 flex items-center justify-center flex-shrink-0">
               <AlertTriangle className="w-7 h-7 text-red-400" />
@@ -80,14 +80,14 @@ export default function ViolationModal({ violationType, violationCount, threshol
         </div>
 
         {remaining > 0 && (
-          <AlertDialogFooter className="flex-col gap-2">
+          <AlertDialogFooter className="flex flex-col gap-2 mt-2 sm:flex-col">
             {violationType === "fullscreen_exit" && (
               <Button
                 onClick={() => {
                   document.documentElement.requestFullscreen().catch(() => {});
                   onDismiss();
                 }}
-                className="w-full h-12 bg-blue-600 hover:bg-blue-700"
+                className="w-full h-12 bg-blue-600 hover:bg-blue-700 rounded-lg"
               >
                 Return to Fullscreen
               </Button>
@@ -96,8 +96,8 @@ export default function ViolationModal({ violationType, violationCount, threshol
               onClick={onDismiss}
               variant={violationType === "fullscreen_exit" ? "outline" : "default"}
               className={violationType === "fullscreen_exit"
-                ? "w-full h-12 border-gray-600 text-gray-300 hover:bg-gray-800"
-                : "w-full h-12 bg-blue-600 hover:bg-blue-700"
+                ? "w-full h-12 border-gray-600 text-gray-300 hover:bg-gray-800 rounded-lg"
+                : "w-full h-12 bg-blue-600 hover:bg-blue-700 rounded-lg"
               }
             >
               I Understand, Continue

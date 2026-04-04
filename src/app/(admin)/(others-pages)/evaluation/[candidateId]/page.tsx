@@ -317,14 +317,30 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
           try {
             if (!img.src || img.src.startsWith("data:")) return;
             origSrcs.push({ el: img, src: img.src });
-            const resp = await fetch(img.src);
-            const blob = await resp.blob();
-            const dataUrl = await new Promise<string>((resolve) => {
-              const reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result as string);
-              reader.readAsDataURL(blob);
-            });
-            img.src = dataUrl;
+            // Try fetching with credentials and CORS mode first, then fall
+            // back to no-cors. This handles same-origin and cross-origin photos.
+            let blob: Blob | null = null;
+            try {
+              const resp = await fetch(img.src, { credentials: "include" });
+              blob = await resp.blob();
+            } catch {
+              try {
+                const resp = await fetch(img.src, { mode: "no-cors" });
+                blob = await resp.blob();
+              } catch {
+                // Give up
+              }
+            }
+            if (blob && blob.size > 0) {
+              const dataUrl = await new Promise<string>((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.readAsDataURL(blob!);
+              });
+              img.src = dataUrl;
+            } else {
+              img.style.visibility = "hidden";
+            }
           } catch {
             // If fetch fails, hide the image so it doesn't taint the canvas
             img.style.visibility = "hidden";
@@ -334,7 +350,7 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
 
       const canvas = await html2canvas(element, {
         scale: 2,
-        useCORS: false,
+        useCORS: true,
         allowTaint: false,
         backgroundColor: "#ffffff",
         logging: false,
@@ -510,6 +526,7 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
                 <img
                   src={candidate.image.startsWith("/") ? `${API_STATIC}${candidate.image}` : candidate.image}
                   alt={candidate.name}
+                  crossOrigin="anonymous"
                   className="w-36 h-44 object-cover rounded-lg border border-gray-200 shadow-sm"
                 />
               ) : (

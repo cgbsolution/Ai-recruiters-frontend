@@ -377,10 +377,11 @@ export default function InterviewRoom({
     if (isInterviewComplete) {
       if (!isAutoCompletingRef.current) {
         isAutoCompletingRef.current = true;
-        // Small delay so user sees the closing message before transition
+        // Give user enough time to see/hear the closing message before transition.
+        // Previously 1.5s was too abrupt — candidate barely noticed the goodbye.
         const completeTimer = setTimeout(() => {
           onComplete();
-        }, 1500);
+        }, 4000);
         return () => clearTimeout(completeTimer);
       }
       return;
@@ -517,16 +518,17 @@ export default function InterviewRoom({
     if (isAutoCompletingRef.current) return;
 
     // Give the normal flow (Effect 1 speak → Effect 2 onComplete) time to work.
-    // Only force-complete if nothing happened after 5 seconds.
+    // Only force-complete if nothing happened after 12 seconds (enough for closing
+    // message TTS + the 4s user-visible delay in Effect 2).
     const fallback = setTimeout(() => {
       if (isAutoCompletingRef.current) return; // Normal flow completed in time
-      console.warn("[InterviewRoom] Fallback completion — normal flow did not trigger in 5s");
+      console.warn("[InterviewRoom] Fallback completion — normal flow did not trigger in 12s");
       isAutoCompletingRef.current = true;
       stop();
       cancel();
       setPhase("IDLE");
       onComplete();
-    }, 5000);
+    }, 12000);
 
     return () => clearTimeout(fallback);
   }, [isInterviewComplete, stop, cancel, onComplete]);
@@ -832,9 +834,11 @@ export default function InterviewRoom({
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Question progress — uses frontend-tracked completed count for reliability */}
+          {/* Question progress — shows current question number (the one being asked/answered) */}
           <div className="flex items-center gap-1.5 bg-gray-800/80 px-3 py-1.5 rounded-lg">
-            <span className="text-blue-400 text-xs font-bold">{completedQuestionCount}</span>
+            <span className="text-blue-400 text-xs font-bold">
+              {Math.min(Math.max(currentQuestionIndex, completedQuestionCount), jobConfig.max_questions)}
+            </span>
             <span className="text-gray-600 text-xs">/</span>
             <span className="text-gray-400 text-xs">{jobConfig.max_questions}</span>
             <span className="text-gray-500 text-[10px] ml-1 uppercase tracking-wide">Questions</span>
@@ -1233,6 +1237,12 @@ export default function InterviewRoom({
                     video: { displaySurface: "monitor" } as any,
                     audio: true,
                   });
+                  // Validate system audio is included
+                  if (stream.getAudioTracks().length === 0) {
+                    stream.getTracks().forEach((t) => t.stop());
+                    alert("Please enable \"Also share system audio\" when sharing your screen.");
+                    return;
+                  }
                   setShowScreenShareModal(false);
                   // Pass new stream back to parent so recording can use it
                   onScreenStreamChanged?.(stream);

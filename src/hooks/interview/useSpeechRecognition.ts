@@ -26,8 +26,8 @@ interface SpeechRecognitionHook {
  * Chrome kills continuous recognition after ~60s of silence or ~5min total.
  * Reduced from 5000→3000 for faster detection of dead recognition.
  */
-const HEALTH_CHECK_INTERVAL_MS = 2000;
-const MAX_DEAD_TIME_MS = 3000;
+const HEALTH_CHECK_INTERVAL_MS = 2500;
+const MAX_DEAD_TIME_MS = 5000;
 
 /** After this many consecutive restart failures, recreate the instance */
 const MAX_RESTART_FAILURES = 4;
@@ -85,10 +85,10 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
         const result = event.results[i];
         const t = result[0].transcript;
         if (result.isFinal) {
-          const confidence = result[0].confidence ?? 1;
-          if (confidence >= 0.4) {
-            finalText += t;
-          }
+          // Accept all final results — the Web Speech API already filters
+          // low-quality results internally. Previously a 0.4 threshold was
+          // dropping legitimate speech, causing word loss.
+          finalText += t;
         } else {
           interimText += t;
         }
@@ -141,9 +141,10 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
         if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
 
         // Restart strategy: IMMEDIATE on first attempt (0ms gap = no lost words),
-        // then backoff only on consecutive failures: 150ms, 300ms, max 600ms.
+        // then minimal backoff on consecutive failures: 100ms, 200ms, max 400ms.
+        // Keeping backoff low to minimize gaps where speech is not captured.
         const isFirstAttempt = restartCountRef.current === 0;
-        const backoff = isFirstAttempt ? 0 : Math.min(600, 150 * restartCountRef.current);
+        const backoff = isFirstAttempt ? 0 : Math.min(400, 100 * restartCountRef.current);
         restartCountRef.current++;
 
         const doRestart = () => {

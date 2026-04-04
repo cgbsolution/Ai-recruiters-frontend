@@ -530,32 +530,64 @@ export function useInterviewSession(): InterviewSessionHook {
   const uploadRecording = useCallback(
     async (blob: Blob, sid: number, duration: string): Promise<void> => {
       const MAX_RETRIES = 3;
-      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-        try {
-          const form = new FormData();
-          form.append("file", blob, `interview_${sid}.webm`);
-          form.append("duration", duration);
-          await apiUpload(`/interview/sessions/${sid}/upload-recording`, form, {
-            timeout: 3600_000, // 1 hour — recordings can be very large
-          });
-          return; // success
-        } catch (err) {
-          if (attempt < MAX_RETRIES - 1) {
-            // Wait before retry: 2s, 4s
-            await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
-          } else {
-            console.error("[uploadRecording] All retries failed", err);
-            // Last resort: try sendBeacon for small recordings
-            if (blob.size < 64000) {
+      const blobSizeMB = (blob.size / (1024 * 1024)).toFixed(1);
+      console.log(`[uploadRecording] Starting upload for session ${sid} — ${blobSizeMB} MB, duration: ${duration}`);
+
+      // Prevent accidental tab close during upload
+      const preventClose = (e: BeforeUnloadEvent) => {
+        e.preventDefault();
+        e.returnValue = "Your interview recording is still uploading. Leaving now may lose your recording.";
+      };
+      window.addEventListener("beforeunload", preventClose);
+
+      try {
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+          try {
+            console.log(`[uploadRecording] Attempt ${attempt + 1}/${MAX_RETRIES} for session ${sid}`);
+            const form = new FormData();
+            form.append("file", blob, `interview_${sid}.webm`);
+            form.append("duration", duration);
+            await apiUpload(`/interview/sessions/${sid}/upload-recording`, form, {
+              timeout: 3600_000, // 1 hour — recordings can be very large
+            });
+            console.log(`[uploadRecording] SUCCESS for session ${sid} on attempt ${attempt + 1}`);
+            return; // success
+          } catch (err: any) {
+            const errMsg = err instanceof ApiError
+              ? `HTTP ${err.status}: ${err.detail}`
+              : (err?.message || "Unknown error");
+            console.error(`[uploadRecording] Attempt ${attempt + 1} FAILED for session ${sid}: ${errMsg}`);
+
+            if (attempt < MAX_RETRIES - 1) {
+              const delay = 3000 * (attempt + 1);
+              console.log(`[uploadRecording] Retrying in ${delay}ms...`);
+              await new Promise((r) => setTimeout(r, delay));
+            } else {
+              console.error(`[uploadRecording] ALL ${MAX_RETRIES} retries exhausted for session ${sid}. Blob size: ${blobSizeMB} MB`);
+
+              // Last resort: use fetch with keepalive flag — this survives tab close
+              // for payloads up to ~64KB (browser limit). For larger blobs, try a
+              // regular fetch that may complete if the page stays open briefly.
               try {
+                console.log("[uploadRecording] Attempting keepalive fetch fallback...");
                 const form = new FormData();
                 form.append("file", blob, `interview_${sid}.webm`);
                 form.append("duration", duration);
-                navigator.sendBeacon(`${API_BASE}/interview/sessions/${sid}/upload-recording`, form);
-              } catch { /* truly failed */ }
+                const keepAlive = blob.size < 60000;
+                await fetch(`${API_BASE}/interview/sessions/${sid}/upload-recording`, {
+                  method: "POST",
+                  body: form,
+                  keepalive: keepAlive,
+                });
+                console.log("[uploadRecording] Keepalive fallback succeeded");
+              } catch (fallbackErr: any) {
+                console.error("[uploadRecording] Keepalive fallback ALSO failed:", fallbackErr?.message || fallbackErr);
+              }
             }
           }
         }
+      } finally {
+        window.removeEventListener("beforeunload", preventClose);
       }
     },
     []
