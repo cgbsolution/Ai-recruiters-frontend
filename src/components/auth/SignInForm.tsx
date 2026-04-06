@@ -6,7 +6,8 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, Loader2, Mail, Lock, AlertTriangle } from "lucide-react";
+import { Eye, EyeOff, Loader2, Mail, Lock } from "lucide-react";
+import { toast } from "sonner";
 
 export default function SignInForm() {
   const { login } = useAuth();
@@ -16,15 +17,14 @@ export default function SignInForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sessionExpiredMsg, setSessionExpiredMsg] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
-  // Show session expired notification if redirected from expired session
+  // Show session expired toast if redirected from expired session
   useEffect(() => {
     const msg = sessionStorage.getItem("session_expired");
     if (msg) {
-      setSessionExpiredMsg(msg);
       sessionStorage.removeItem("session_expired");
+      toast.error(msg);
     }
   }, []);
 
@@ -52,7 +52,6 @@ export default function SignInForm() {
 
       setLoading(true);
       setError(null);
-      setSessionExpiredMsg(null);
 
       try {
         await login(finalEmail.trim().toLowerCase(), finalPass);
@@ -69,7 +68,6 @@ export default function SignInForm() {
 
     setLoading(true);
     setError(null);
-    setSessionExpiredMsg(null);
 
     try {
       await login(email.trim().toLowerCase(), password);
@@ -84,23 +82,6 @@ export default function SignInForm() {
   return (
     <div className="flex flex-col flex-1 lg:w-1/2 w-full overflow-y-auto no-scrollbar">
       <div className="flex flex-col justify-center flex-1 w-full max-w-md mx-auto px-6">
-        {/* Session expired banner */}
-        {sessionExpiredMsg && (
-          <div className="mb-6 bg-amber-50 border border-amber-300 rounded-lg px-4 py-3 flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-amber-800 text-sm font-medium">{sessionExpiredMsg}</p>
-              <p className="text-amber-600 text-xs mt-0.5">Please sign in again to continue.</p>
-            </div>
-            <button
-              onClick={() => setSessionExpiredMsg(null)}
-              className="ml-auto text-amber-400 hover:text-amber-600 text-lg leading-none"
-            >
-              &times;
-            </button>
-          </div>
-        )}
-
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-800 dark:text-white">
             Sign In

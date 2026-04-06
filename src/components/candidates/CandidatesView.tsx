@@ -97,6 +97,7 @@ interface Candidate {
   recording_link: string | null;
   video_duration: string | null;
   mail_contact_history: boolean | null;
+  added_by: string | null;
 }
 
 interface SkillOut {
@@ -772,7 +773,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                 <TableHead className="px-3 text-xs font-medium text-gray-600">INTERVIEW SCHEDULE</TableHead>
                 <TableHead className="px-3 text-xs font-medium text-gray-600">RECORDING</TableHead>
                 <TableHead className="px-3 text-xs font-medium text-gray-600">VIDEO DURATION</TableHead>
-                <TableHead className="px-3 text-xs font-medium text-gray-600">CREATED BY</TableHead>
+                <TableHead className="px-3 text-xs font-medium text-gray-600">ADDED BY</TableHead>
                 <TableHead className="px-3 text-xs font-medium text-gray-600">MAIL CONTACT HISTORY</TableHead>
                 <TableHead className="px-3 text-xs font-medium text-gray-600 w-16"></TableHead>
 
@@ -1067,9 +1068,9 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                         {c.video_duration ?? <span className="text-gray-400">N/A</span>}
                       </TableCell>
 
-                      {/* Created By */}
+                      {/* Added By */}
                       <TableCell className="px-3 text-gray-600 text-xs">
-                        {c.email ? c.email.split("@")[1] : "N/A"}
+                        {c.added_by || <span className="text-gray-400">N/A</span>}
                       </TableCell>
 
                       {/* Mail Contact History */}
