@@ -7,6 +7,9 @@ import { useVideoRecording } from "@/hooks/interview/useVideoRecording";
 import WelcomeStep from "./steps/WelcomeStep";
 import EmailVerifyStep from "./steps/EmailVerifyStep";
 import ApplyForJobStep from "./steps/ApplyForJobStep";
+import LanguageStep from "./steps/LanguageStep";
+import WhatToExpectStep from "./steps/WhatToExpectStep";
+import PracticeRoundStep from "./steps/PracticeRoundStep";
 import PermissionStep from "./steps/PermissionStep";
 import ScreenShareStep from "./steps/ScreenShareStep";
 import DeviceTestStep from "./steps/DeviceTestStep";
@@ -24,6 +27,8 @@ type FlowStep =
   | "LOADING"
   | "ERROR"
   | "WELCOME"
+  | "LANGUAGE"
+  | "WHAT_TO_EXPECT"
   | "VERIFY_EMAIL"
   | "APPLY"
   | "PERMISSION_CAM_MIC"
@@ -31,6 +36,7 @@ type FlowStep =
   | "PERMISSION_SCREEN"
   | "DEVICE_TEST"
   | "SECONDARY_CAM"
+  | "PRACTICE_ROUND"
   | "INSTRUCTIONS"
   | "WARNING"
   | "INTERVIEW"
@@ -50,6 +56,11 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
   const [jobConfig, setJobConfig] = useState<JobConfig | null>(null);
+
+  // Candidate name (from verify response)
+  const [candidateName, setCandidateName] = useState<string | undefined>();
+  // Interview language
+  const [interviewLanguage, setInterviewLanguage] = useState("en");
 
   // For Apply step
   const [applyEmail, setApplyEmail] = useState("");
@@ -162,20 +173,23 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
               return;
             }
 
+            if (accessResult.candidateName) {
+              setCandidateName(accessResult.candidateName);
+            }
             if (accessResult.canResume) {
               isResumingRef.current = true;
             }
-            setStep("PERMISSION_CAM_MIC");
+            setStep("WELCOME");
             return;
           } else if (accessResult.access === "completed" || accessResult.access === "terminated") {
             setLoadError(accessResult.message);
             setStep("ERROR");
             return;
           }
-          // access === "apply" — fall through to welcome
+          // access === "apply" — fall through to verify
         }
 
-        setStep("WELCOME");
+        setStep("VERIFY_EMAIL");
       } else {
         // Show the actual API error (e.g., "This interview link has expired")
         setLoadError(result.error);
@@ -215,7 +229,8 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     interviewTimezone?: string;
     joiningFlexibility?: string;
     allowJoiningEarly?: boolean;
-  }) => {
+  }, name?: string) => {
+    if (name) setCandidateName(name);
     if (scheduling) {
       setSchedulingInfo(scheduling);
       const blockMsg = checkJoiningAllowed(scheduling);
@@ -228,7 +243,7 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     if (canResume) {
       isResumingRef.current = true;
     }
-    setStep("PERMISSION_CAM_MIC");
+    setStep("WELCOME");
   }, [checkJoiningAllowed]);
 
   const handleShowApply = useCallback((email: string, name?: string) => {
@@ -369,22 +384,46 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   if (!jobConfig) return null;
 
   switch (step) {
-    case "WELCOME":
-      return (
-        <WelcomeStep
-          jobConfig={jobConfig}
-          onNext={() => setStep("VERIFY_EMAIL")}
-        />
-      );
-
     case "VERIFY_EMAIL":
       return (
         <EmailVerifyStep
           onVerify={handleVerifyAccess}
           onAccessGranted={handleAccessGranted}
           onShowApply={handleShowApply}
-          onBack={() => setStep("WELCOME")}
         />
+      );
+
+    case "WELCOME":
+      return (
+        <PreInterviewLayout currentStep={1}>
+          <WelcomeStep
+            jobConfig={jobConfig}
+            candidateName={candidateName}
+            onNext={() => setStep("LANGUAGE")}
+          />
+        </PreInterviewLayout>
+      );
+
+    case "LANGUAGE":
+      return (
+        <PreInterviewLayout currentStep={2}>
+          <LanguageStep
+            onConfirm={(lang) => {
+              setInterviewLanguage(lang);
+              setStep("WHAT_TO_EXPECT");
+            }}
+          />
+        </PreInterviewLayout>
+      );
+
+    case "WHAT_TO_EXPECT":
+      return (
+        <PreInterviewLayout currentStep={3}>
+          <WhatToExpectStep
+            jobConfig={jobConfig}
+            onNext={() => setStep("PERMISSION_CAM_MIC")}
+          />
+        </PreInterviewLayout>
       );
 
     case "APPLY":
@@ -401,7 +440,7 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
 
     case "PERMISSION_CAM_MIC":
       return (
-        <PreInterviewLayout currentStep={1}>
+        <PreInterviewLayout currentStep={4}>
           {jobConfig.webcam_required ? (
             <PermissionStep onPermissionsGranted={handlePermissionsGranted} />
           ) : (
@@ -417,7 +456,7 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
         return null;
       }
       return (
-        <PreInterviewLayout currentStep={2}>
+        <PreInterviewLayout currentStep={5}>
           <CapturePhotoStep
             webcamStream={webcamStream}
             sessionId={session.sessionId}
@@ -428,7 +467,7 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
 
     case "PERMISSION_SCREEN":
       return (
-        <PreInterviewLayout currentStep={2}>
+        <PreInterviewLayout currentStep={5}>
           <ScreenShareStep onNext={handleScreenShare} required={true} />
         </PreInterviewLayout>
       );
@@ -439,17 +478,17 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
         if (jobConfig.secondary_cam) {
           setStep("SECONDARY_CAM");
         } else {
-          setStep("INSTRUCTIONS");
+          setStep("PRACTICE_ROUND");
         }
         return null;
       }
       return (
-        <PreInterviewLayout currentStep={3}>
+        <PreInterviewLayout currentStep={6}>
           <DeviceTestStep stream={webcamStream} onNext={() => {
             if (jobConfig.secondary_cam) {
               setStep("SECONDARY_CAM");
             } else {
-              setStep("INSTRUCTIONS");
+              setStep("PRACTICE_ROUND");
             }
           }} />
         </PreInterviewLayout>
@@ -457,24 +496,34 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
 
     case "SECONDARY_CAM":
       return (
-        <PreInterviewLayout currentStep={3}>
+        <PreInterviewLayout currentStep={6}>
           <SecondaryCamStep
             sessionId={session.sessionId!}
-            onVerified={() => setStep("INSTRUCTIONS")}
+            onVerified={() => setStep("PRACTICE_ROUND")}
+          />
+        </PreInterviewLayout>
+      );
+
+    case "PRACTICE_ROUND":
+      return (
+        <PreInterviewLayout currentStep={7}>
+          <PracticeRoundStep
+            onStart={() => setStep("INSTRUCTIONS")}
+            onSkip={() => setStep("INSTRUCTIONS")}
           />
         </PreInterviewLayout>
       );
 
     case "INSTRUCTIONS":
       return (
-        <PreInterviewLayout currentStep={4}>
+        <PreInterviewLayout currentStep={8}>
           <InstructionsStep jobConfig={jobConfig} onNext={() => setStep("WARNING")} />
         </PreInterviewLayout>
       );
 
     case "WARNING":
       return (
-        <PreInterviewLayout currentStep={4}>
+        <PreInterviewLayout currentStep={8}>
           <WarningStep onConfirm={handleWarningConfirm} />
         </PreInterviewLayout>
       );

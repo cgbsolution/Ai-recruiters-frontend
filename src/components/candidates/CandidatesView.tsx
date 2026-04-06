@@ -42,6 +42,8 @@ import {
   Filter,
   Link,
   MoreVertical,
+  Mail,
+  Play,
   Plus,
   RefreshCw,
   Trash2,
@@ -147,10 +149,13 @@ const STATUS_COLORS: Record<string, string> = {
 
 const COMPLETED_STATUSES = new Set(["Completed", "Terminated Prematurely"]);
 
-// Statuses where reschedule/cancel/schedule should be hidden
+// Statuses where interview already happened — show "Interview Completed"
 const TERMINAL_STATUSES = new Set([
   "Completed",
   "Terminated – Cheating Detected",
+  "Ended by Candidate",
+  "Candidate Terminated Prematurely",
+  "Disconnected – Network Issue",
 ]);
 
 // Statuses that allow (re)scheduling
@@ -158,9 +163,6 @@ const SCHEDULE_ALLOWED_STATUSES = new Set([
   "New",
   "Added from Database",
   "Cancelled",
-  "Candidate Terminated Prematurely",
-  "Ended by Candidate",
-  "Disconnected – Network Issue",
 ]);
 
 function formatSchedule(date: string | null, tz: string | null): string | null {
@@ -220,6 +222,24 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
   const [removeTarget, setRemoveTarget] = useState<number | null>(null);
   const [showMatchModal, setShowMatchModal] = useState(false);
 
+  // Email history popup
+  const [emailHistoryCandidate, setEmailHistoryCandidate] = useState<{ id: number; name: string } | null>(null);
+  const [emailHistory, setEmailHistory] = useState<{ id: number; subject: string; triggered_by: string; trigger_event: string; sent_at: string | null; status: string }[]>([]);
+  const [emailHistoryLoading, setEmailHistoryLoading] = useState(false);
+
+  const openEmailHistory = useCallback(async (candidateId: number, candidateName: string) => {
+    setEmailHistoryCandidate({ id: candidateId, name: candidateName });
+    setEmailHistoryLoading(true);
+    try {
+      const res = await api<{ candidate_name: string; emails: typeof emailHistory }>(`/candidates/${candidateId}/email-history`);
+      setEmailHistory(res.emails);
+    } catch {
+      setEmailHistory([]);
+    } finally {
+      setEmailHistoryLoading(false);
+    }
+  }, []);
+
   // Candidate quota pre-check
   const checkCandidateQuota = useCallback(async (): Promise<boolean> => {
     try {
@@ -265,22 +285,23 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
   useEffect(() => { fetchCandidates(); }, [fetchCandidates]);
 
   // Auto-refresh candidates every 15s if any have smart scoring (waiting for AI score)
+  const hasSmartScoring = candidates.some((c) => {
+    if (!c.fit_score_details) return false;
+    try {
+      const d = JSON.parse(c.fit_score_details);
+      return d.source === "smart_scoring";
+    } catch { return false; }
+  });
+
   useEffect(() => {
-    const hasSmartOnly = candidates.some((c) => {
-      if (!c.fit_score_details) return false;
-      try {
-        const d = JSON.parse(c.fit_score_details);
-        return d.source === "smart_scoring";
-      } catch { return false; }
-    });
-    if (!hasSmartOnly || !jobId) return;
+    if (!hasSmartScoring || !jobId) return;
 
     const interval = setInterval(() => {
       fetchCandidates();
     }, 15000);
 
     return () => clearInterval(interval);
-  }, [candidates, jobId, fetchCandidates]);
+  }, [hasSmartScoring, jobId, fetchCandidates]);
 
   // ── Tab change handler ────────────────────────────────────────────────────
   const handleTabChange = useCallback((tab: string) => {
@@ -751,6 +772,8 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                 <TableHead className="px-3 text-xs font-medium text-gray-600">INTERVIEW SCHEDULE</TableHead>
                 <TableHead className="px-3 text-xs font-medium text-gray-600">RECORDING</TableHead>
                 <TableHead className="px-3 text-xs font-medium text-gray-600">VIDEO DURATION</TableHead>
+                <TableHead className="px-3 text-xs font-medium text-gray-600">CREATED BY</TableHead>
+                <TableHead className="px-3 text-xs font-medium text-gray-600">MAIL CONTACT HISTORY</TableHead>
                 <TableHead className="px-3 text-xs font-medium text-gray-600 w-16"></TableHead>
 
                 {/* Detail score columns shown only on stage-specific tabs */}
@@ -938,14 +961,13 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
 
                       {/* View Report */}
                       <TableCell className="px-3">
-                        <Button
-                          variant="ghost"
-                          size="icon"
+                        <button
                           onClick={() => router.push(`/evaluation/${c.id}`)}
                           title="View Report"
+                          className="w-9 h-9 rounded-full bg-blue-100 hover:bg-blue-200 flex items-center justify-center transition-colors"
                         >
-                          <ChevronRight className="w-5 h-5 text-blue-500" />
-                        </Button>
+                          <ChevronRight className="w-5 h-5 text-blue-600" />
+                        </button>
                       </TableCell>
 
                       {/* Resume */}
@@ -976,9 +998,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                       <TableCell className="px-3">
                         <div className="flex items-center gap-1 min-w-[200px]">
                           {TERMINAL_STATUSES.has(c.interview_status) ? (
-                            <span className="text-gray-400 text-xs">
-                              {c.interview_status === "Completed" ? "Interview Completed" : "N/A"}
-                            </span>
+                            <span className="text-gray-400 text-xs">Interview Completed</span>
                           ) : isScheduled ? (
                             <>
                               <Button
@@ -1027,9 +1047,11 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                             }
                             target="_blank"
                             rel="noreferrer"
-                            className="text-blue-600 hover:underline text-xs whitespace-nowrap"
+                            title="Play Recording"
                           >
-                            View
+                            <div className="w-9 h-9 rounded-full bg-blue-100 hover:bg-blue-200 flex items-center justify-center transition-colors">
+                              <Play className="w-4 h-4 text-blue-600 fill-current" />
+                            </div>
                           </a>
                         ) : (
                           <span className="text-gray-400 text-xs whitespace-nowrap">
@@ -1041,8 +1063,28 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                       </TableCell>
 
                       {/* Video Duration */}
-                      <TableCell className="px-3 text-gray-600">
+                      <TableCell className="px-3 text-gray-600 text-xs">
                         {c.video_duration ?? <span className="text-gray-400">N/A</span>}
+                      </TableCell>
+
+                      {/* Created By */}
+                      <TableCell className="px-3 text-gray-600 text-xs">
+                        {c.email ? c.email.split("@")[1] : "N/A"}
+                      </TableCell>
+
+                      {/* Mail Contact History */}
+                      <TableCell className="px-3">
+                        <button
+                          onClick={() => openEmailHistory(c.id, c.name)}
+                          title="View Mail Contact History"
+                          className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
+                            c.mail_contact_history
+                              ? "bg-blue-100 hover:bg-blue-200 text-blue-600"
+                              : "bg-gray-100 hover:bg-gray-200 text-gray-400"
+                          }`}
+                        >
+                          <Mail className="w-4 h-4" />
+                        </button>
                       </TableCell>
 
                       {/* Remove from job */}
@@ -1295,6 +1337,34 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
         variant="danger"
         onConfirm={() => { if (removeTarget !== null) handleRemoveCandidate(removeTarget); }}
       />
+      {/* ── Email Contact History Dialog ── */}
+      <Dialog open={!!emailHistoryCandidate} onOpenChange={() => setEmailHistoryCandidate(null)}>
+        <DialogContent className="max-w-md max-h-[70vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Contact History for {emailHistoryCandidate?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+            {emailHistoryLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : emailHistory.length === 0 ? (
+              <p className="text-gray-400 text-sm text-center py-8">No mail history available.</p>
+            ) : (
+              emailHistory.map((email) => (
+                <div key={email.id} className="border border-gray-200 rounded-lg p-3 space-y-1">
+                  <p className="text-sm font-medium text-gray-800">Subject: {email.subject}</p>
+                  <p className="text-xs text-gray-500">Triggered by: <span className="font-medium">{email.triggered_by}</span></p>
+                  <p className="text-xs text-gray-500">Triggered via: <span className="font-medium">{email.trigger_event}</span></p>
+                  <p className="text-xs text-green-600">
+                    Sent At : {email.sent_at ? new Date(email.sent_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "N/A"}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

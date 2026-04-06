@@ -2,7 +2,7 @@
 import PreInterviewProgress from "./PreInterviewProgress";
 
 interface Props {
-  currentStep: 1 | 2 | 3 | 4;
+  currentStep: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
   children: React.ReactNode;
 }
 

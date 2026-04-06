@@ -245,13 +245,12 @@ function CameraRig() {
 
     if (headWorldPos) {
       const hp = headWorldPos as THREE.Vector3;
-      // Camera at eye level, pulled back for head+shoulders+mid-torso framing
-      camera.position.set(0, hp.y - 0.05, 1.2);
-      camera.lookAt(0, hp.y - 0.1, 0);
+      // Head in middle of frame with gap above — chest can be cut off at bottom
+      camera.position.set(0, hp.y, 1.1);
+      camera.lookAt(0, hp.y - 0.05, 0);
     } else {
-      // Fallback: RPM avatars are ~1.7m, head ~1.55m
-      camera.position.set(0, 1.45, 1.2);
-      camera.lookAt(0, 1.4, 0);
+      camera.position.set(0, 1.55, 1.1);
+      camera.lookAt(0, 1.50, 0);
     }
 
     hasFramed.current = true;
@@ -263,55 +262,55 @@ function CameraRig() {
 // ── Main Export ──────────────────────────────────────────────────────────────
 export default function AvatarCanvas({ isSpeaking, isThinking }: Props) {
   return (
-    <div className="relative w-full h-full overflow-hidden bg-[#1a1f2e]">
+    <div className="relative w-full h-full overflow-hidden bg-[#eef0f8]">
       <Canvas
         shadows
         camera={{ fov: 30, near: 0.01, far: 10 }}
         gl={{
           antialias: true,
           toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.1,
+          toneMappingExposure: 1.3,
         }}
-        style={{ background: "linear-gradient(180deg, #1e2433 0%, #111827 100%)" }}
+        style={{ background: "linear-gradient(180deg, #f0f2fa 0%, #e4e7f3 100%)" }}
       >
         <CameraRig />
 
-        {/* Key light — warm, from upper-right */}
+        {/* Key light — bright warm, from upper-right */}
         <directionalLight
           position={[2, 3, 2]}
-          intensity={2.2}
-          color="#fff5e6"
+          intensity={2.8}
+          color="#fff8f0"
           castShadow
           shadow-mapSize={[2048, 2048]}
           shadow-bias={-0.0001}
         />
 
-        {/* Fill light — cool, from left */}
+        {/* Fill light — soft neutral, from left */}
         <directionalLight
           position={[-2, 1.5, 1.5]}
-          intensity={0.8}
-          color="#c8d8f0"
+          intensity={1.2}
+          color="#e8e4f0"
         />
 
-        {/* Rim/back light */}
+        {/* Rim/back light — soft */}
         <directionalLight
           position={[0, 2, -2]}
-          intensity={1.0}
-          color="#e8e0d0"
+          intensity={0.8}
+          color="#f0ece8"
         />
 
         {/* Under-chin fill */}
         <directionalLight
           position={[0, -0.5, 1.5]}
-          intensity={0.3}
-          color="#d0d8e8"
+          intensity={0.5}
+          color="#e8e0f0"
         />
 
-        {/* Ambient base */}
-        <ambientLight intensity={0.5} color="#e8e4e0" />
+        {/* Ambient base — brighter for light mode */}
+        <ambientLight intensity={0.8} color="#f5f3f0" />
 
-        {/* Hemisphere light */}
-        <hemisphereLight args={["#b8c4d8", "#3a2820", 0.4]} />
+        {/* Hemisphere light — light tones */}
+        <hemisphereLight args={["#e8eaf8", "#d0c8c0", 0.6]} />
 
         {/* Environment for reflections (glasses, skin) */}
         <Environment preset="apartment" />
@@ -322,11 +321,11 @@ export default function AvatarCanvas({ isSpeaking, isThinking }: Props) {
         </Suspense>
       </Canvas>
 
-      {/* Cinematic vignette */}
+      {/* Soft vignette for light mode */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
-          background: "radial-gradient(ellipse at 50% 40%, transparent 55%, rgba(0,0,0,0.45) 100%)",
+          background: "radial-gradient(ellipse at 50% 40%, transparent 60%, rgba(200,200,220,0.3) 100%)",
         }}
       />
     </div>

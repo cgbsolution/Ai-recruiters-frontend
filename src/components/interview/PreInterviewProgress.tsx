@@ -3,14 +3,18 @@
 import { Check } from "lucide-react";
 
 interface Props {
-  currentStep: 1 | 2 | 3 | 4;
+  currentStep: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 }
 
 const STEPS = [
-  { num: "01", label: "Permissions" },
-  { num: "02", label: "ID Verification" },
-  { num: "03", label: "Device Test" },
-  { num: "04", label: "Interview Prep" },
+  { num: "01", label: "Welcome" },
+  { num: "02", label: "Language" },
+  { num: "03", label: "What to Expect" },
+  { num: "04", label: "Permissions" },
+  { num: "05", label: "ID Verification" },
+  { num: "06", label: "Device Test" },
+  { num: "07", label: "Practice" },
+  { num: "08", label: "Interview Prep" },
 ];
 
 export default function PreInterviewProgress({ currentStep }: Props) {

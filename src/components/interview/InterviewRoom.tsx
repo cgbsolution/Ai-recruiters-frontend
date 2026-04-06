@@ -10,7 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { PhoneOff, Mic, MicOff, GripVertical, SkipForward, Monitor, Square, Send, Trash2, ChevronRight } from "lucide-react";
+import { PhoneOff, Mic, MicOff, GripVertical, SkipForward, Monitor, Square, Send, Trash2, Pencil, Check, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import AvatarScene from "./AvatarScene";
 import TranscriptPanel from "./TranscriptPanel";
@@ -154,6 +154,11 @@ export default function InterviewRoom({
   const [questionTimeLeft, setQuestionTimeLeft] = useState<number>(0);
   const questionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoSkipTimeout = jobConfig.auto_skip_timeout || 0; // seconds, 0 = off
+
+  /* ── Transcript Correction State ── */
+  const [isEditingTranscript, setIsEditingTranscript] = useState(false);
+  const [editableTranscript, setEditableTranscript] = useState("");
+  const [correctionApplied, setCorrectionApplied] = useState(false);
 
   /* ── Coding Mode State ── */
   const [activeCodingQuestion, setActiveCodingQuestion] = useState<CodingQuestion | null>(null);
@@ -542,6 +547,9 @@ export default function InterviewRoom({
       setCapturedTranscript("");
       capturedTranscriptRef.current = "";
       setRecordingDuration(0);
+      setIsEditingTranscript(false);
+      setEditableTranscript("");
+      setCorrectionApplied(false);
       if (recordingTimerRef.current) {
         clearInterval(recordingTimerRef.current);
         recordingTimerRef.current = null;
@@ -796,15 +804,46 @@ export default function InterviewRoom({
   }, []);
 
   /* ── Status indicator ── */
-  const statusLabel = phase === "PROCESSING" || isThinking
-    ? { text: "Alex is thinking…", color: "text-blue-400", dot: "bg-blue-400" }
+  const statusLabel = isEditingTranscript
+    ? { text: "Editing transcript…", color: "text-red-600", dot: "bg-red-500" }
+    : correctionApplied && phase === "LISTENING" && voiceState === "answered"
+    ? { text: "Correction saved", color: "text-green-600", dot: "bg-green-500" }
+    : phase === "PROCESSING" || isThinking
+    ? { text: "Aria is thinking…", color: "text-blue-600", dot: "bg-blue-500" }
     : phase === "SPEAKING" || isSpeaking
-    ? { text: "Alex is speaking…", color: "text-purple-400", dot: "bg-purple-400" }
+    ? { text: "Aria is speaking…", color: "text-purple-600", dot: "bg-purple-500" }
     : phase === "LISTENING" && voiceState === "recording"
-    ? { text: "Listening… (click stop when done)", color: "text-green-400", dot: "bg-green-400" }
+    ? { text: "Listening… (click stop when done)", color: "text-green-600", dot: "bg-green-500" }
+    : phase === "LISTENING" && silenceProgress > 0
+    ? { text: "Silence detected — finishing up?", color: "text-amber-600", dot: "bg-amber-500" }
     : phase === "LISTENING"
-    ? { text: "Click Start Speaking to respond", color: "text-green-400", dot: "bg-green-400" }
-    : { text: messages.length === 0 ? "Starting interview…" : "Preparing…", color: "text-gray-500", dot: "bg-gray-500" };
+    ? { text: "Click Start Speaking to respond", color: "text-green-600", dot: "bg-green-500" }
+    : { text: messages.length === 0 ? "Starting interview…" : "Preparing…", color: "text-gray-400", dot: "bg-gray-400" };
+
+  /* ── Active state tab ── */
+  type StateTab = "aria_speaking" | "candidate_answering" | "silence_detection" | "transcript_edit" | "correction_saved" | "next_question";
+  const activeStateTab: StateTab = isEditingTranscript
+    ? "transcript_edit"
+    : correctionApplied && phase === "LISTENING" && voiceState === "answered"
+    ? "correction_saved"
+    : (phase === "PROCESSING" || isThinking)
+    ? "next_question"
+    : (phase === "SPEAKING" || isSpeaking)
+    ? "aria_speaking"
+    : phase === "LISTENING" && silenceProgress > 0
+    ? "silence_detection"
+    : phase === "LISTENING" && (voiceState === "recording" || voiceState === "answered")
+    ? "candidate_answering"
+    : "aria_speaking";
+
+  const STATE_TABS: { key: StateTab; label: string }[] = [
+    { key: "aria_speaking", label: "Aria speaking" },
+    { key: "candidate_answering", label: "Candidate answering" },
+    { key: "silence_detection", label: "Silence detection" },
+    { key: "transcript_edit", label: "Transcript error" },
+    { key: "correction_saved", label: "After correction" },
+    { key: "next_question", label: "Moving to next Q" },
+  ];
 
   /* ── Live transcript text — polled directly from refs, not React state ── */
   // React state (transcript/interimTranscript) updates asynchronously and can
@@ -837,59 +876,72 @@ export default function InterviewRoom({
   /*  RENDER                                                        */
   /* ═══════════════════════════════════════════════════════════════ */
 
+  /* ── Progress percentage ── */
+  const progressPercent = jobConfig.max_questions > 0
+    ? (Math.min(completedQuestionCount, jobConfig.max_questions) / jobConfig.max_questions) * 100
+    : 0;
+
   return (
-    <div className="flex flex-col h-screen bg-gray-950 overflow-hidden">
+    <div className="flex flex-col h-screen bg-white overflow-hidden">
       {/* ── Header Bar ── */}
-      <div className="flex items-center justify-between px-5 py-2.5 bg-gray-900/95 border-b border-gray-800 backdrop-blur-sm z-10">
+      <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-100 z-10">
+        {/* Left: Logo/Brand + Timer */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-            <span className="text-white text-xs font-mono bg-gray-800 px-2.5 py-1 rounded">
-              {formatTime(elapsedSeconds)}
-            </span>
+            <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center">
+              <span className="text-white text-xs font-bold">A</span>
+            </div>
+            <span className="text-gray-800 text-sm font-semibold tracking-tight">anytimehire.ai</span>
           </div>
-          <div className="h-4 w-px bg-gray-700" />
-          <span className="text-gray-300 text-sm font-medium">{jobConfig.title}</span>
+          <div className="flex items-center gap-2 text-gray-400">
+            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+            <span className="text-gray-500 text-xs font-mono">{formatTime(elapsedSeconds)}</span>
+          </div>
         </div>
 
+        {/* Center: Job Title */}
+        <div className="absolute left-1/2 -translate-x-1/2">
+          <span className="text-gray-800 text-sm font-semibold">Interview for {jobConfig.title}</span>
+        </div>
+
+        {/* Right: Controls */}
         <div className="flex items-center gap-3">
-          {/* Question progress — shows current question number (the one being asked/answered) */}
-          <div className="flex items-center gap-1.5 bg-gray-800/80 px-3 py-1.5 rounded-lg">
-            <span className="text-blue-400 text-xs font-bold">
+          {/* Question progress */}
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span className="font-semibold text-blue-600">
               {Math.min(Math.max(currentQuestionIndex, completedQuestionCount), jobConfig.max_questions)}
             </span>
-            <span className="text-gray-600 text-xs">/</span>
-            <span className="text-gray-400 text-xs">{jobConfig.max_questions}</span>
-            <span className="text-gray-500 text-[10px] ml-1 uppercase tracking-wide">Questions</span>
+            <span>/</span>
+            <span>{jobConfig.max_questions}</span>
+            <span className="text-[10px] uppercase tracking-wide ml-0.5">Questions</span>
           </div>
 
           {/* Per-question countdown timer */}
           {autoSkipTimeout > 0 && questionTimeLeft > 0 && currentQuestionIndex > 0 && (
             <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono ${
               questionTimeLeft <= 10
-                ? "bg-red-950/50 border border-red-900/50 text-red-400"
+                ? "bg-red-50 border border-red-200 text-red-600"
                 : questionTimeLeft <= 30
-                ? "bg-amber-950/50 border border-amber-900/50 text-amber-400"
-                : "bg-gray-800/80 text-gray-300"
+                ? "bg-amber-50 border border-amber-200 text-amber-600"
+                : "text-gray-500"
             }`}>
               <span className="font-bold">{formatTime(questionTimeLeft)}</span>
-              <span className="text-[10px] uppercase tracking-wide opacity-70">left</span>
             </div>
           )}
 
           {violationCount > 0 && (
-            <div className="flex items-center gap-1 text-red-400 text-xs bg-red-950/50 border border-red-900/50 px-2.5 py-1 rounded-lg">
+            <div className="flex items-center gap-1 text-red-600 text-xs bg-red-50 border border-red-200 px-2.5 py-1 rounded-lg">
               <span className="font-semibold">{violationCount}</span>
               <span>violation{violationCount !== 1 ? "s" : ""}</span>
             </div>
           )}
 
-          {/* Switch to Coding Test button — shown when a coding question is pending */}
+          {/* Switch to Coding Test button */}
           {activeCodingQuestion && !showCodeEditor && (
             <Button
               variant="outline"
               size="sm"
-              className="h-8 px-3 text-xs gap-1.5 border-purple-600 text-purple-300 hover:bg-purple-900/30"
+              className="h-8 px-3 text-xs gap-1.5 border-purple-300 text-purple-600 hover:bg-purple-50"
               onClick={() => setShowCodeEditor(true)}
             >
               <Monitor className="w-3.5 h-3.5" />
@@ -900,92 +952,147 @@ export default function InterviewRoom({
             <Button
               variant="outline"
               size="sm"
-              className="h-8 px-3 text-xs gap-1.5 border-gray-600 text-gray-300 hover:bg-gray-800"
+              className="h-8 px-3 text-xs gap-1.5 border-gray-300 text-gray-600 hover:bg-gray-50"
               onClick={() => setShowCodeEditor(false)}
             >
               Back to Chat
             </Button>
           )}
 
-          {/* Skip Question button */}
+          {/* End Interview button */}
           <Button
             variant="outline"
             size="sm"
-            className="h-8 px-3 text-xs gap-1.5 border-gray-600 text-gray-300 hover:bg-gray-800"
-            onClick={handleSkip}
-            disabled={phase !== "LISTENING" || isInterviewComplete}
-          >
-            <SkipForward className="w-3.5 h-3.5" />
-            Skip
-          </Button>
-
-          <Button
-            variant="destructive"
-            size="sm"
-            className="h-8 px-3 text-xs gap-1.5 bg-red-600/90 hover:bg-red-600 border border-red-500/30"
+            className="h-8 px-4 text-xs gap-1.5 border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400"
             onClick={() => setShowEndConfirm(true)}
           >
             <PhoneOff className="w-3.5 h-3.5" />
-            End Interview
+            End interview
           </Button>
         </div>
       </div>
 
-      {/* ── Main Content: Avatar Left | Chat/Code Right ── */}
+      {/* ── State Tabs ── */}
+      <div className="px-4 py-2 border-b border-gray-100 shrink-0 flex items-center gap-1.5 overflow-x-auto">
+        {STATE_TABS.map((tab) => (
+          <div
+            key={tab.key}
+            className={`text-[11px] px-3 py-1 rounded-full whitespace-nowrap transition-all duration-300 ${
+              activeStateTab === tab.key
+                ? "bg-blue-600 text-white font-medium"
+                : "bg-gray-100 text-gray-400"
+            }`}
+          >
+            {tab.label}
+          </div>
+        ))}
+      </div>
+
+      {/* ── State Indicator Bar ── */}
+      <div className="px-4 py-2 border-b border-gray-100 shrink-0 flex items-center gap-2">
+        <div className={`w-2 h-2 rounded-full shrink-0 ${statusLabel.dot} ${
+          (phase === "SPEAKING" || isSpeaking || (phase === "LISTENING" && voiceState === "recording")) ? "animate-pulse" : ""
+        }`} />
+
+        {/* Wave bars for speaking/listening states */}
+        {(phase === "SPEAKING" || isSpeaking || (phase === "LISTENING" && voiceState === "recording")) && (
+          <div className="flex items-end gap-[2px] h-3.5">
+            {[8, 12, 6, 10, 14, 8].map((h, i) => (
+              <div
+                key={i}
+                className={`w-[2px] rounded-full ${
+                  phase === "LISTENING" && voiceState === "recording" ? "bg-green-500" : "bg-purple-500"
+                }`}
+                style={{
+                  height: `${h}px`,
+                  animation: `pulse ${0.3 + (i % 3) * 0.1}s ease-in-out ${i * 0.05}s infinite alternate`,
+                }}
+              />
+            ))}
+          </div>
+        )}
+
+        <span className={`text-xs font-medium ${statusLabel.color}`}>
+          {statusLabel.text}
+        </span>
+
+        {/* Silence progress inline */}
+        {phase === "LISTENING" && silenceProgress > 0 && (
+          <div className="flex items-center gap-2 ml-2">
+            <div className="w-20 h-1 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-amber-500 rounded-full"
+                style={{ width: `${silenceProgress}%`, transition: "width 100ms linear" }}
+              />
+            </div>
+            <span className="text-[10px] text-amber-600">finishing up…</span>
+          </div>
+        )}
+
+        <span className="text-[10px] text-gray-400 ml-auto">
+          {(phase === "SPEAKING" || isSpeaking) && "listen carefully"}
+          {phase === "LISTENING" && voiceState === "recording" && "speak clearly"}
+          {phase === "LISTENING" && voiceState === "idle" && "your turn to answer"}
+          {isEditingTranscript && "tap words to correct"}
+          {correctionApplied && !isEditingTranscript && voiceState === "answered" && "transcript updated"}
+          {(phase === "PROCESSING" || isThinking) && "processing…"}
+        </span>
+      </div>
+
+      {/* ── Main Content Area ── */}
       <div id="interview-main" className="flex flex-1 overflow-hidden relative">
-        {/* ── Left: Avatar Panel (shrinks when coding editor is open) ── */}
-        <div className={`flex flex-col bg-gradient-to-b from-gray-900 via-gray-925 to-gray-950 border-r border-gray-800 transition-all duration-300 ${
-          showCodeEditor ? "w-[25%]" : "w-[45%]"
+
+        {/* ── Draggable Webcam PIP (small overlay, top-left) ── */}
+        {webcamStream && (
+          <div
+            className="absolute z-20 rounded-xl overflow-hidden border border-gray-200 shadow-lg cursor-move group"
+            style={{
+              left: pipPos.x,
+              top: pipPos.y,
+              width: 200,
+              height: 140,
+            }}
+            onMouseDown={handlePipMouseDown}
+          >
+            <WebcamMini stream={webcamStream} />
+            <div className="absolute top-1.5 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <GripVertical className="w-4 h-4 text-white/70 drop-shadow" />
+            </div>
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent py-1.5 px-2.5">
+              <p className="text-white text-[10px] font-medium">You</p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Left: Avatar Card (compact square, vertically centered) ── */}
+        <div className={`flex flex-col items-center justify-center transition-all duration-300 px-6 ${
+          showCodeEditor ? "w-[30%]" : "w-[35%]"
         }`}>
-          <div className="flex-1 relative">
+          <div className="relative w-full rounded-2xl overflow-hidden bg-[#eef0f8] border border-gray-200/60 shadow-sm aspect-square max-h-[280px]">
             {jobConfig.virtual_avatar ? (
               <AvatarScene isSpeaking={isSpeaking} isThinking={isThinking} />
             ) : (
               <div className="flex items-center justify-center h-full">
-                <div className="w-24 h-24 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-3xl">
+                <div className="w-24 h-24 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-3xl">
                   AI
                 </div>
               </div>
             )}
 
-            {/* AI Status overlay at bottom */}
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-gray-950/90 to-transparent pt-10 pb-4 px-5">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm">
-                  AI
-                </div>
-                <div>
-                  <p className="text-white text-sm font-semibold leading-tight">Alex</p>
-                  <p className="text-gray-400 text-[11px]">AI Interviewer</p>
-                </div>
-                {isSpeaking && (
-                  <div className="ml-auto flex items-center gap-1">
-                    {[...Array(4)].map((_, i) => (
-                      <div
-                        key={i}
-                        className="w-0.5 bg-blue-400 rounded-full animate-pulse"
-                        style={{
-                          height: `${8 + Math.random() * 12}px`,
-                          animationDelay: `${i * 0.1}s`,
-                          animationDuration: `${0.4 + Math.random() * 0.3}s`,
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {!isInterviewComplete && (
-                <div className={`flex items-center gap-2 ${statusLabel.color} text-xs`}>
-                  <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${statusLabel.dot}`} />
-                  {statusLabel.text}
-                </div>
-              )}
-            </div>
+            {/* Speaker/volume icon overlay at bottom-left */}
+            {isSpeaking && (
+              <button className="absolute bottom-3 left-3 w-9 h-9 rounded-full bg-white/80 backdrop-blur-sm flex items-center justify-center shadow-sm border border-gray-200/50">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-600">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* ── Right: Code Editor (when user opens it) OR Chat Panel ── */}
+        {/* ── Right: Code Editor OR Chat Panel ── */}
         {showCodeEditor && activeCodingQuestion ? (
           <div className="flex-1 flex flex-col min-w-0">
             <CodeEditor
@@ -997,25 +1104,9 @@ export default function InterviewRoom({
             />
           </div>
         ) : (
-          <div className="flex-1 flex flex-col bg-gray-950 min-w-0">
-            {/* Chat header */}
-            <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between shrink-0">
-              <div>
-                <h3 className="text-white text-sm font-semibold">Interview Chat</h3>
-                <p className="text-gray-500 text-[11px]">Live conversation transcript</p>
-              </div>
-              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs ${
-                voiceState === "recording"
-                  ? "bg-green-950/50 border border-green-800/50 text-green-400"
-                  : "bg-gray-800/50 border border-gray-700/50 text-gray-500"
-              }`}>
-                {voiceState === "recording" ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
-                {voiceState === "recording" ? "Mic Active" : "Mic Off"}
-              </div>
-            </div>
-
-            {/* Messages area */}
-            <div className="flex-1 overflow-hidden px-4 py-3 min-h-0">
+          <div className="flex-1 flex flex-col bg-white min-w-0 py-4 pr-4">
+            {/* Messages area — main scrollable content */}
+            <div className="flex-1 overflow-hidden px-4 py-3 min-h-0 border border-gray-100 rounded-2xl bg-gray-50/30">
               <TranscriptPanel
                 messages={messages}
                 isThinking={isThinking}
@@ -1023,15 +1114,15 @@ export default function InterviewRoom({
               />
             </div>
 
-            {/* Coding question prompt — prominent banner when code editor is available but not opened */}
+            {/* Coding question prompt */}
             {activeCodingQuestion && !showCodeEditor && (
-              <div className="mx-4 mb-2 shrink-0">
-                <div className="bg-purple-950/60 border border-purple-700/50 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+              <div className="mt-3 shrink-0">
+                <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 min-w-0">
-                    <Monitor className="w-5 h-5 text-purple-400 shrink-0" />
+                    <Monitor className="w-5 h-5 text-purple-500 shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-purple-200 text-sm font-semibold truncate">{activeCodingQuestion.title}</p>
-                      <p className="text-purple-400 text-xs">Click the button to open the code editor</p>
+                      <p className="text-purple-700 text-sm font-semibold truncate">{activeCodingQuestion.title}</p>
+                      <p className="text-purple-500 text-xs">Click the button to open the code editor</p>
                     </div>
                   </div>
                   <Button
@@ -1047,14 +1138,14 @@ export default function InterviewRoom({
 
             {/* Per-question timeout progress bar */}
             {autoSkipTimeout > 0 && questionTimeLeft > 0 && currentQuestionIndex > 0 && phase === "LISTENING" && (
-              <div className="mx-4 mb-1 shrink-0">
+              <div className="mt-2 shrink-0">
                 <div className="flex items-center justify-between mb-0.5">
-                  <span className="text-[10px] text-gray-500">Time remaining</span>
-                  <span className={`text-[10px] font-mono ${questionTimeLeft <= 10 ? "text-red-400" : "text-gray-400"}`}>
+                  <span className="text-[10px] text-gray-400">Time remaining</span>
+                  <span className={`text-[10px] font-mono ${questionTimeLeft <= 10 ? "text-red-500" : "text-gray-500"}`}>
                     {formatTime(questionTimeLeft)}
                   </span>
                 </div>
-                <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all duration-1000 linear ${
                       questionTimeLeft <= 10 ? "bg-red-500" : questionTimeLeft <= 30 ? "bg-amber-500" : "bg-blue-500"
@@ -1065,155 +1156,233 @@ export default function InterviewRoom({
               </div>
             )}
 
-            {/* Silence countdown progress bar */}
-            {phase === "LISTENING" && silenceProgress > 0 && (
-              <div className="mx-4 mb-1 h-1 bg-gray-800 rounded-full overflow-hidden shrink-0">
-                <div
-                  className="h-full bg-amber-500 rounded-full"
-                  style={{ width: `${silenceProgress}%`, transition: "width 100ms linear" }}
-                />
+            {/* Live transcript bar */}
+            {phase === "LISTENING" && voiceState === "recording" && liveText && (
+              <div className="mt-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl shrink-0 max-h-24 overflow-y-auto">
+                <div className="flex items-start gap-2">
+                  <div className="w-2 h-2 rounded-full shrink-0 mt-1.5 bg-green-500 animate-pulse" />
+                  <p className="text-gray-700 text-sm">{liveText}</p>
+                </div>
               </div>
             )}
 
-            {/* Live transcript bar — visible while recording or in answered state (all questions including intro) */}
-            {phase === "LISTENING" && (voiceState === "recording" || voiceState === "answered") && (liveText || capturedTranscript) && (
-              <div className="mx-4 mb-2 px-4 py-2.5 bg-gray-800/60 border border-gray-700/50 rounded-xl shrink-0 max-h-24 overflow-y-auto">
-                <div className="flex items-start gap-2">
-                  <div className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${voiceState === "recording" ? "bg-green-400 animate-pulse" : "bg-blue-400"}`} />
-                  <p className="text-gray-300 text-sm">{voiceState === "recording" ? liveText : capturedTranscript}</p>
+            {/* Editable transcript bar — shown in answered state */}
+            {phase === "LISTENING" && voiceState === "answered" && capturedTranscript && (
+              <div className="mt-2 shrink-0">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] text-gray-400 font-medium">Your live transcript</span>
+                  {!isEditingTranscript ? (
+                    <button
+                      onClick={() => { setEditableTranscript(capturedTranscript); setIsEditingTranscript(true); setCorrectionApplied(false); }}
+                      className="flex items-center gap-1 text-[10px] text-red-500 bg-red-50 border border-red-200 rounded px-2 py-0.5 hover:bg-red-100 transition-colors"
+                    >
+                      <Pencil className="w-2.5 h-2.5" />
+                      Flag error
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          setCapturedTranscript(editableTranscript);
+                          capturedTranscriptRef.current = editableTranscript;
+                          setIsEditingTranscript(false);
+                          setCorrectionApplied(true);
+                        }}
+                        className="flex items-center gap-1 text-[10px] text-green-600 bg-green-50 border border-green-200 rounded px-2 py-0.5 hover:bg-green-100 transition-colors"
+                      >
+                        <Check className="w-2.5 h-2.5" />
+                        Save
+                      </button>
+                      <button
+                        onClick={() => { setIsEditingTranscript(false); setEditableTranscript(""); }}
+                        className="flex items-center gap-1 text-[10px] text-gray-500 bg-gray-50 border border-gray-200 rounded px-2 py-0.5 hover:bg-gray-100 transition-colors"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
+
+                {isEditingTranscript ? (
+                  <textarea
+                    value={editableTranscript}
+                    onChange={(e) => setEditableTranscript(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-white border-2 border-red-300 rounded-xl text-gray-700 text-sm focus:outline-none focus:border-red-400 resize-none"
+                    rows={3}
+                    autoFocus
+                  />
+                ) : (
+                  <div className={`px-4 py-2.5 rounded-xl max-h-24 overflow-y-auto ${
+                    correctionApplied
+                      ? "bg-green-50 border border-green-200"
+                      : "bg-white border border-gray-200"
+                  }`}>
+                    <div className="flex items-start gap-2">
+                      <div className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${correctionApplied ? "bg-green-500" : "bg-blue-500"}`} />
+                      <p className="text-gray-700 text-sm">
+                        {capturedTranscript}
+                        {correctionApplied && <span className="ml-2 text-[10px] text-green-600">(corrected)</span>}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {/* Voice not supported warning */}
             {!isSupported && (
-              <div className="mx-4 mb-3 px-3 py-2 bg-yellow-950/30 border border-yellow-800/30 rounded-lg shrink-0">
-                <p className="text-yellow-400 text-xs">Voice recognition not supported in this browser.</p>
+              <div className="mt-2 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg shrink-0">
+                <p className="text-yellow-700 text-xs">Voice recognition not supported in this browser.</p>
               </div>
             )}
 
-            {/* ── Bottom Voice Controls ── */}
-            {!showCodeEditor && (
-              <div className="px-4 pb-5 pt-2 shrink-0 flex flex-col items-center gap-3 border-t border-gray-800/60">
-
-                {/* ── Manual speaking controls (intro + Q&A) ── */}
-                {phase === "LISTENING" && (
-                  <>
-                    {/* Skip link — only during Q&A, not intro */}
-                    {voiceState === "idle" && currentQuestionIndex > 0 && (
-                      <div className="flex items-center text-sm">
-                        <button
-                          onClick={handleSkip}
-                          className="flex items-center gap-1 text-gray-400 hover:text-white transition-colors"
-                        >
-                          Skip this question
-                          <ChevronRight className="w-4 h-4" />
-                        </button>
-                      </div>
-                    )}
-
-                    {/* IDLE: Instruction hint + Start Speaking */}
-                    {voiceState === "idle" && (
-                      <>
-                        <p className="text-gray-500 text-xs text-center max-w-xs">
-                          Click <span className="text-white font-medium">Start Speaking</span> to record your answer, then <span className="text-white font-medium">Stop</span> when done, and <span className="text-white font-medium">Send Response</span> to submit.
-                        </p>
-                        <Button
-                          onClick={handleStartSpeaking}
-                          className="bg-red-500 hover:bg-red-400 text-white rounded-full px-8 py-3 gap-2 font-medium text-sm shadow-lg shadow-red-900/30"
-                        >
-                          <Mic className="w-4 h-4" />
-                          Start Speaking
-                        </Button>
-                      </>
-                    )}
-
-                    {/* RECORDING: Waveform + timer + stop */}
-                    {voiceState === "recording" && (
-                      <div className="flex items-center gap-3 w-full max-w-xs px-4 py-2.5 bg-gray-800/80 border border-gray-700 rounded-full">
-                        <div className="flex-1 flex items-center gap-px h-7">
-                          {[4,7,3,8,5,9,4,6,8,3,7,5,9,4,6,8,3,7,5,6].map((h, i) => (
-                            <div
-                              key={i}
-                              className="flex-1 bg-red-400 rounded-full"
-                              style={{
-                                height: `${h * 8}%`,
-                                minHeight: "15%",
-                                maxHeight: "90%",
-                                animation: `pulse ${0.4 + (i % 5) * 0.08}s ease-in-out ${i * 0.04}s infinite alternate`,
-                              }}
-                            />
-                          ))}
-                        </div>
-                        <span className="text-gray-300 text-xs font-mono tabular-nums whitespace-nowrap">
-                          {formatTime(recordingDuration)}
-                        </span>
-                        <button
-                          onClick={handleStopSpeaking}
-                          className="w-8 h-8 bg-red-500 hover:bg-red-400 rounded-full flex items-center justify-center shrink-0 transition-colors"
-                        >
-                          <Square className="w-3 h-3 text-white fill-current" />
-                        </button>
-                      </div>
-                    )}
-
-                    {/* ANSWERED: Delete + Send Response */}
-                    {voiceState === "answered" && (
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => { reset(); capturedTranscriptRef.current = ""; setCapturedTranscript(""); setVoiceState("idle"); }}
-                          className="w-10 h-10 border border-gray-600 hover:border-red-500 rounded-full flex items-center justify-center text-gray-400 hover:text-red-400 transition-colors"
-                          title="Delete & Re-record"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                        <Button
-                          onClick={handleSubmit}
-                          disabled={!(capturedTranscript || transcript) || (capturedTranscript || transcript).length < 3}
-                          className="bg-blue-600 hover:bg-blue-500 text-white rounded-full px-6 py-3 gap-2 font-medium text-sm shadow-lg shadow-blue-900/30"
-                        >
-                          <Send className="w-4 h-4" />
-                          Send Response
-                        </Button>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* PROCESSING indicator */}
-                {(phase === "PROCESSING" || (phase === "IDLE" && isThinking)) && (
-                  <div className="flex items-center gap-2 text-blue-400 text-sm">
-                    <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                    <span>Processing your response…</span>
+            {/* Skip + auto-skip timer inline under chat */}
+            {phase === "LISTENING" && voiceState === "idle" && currentQuestionIndex > 0 && (
+              <div className="mt-3 flex items-center justify-center gap-4 shrink-0">
+                <button
+                  onClick={handleSkip}
+                  disabled={phase !== "LISTENING" || isInterviewComplete}
+                  className="flex items-center gap-1.5 px-4 py-2 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 rounded-full hover:bg-gray-50 transition-colors"
+                >
+                  <SkipForward className="w-3.5 h-3.5" />
+                  Skip this question
+                </button>
+                {autoSkipTimeout > 0 && questionTimeLeft > 0 && (
+                  <div className="flex items-center gap-1.5 px-4 py-2 text-sm text-amber-600 border border-amber-200 rounded-full bg-amber-50">
+                    Skips in {formatTime(questionTimeLeft)}
+                    <button onClick={() => { /* cancel auto-skip could go here */ }} className="ml-1 text-amber-400 hover:text-amber-600">
+                      <span className="text-xs">✕</span>
+                    </button>
                   </div>
                 )}
               </div>
             )}
           </div>
         )}
+      </div>
 
-        {/* ── Draggable Webcam PIP ── */}
-        {webcamStream && (
-          <div
-            className="absolute z-20 rounded-xl overflow-hidden border-2 border-gray-700/80 shadow-2xl shadow-black/50 cursor-move group"
-            style={{
-              left: pipPos.x,
-              top: pipPos.y,
-              width: 192,
-              height: 144,
-            }}
-            onMouseDown={handlePipMouseDown}
-          >
-            <WebcamMini stream={webcamStream} />
-            <div className="absolute top-1 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-              <GripVertical className="w-4 h-4 text-white/60" />
-            </div>
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent py-1.5 px-2">
-              <p className="text-white text-[10px] font-medium">You</p>
+      {/* ── Bottom Footer Bar — full-width voice controls ── */}
+      {!showCodeEditor && (
+        <div className="shrink-0 border-t border-gray-100 bg-white px-6 py-4 flex items-center justify-between">
+          {/* Left: Powered by */}
+          <div className="flex items-center gap-2 text-gray-400 text-xs">
+            <span>Powered by</span>
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-4 rounded bg-blue-600 flex items-center justify-center">
+                <span className="text-white text-[8px] font-bold">A</span>
+              </div>
+              <span className="text-gray-600 font-medium">anytimehire.ai</span>
             </div>
           </div>
-        )}
-      </div>
+
+          {/* Center: Voice Controls */}
+          <div className="flex flex-col items-center gap-2">
+            {phase === "LISTENING" && (
+              <>
+                {/* IDLE: Start Speaking */}
+                {voiceState === "idle" && (
+                  <Button
+                    onClick={handleStartSpeaking}
+                    className="bg-red-500 hover:bg-red-400 text-white rounded-full px-10 py-3 gap-2.5 font-semibold text-sm shadow-lg shadow-red-200/50"
+                  >
+                    <Mic className="w-4.5 h-4.5" />
+                    Start Speaking
+                  </Button>
+                )}
+
+                {/* RECORDING: Waveform + timer + stop */}
+                {voiceState === "recording" && (
+                  <div className="flex items-center gap-3 px-5 py-2.5 bg-gray-50 border border-gray-200 rounded-full">
+                    <div className="flex items-center gap-px h-7">
+                      {[4,7,3,8,5,9,4,6,8,3,7,5,9,4,6,8,3,7,5,6].map((h, i) => (
+                        <div
+                          key={i}
+                          className="w-1 bg-red-400 rounded-full mx-px"
+                          style={{
+                            height: `${h * 8}%`,
+                            minHeight: "15%",
+                            maxHeight: "90%",
+                            animation: `pulse ${0.4 + (i % 5) * 0.08}s ease-in-out ${i * 0.04}s infinite alternate`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-gray-600 text-xs font-mono tabular-nums whitespace-nowrap">
+                      {formatTime(recordingDuration)}
+                    </span>
+                    <button
+                      onClick={handleStopSpeaking}
+                      className="w-9 h-9 bg-red-500 hover:bg-red-400 rounded-full flex items-center justify-center shrink-0 transition-colors"
+                    >
+                      <Square className="w-3.5 h-3.5 text-white fill-current" />
+                    </button>
+                  </div>
+                )}
+
+                {/* ANSWERED: Delete + Send Response */}
+                {voiceState === "answered" && (
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => { reset(); capturedTranscriptRef.current = ""; setCapturedTranscript(""); setVoiceState("idle"); setIsEditingTranscript(false); setCorrectionApplied(false); }}
+                      className="w-10 h-10 border border-gray-300 hover:border-red-400 rounded-full flex items-center justify-center text-gray-400 hover:text-red-400 transition-colors"
+                      title="Delete & Re-record"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    <Button
+                      onClick={handleSubmit}
+                      disabled={!(capturedTranscript || transcript) || (capturedTranscript || transcript).length < 3}
+                      className="bg-blue-600 hover:bg-blue-500 text-white rounded-full px-8 py-3 gap-2 font-semibold text-sm shadow-lg shadow-blue-200/50"
+                    >
+                      <Send className="w-4 h-4" />
+                      Send Response
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* PROCESSING indicator */}
+            {(phase === "PROCESSING" || (phase === "IDLE" && isThinking)) && (
+              <div className="flex items-center gap-2 text-blue-500 text-sm">
+                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                <span>Processing your response…</span>
+              </div>
+            )}
+
+            {/* SPEAKING status */}
+            {(phase === "SPEAKING" || (phase !== "LISTENING" && phase !== "PROCESSING" && isSpeaking)) && (
+              <div className="flex items-center gap-2 text-purple-500 text-sm">
+                <div className="flex items-center gap-0.5">
+                  {[...Array(4)].map((_, i) => (
+                    <div
+                      key={i}
+                      className="w-0.5 bg-purple-400 rounded-full animate-pulse"
+                      style={{
+                        height: `${10 + Math.random() * 10}px`,
+                        animationDelay: `${i * 0.1}s`,
+                        animationDuration: `${0.4 + Math.random() * 0.3}s`,
+                      }}
+                    />
+                  ))}
+                </div>
+                <span>Aria is speaking…</span>
+              </div>
+            )}
+          </div>
+
+          {/* Right: Mic status indicator */}
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs ${
+            voiceState === "recording"
+              ? "bg-green-50 border border-green-200 text-green-600"
+              : "bg-gray-50 border border-gray-100 text-gray-400"
+          }`}>
+            {voiceState === "recording" ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
+            {voiceState === "recording" ? "Mic Active" : "Mic Off"}
+          </div>
+        </div>
+      )}
 
       {/* ── Violation Modal ── */}
       {showViolationModal && lastViolation && (
@@ -1235,15 +1404,15 @@ export default function InterviewRoom({
 
       {/* ── Screen Share Lost Modal ── */}
       <AlertDialog open={showScreenShareModal}>
-        <AlertDialogContent className="bg-gray-900 border-gray-700 max-w-sm">
+        <AlertDialogContent className="bg-white border-gray-200 max-w-sm">
           <AlertDialogHeader className="text-center">
-            <div className="w-12 h-12 rounded-full bg-amber-900/40 flex items-center justify-center mx-auto mb-2">
-              <Monitor className="w-6 h-6 text-amber-400" />
+            <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center mx-auto mb-2">
+              <Monitor className="w-6 h-6 text-amber-500" />
             </div>
-            <AlertDialogTitle className="text-white font-semibold text-lg">
+            <AlertDialogTitle className="text-gray-900 font-semibold text-lg">
               Screen Share Stopped
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-400 text-sm">
+            <AlertDialogDescription className="text-gray-500 text-sm">
               Your screen sharing has stopped. The interview is paused until you resume sharing your entire screen.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -1284,15 +1453,15 @@ export default function InterviewRoom({
 
       {/* ── End Interview Confirmation ── */}
       <AlertDialog open={showEndConfirm} onOpenChange={setShowEndConfirm}>
-        <AlertDialogContent className="bg-gray-900 border-gray-700 max-w-sm">
+        <AlertDialogContent className="bg-white border-gray-200 max-w-sm">
           <AlertDialogHeader className="text-center">
-            <div className="w-12 h-12 rounded-full bg-red-900/40 flex items-center justify-center mx-auto mb-2">
-              <PhoneOff className="w-6 h-6 text-red-400" />
+            <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-2">
+              <PhoneOff className="w-6 h-6 text-red-500" />
             </div>
-            <AlertDialogTitle className="text-white font-semibold text-lg">
+            <AlertDialogTitle className="text-gray-900 font-semibold text-lg">
               End Interview?
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-400 text-sm">
+            <AlertDialogDescription className="text-gray-500 text-sm">
               This will immediately stop the interview and submit your session for evaluation.
               This action cannot be undone.
             </AlertDialogDescription>
@@ -1300,7 +1469,7 @@ export default function InterviewRoom({
           <AlertDialogFooter>
             <Button
               variant="outline"
-              className="flex-1 border-gray-600 text-gray-300 hover:bg-gray-800"
+              className="flex-1 border-gray-300 text-gray-600 hover:bg-gray-50"
               onClick={() => setShowEndConfirm(false)}
             >
               Continue

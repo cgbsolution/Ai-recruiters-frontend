@@ -59,6 +59,7 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
         Cookies.remove("auth_token");
         Cookies.remove("auth_user");
         if (typeof window !== "undefined" && !window.location.pathname.startsWith("/signin")) {
+          sessionStorage.setItem("session_expired", "Session expired, please login again!");
           window.location.href = "/signin";
         }
       }

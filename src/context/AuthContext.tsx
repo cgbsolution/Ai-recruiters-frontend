@@ -54,13 +54,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const sessionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Force logout helper ────────────────────────────────────────────────────
-  const forceLogout = useCallback(() => {
+  const forceLogout = useCallback((reason?: string) => {
     Cookies.remove(TOKEN_KEY);
     Cookies.remove(USER_KEY);
     Cookies.remove(EXPIRES_AT_KEY);
     setToken(null);
     setUser(null);
     if (typeof window !== "undefined" && !window.location.pathname.startsWith("/signin")) {
+      // Store expiry reason so login page can show a notification
+      sessionStorage.setItem("session_expired", reason || "Session expired, please login again!");
       window.location.href = "/signin";
     }
   }, []);
@@ -89,7 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const expiresAt = parseInt(Cookies.get(EXPIRES_AT_KEY) || "0", 10);
       if (expiresAt > 0 && Date.now() >= expiresAt) {
         console.warn("[Auth] Session expired");
-        forceLogout();
+        forceLogout("Session expired, please login again!");
         return;
       }
 
@@ -97,7 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const idle = Date.now() - lastActivityRef.current;
       if (idle >= INACTIVITY_TIMEOUT) {
         console.warn("[Auth] Logged out due to inactivity");
-        forceLogout();
+        forceLogout("Logged out due to inactivity. Please login again.");
         return;
       }
 
@@ -112,7 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }).then((res) => {
         if (res.status === 401 || res.status === 403) {
           console.warn("[Auth] Backend rejected token");
-          forceLogout();
+          forceLogout("Session expired, please login again!");
         }
       }).catch(() => {
         // Network error — don't log out, might be transient

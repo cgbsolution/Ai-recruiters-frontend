@@ -46,6 +46,9 @@ export interface JobConfig {
   special_instructions?: string;
   auto_skip_timeout: number;
   skills: string[];
+  organization_name?: string;
+  manager_name?: string;
+  manager_email?: string;
 }
 
 export interface EvaluationResult {

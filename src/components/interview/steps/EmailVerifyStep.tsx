@@ -24,9 +24,9 @@ interface Props {
     interviewTimezone?: string;
     joiningFlexibility?: string;
     allowJoiningEarly?: boolean;
-  }) => void;
+  }, candidateName?: string) => void;
   onShowApply: (email: string, name?: string) => void;
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 export default function EmailVerifyStep({
@@ -55,7 +55,7 @@ export default function EmailVerifyStep({
           interviewTimezone: result.interviewTimezone,
           joiningFlexibility: result.joiningFlexibility,
           allowJoiningEarly: result.allowJoiningEarly,
-        });
+        }, result.candidateName);
         break;
       case "apply":
         onShowApply(email.trim().toLowerCase(), result.candidateName);
@@ -75,15 +75,17 @@ export default function EmailVerifyStep({
     <div className="flex flex-col items-center justify-center min-h-screen px-6 py-10 bg-white">
       <div className="w-full max-w-md">
         {/* Go Back */}
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onBack}
-          className="flex items-center gap-1.5 text-gray-500 hover:text-gray-900 text-sm mb-8 transition-colors px-0"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Go Back
-        </Button>
+        {onBack && (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onBack}
+            className="flex items-center gap-1.5 text-gray-500 hover:text-gray-900 text-sm mb-8 transition-colors px-0"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Go Back
+          </Button>
+        )}
 
         {/* Icon */}
         <div className="flex justify-center mb-6">

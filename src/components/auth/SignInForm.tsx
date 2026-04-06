@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, Loader2, Mail, Lock } from "lucide-react";
+import { Eye, EyeOff, Loader2, Mail, Lock, AlertTriangle } from "lucide-react";
 
 export default function SignInForm() {
   const { login } = useAuth();
@@ -16,18 +16,63 @@ export default function SignInForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessionExpiredMsg, setSessionExpiredMsg] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // Show session expired notification if redirected from expired session
+  useEffect(() => {
+    const msg = sessionStorage.getItem("session_expired");
+    if (msg) {
+      setSessionExpiredMsg(msg);
+      sessionStorage.removeItem("session_expired");
+    }
+  }, []);
+
+  // Handle browser autofill — poll form inputs to sync React state
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!formRef.current) return;
+      const emailInput = formRef.current.querySelector<HTMLInputElement>('input[type="email"]');
+      const passInput = formRef.current.querySelector<HTMLInputElement>('input[type="password"], input[name="password"]');
+      if (emailInput?.value && !email) setEmail(emailInput.value);
+      if (passInput?.value && !password) setPassword(passInput.value);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [email, password]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Re-read from DOM in case autofill didn't trigger onChange
+    if (formRef.current) {
+      const emailInput = formRef.current.querySelector<HTMLInputElement>('input[type="email"]');
+      const passInput = formRef.current.querySelector<HTMLInputElement>('input[type="password"], input[name="password"]');
+      const finalEmail = email || emailInput?.value || "";
+      const finalPass = password || passInput?.value || "";
+      if (!finalEmail.trim() || !finalPass) return;
+
+      setLoading(true);
+      setError(null);
+      setSessionExpiredMsg(null);
+
+      try {
+        await login(finalEmail.trim().toLowerCase(), finalPass);
+        window.location.href = "/";
+      } catch (err) {
+        setError((err as Error).message || "Login failed");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     if (!email.trim() || !password) return;
 
     setLoading(true);
     setError(null);
+    setSessionExpiredMsg(null);
 
     try {
       await login(email.trim().toLowerCase(), password);
-      // Use hard navigation to bypass Next.js router cache — the middleware
-      // needs to see the new auth cookie on a fresh server request.
       window.location.href = "/";
     } catch (err) {
       setError((err as Error).message || "Login failed");
@@ -39,6 +84,23 @@ export default function SignInForm() {
   return (
     <div className="flex flex-col flex-1 lg:w-1/2 w-full overflow-y-auto no-scrollbar">
       <div className="flex flex-col justify-center flex-1 w-full max-w-md mx-auto px-6">
+        {/* Session expired banner */}
+        {sessionExpiredMsg && (
+          <div className="mb-6 bg-amber-50 border border-amber-300 rounded-lg px-4 py-3 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-amber-800 text-sm font-medium">{sessionExpiredMsg}</p>
+              <p className="text-amber-600 text-xs mt-0.5">Please sign in again to continue.</p>
+            </div>
+            <button
+              onClick={() => setSessionExpiredMsg(null)}
+              className="ml-auto text-amber-400 hover:text-amber-600 text-lg leading-none"
+            >
+              &times;
+            </button>
+          </div>
+        )}
+
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-800 dark:text-white">
             Sign In
@@ -48,7 +110,7 @@ export default function SignInForm() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form ref={formRef} onSubmit={handleSubmit} className="space-y-5">
           <div>
             <Label className="text-gray-700 dark:text-gray-300 text-sm font-medium">
               Email <span className="text-red-500">*</span>
@@ -99,7 +161,7 @@ export default function SignInForm() {
 
           <Button
             type="submit"
-            disabled={loading || !email.trim() || !password}
+            disabled={loading}
             className="w-full h-12 bg-brand-500 hover:bg-brand-600 text-white font-semibold disabled:opacity-50 rounded-lg"
           >
             {loading ? (
