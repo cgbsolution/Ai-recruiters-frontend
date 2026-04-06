@@ -179,17 +179,21 @@ export default function InterviewRoom({
   });
 
   /* ── Hooks ── */
-  const { transcript, interimTranscript, isListening, isSupported, lastFinalAt, start, stop, reset } = useSpeechRecognition();
+  const { transcript, interimTranscript, isListening, isSupported, lastFinalAt, start, stop, reset, getSnapshot } = useSpeechRecognition();
   const { speak, cancel, isSpeaking } = useSpeechSynthesis();
   const { violationCount, lastViolation, shouldTerminate, disable: disableViolations, lastFaceCountRef } = useViolationDetection(sessionId, true, webcamStream, jobConfig.face_match);
   useScreenCapture(sessionId, webcamStream, !isInterviewComplete, lastFaceCountRef);
   const secondaryCam = useSecondaryCamMonitor(sessionId, !!jobConfig.secondary_cam);
 
-  /* ── Keep transcriptRef in sync ── */
+  /* ── Keep transcriptRef in sync — these are used by silence detection and display ── */
   useEffect(() => {
     transcriptRef.current = (transcript + " " + interimTranscript).trim();
     finalTranscriptRef.current = transcript.trim();
   }, [transcript, interimTranscript]);
+
+  /* ── Also sync on every render so refs are never more than 1 frame behind ── */
+  transcriptRef.current = (transcript + " " + interimTranscript).trim();
+  finalTranscriptRef.current = transcript.trim();
 
   /* ── Keep capturedTranscriptRef in sync ── */
   useEffect(() => {
@@ -249,12 +253,10 @@ export default function InterviewRoom({
     if (phaseRef.current !== "LISTENING") return;
     if (isSubmittingRef.current) return;
 
-    // CRITICAL: Snapshot the transcript BEFORE stopping recognition or resetting state.
-    // Try capturedTranscript first, then live final transcript, then full transcript (final + interim)
+    // Use capturedTranscript if already stopped, otherwise get a live snapshot from the ref
     const text = (
       capturedTranscriptRef.current ||
-      finalTranscriptRef.current ||
-      transcriptRef.current
+      getSnapshot()
     ).trim();
     if (!text || text.length < MIN_SUBMIT_LENGTH) return;
 
@@ -294,7 +296,7 @@ export default function InterviewRoom({
       // Reset transcript state AFTER successful submission
       reset();
     }
-  }, [stop, cancel, reset, cancelSilenceAnim, onSendMessage, onSkipQuestion, onComplete, disableViolations]);
+  }, [stop, cancel, reset, cancelSilenceAnim, getSnapshot, onSendMessage, onSkipQuestion, onComplete, disableViolations]);
 
   /* ─── Skip button handler ── */
   const handleSkip = useCallback(async () => {
@@ -323,11 +325,9 @@ export default function InterviewRoom({
   }, [reset, start]);
 
   const handleStopSpeaking = useCallback(() => {
-    // Capture the FULL transcript including any interim text that hasn't been
-    // finalized yet. This prevents losing the last few words the user spoke.
-    const captured = transcriptRef.current.trim() || finalTranscriptRef.current.trim();
-    capturedTranscriptRef.current = captured; // sync ref immediately
-    stop(); // stop() preserves transcript state
+    // stop() returns the complete text synchronously from refs — no stale React state
+    const captured = stop();
+    capturedTranscriptRef.current = captured;
     setCapturedTranscript(captured);
     setVoiceState("answered");
     if (recordingTimerRef.current) {
@@ -806,13 +806,32 @@ export default function InterviewRoom({
     ? { text: "Click Start Speaking to respond", color: "text-green-400", dot: "bg-green-400" }
     : { text: messages.length === 0 ? "Starting interview…" : "Preparing…", color: "text-gray-500", dot: "bg-gray-500" };
 
-  /* ── Live transcript text (final + interim) ── */
-  // Keep showing capturedTranscript through PROCESSING so the chat doesn't briefly blank
-  const liveText = phase === "LISTENING"
-    ? (transcript + " " + interimTranscript).trim() || (voiceState === "answered" ? capturedTranscript : "")
-    : phase === "PROCESSING" && capturedTranscript
-    ? capturedTranscript
-    : "";
+  /* ── Live transcript text — polled directly from refs, not React state ── */
+  // React state (transcript/interimTranscript) updates asynchronously and can
+  // briefly show stale or empty text between recognition restarts. Instead, we
+  // poll getSnapshot() which reads synchronously from the hook's refs — zero lag.
+  const [liveText, setLiveText] = useState("");
+  useEffect(() => {
+    if (phase !== "LISTENING" || voiceState !== "recording") {
+      // Not recording — show capturedTranscript for answered state, or nothing
+      if (phase === "LISTENING" && voiceState === "answered" && capturedTranscript) {
+        setLiveText(capturedTranscript);
+      } else if (phase === "PROCESSING" && capturedTranscript) {
+        setLiveText(capturedTranscript);
+      } else if (phase !== "LISTENING") {
+        setLiveText("");
+      }
+      return;
+    }
+    // During recording: poll getSnapshot() every 100ms for real-time display
+    const poll = setInterval(() => {
+      const snap = getSnapshot();
+      setLiveText(snap);
+    }, 100);
+    // Also set immediately
+    setLiveText(getSnapshot());
+    return () => clearInterval(poll);
+  }, [phase, voiceState, capturedTranscript, getSnapshot]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  RENDER                                                        */
@@ -1058,10 +1077,10 @@ export default function InterviewRoom({
 
             {/* Live transcript bar — visible while recording or in answered state (all questions including intro) */}
             {phase === "LISTENING" && (voiceState === "recording" || voiceState === "answered") && (liveText || capturedTranscript) && (
-              <div className="mx-4 mb-2 px-4 py-2.5 bg-gray-800/60 border border-gray-700/50 rounded-xl shrink-0">
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full shrink-0 ${voiceState === "recording" ? "bg-green-400 animate-pulse" : "bg-blue-400"}`} />
-                  <p className="text-gray-300 text-sm line-clamp-2">{voiceState === "recording" ? liveText : capturedTranscript}</p>
+              <div className="mx-4 mb-2 px-4 py-2.5 bg-gray-800/60 border border-gray-700/50 rounded-xl shrink-0 max-h-24 overflow-y-auto">
+                <div className="flex items-start gap-2">
+                  <div className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${voiceState === "recording" ? "bg-green-400 animate-pulse" : "bg-blue-400"}`} />
+                  <p className="text-gray-300 text-sm">{voiceState === "recording" ? liveText : capturedTranscript}</p>
                 </div>
               </div>
             )}

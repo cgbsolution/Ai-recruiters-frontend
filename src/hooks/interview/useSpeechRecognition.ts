@@ -15,19 +15,20 @@ interface SpeechRecognitionHook {
   lastFinalAt: number;
   /** Start listening — clears previous transcript */
   start: () => void;
-  /** Stop listening — discards buffered audio */
-  stop: () => void;
+  /** Stop listening — returns the complete captured text synchronously from the ref (not React state) */
+  stop: () => string;
   /** Clear transcript state without stopping */
   reset: () => void;
+  /** Read the current complete text synchronously — final + pending interim, straight from refs */
+  getSnapshot: () => string;
 }
 
 /**
  * Maximum time (ms) the recognizer can stay "dead" before we force a restart.
  * Chrome kills continuous recognition after ~60s of silence or ~5min total.
- * Reduced from 5000→3000 for faster detection of dead recognition.
  */
-const HEALTH_CHECK_INTERVAL_MS = 2500;
-const MAX_DEAD_TIME_MS = 5000;
+const HEALTH_CHECK_INTERVAL_MS = 1500;
+const MAX_DEAD_TIME_MS = 3000;
 
 /** After this many consecutive restart failures, recreate the instance */
 const MAX_RESTART_FAILURES = 4;
@@ -49,6 +50,8 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
   const isRunningRef = useRef(false);
   /** Count consecutive restart failures to trigger instance recreation */
   const restartFailCountRef = useRef(0);
+  /** Persistent ref that accumulates ALL confirmed words — never cleared except by reset/start */
+  const finalTranscriptRef = useRef(""); // FIX: store all confirmed words in a ref that never gets overwritten
   /** Ref to latest interim text — used to save pending text on restart */
   const pendingInterimRef = useRef("");
 
@@ -64,8 +67,8 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     const recognition = new SpeechRecognitionAPI();
-    recognition.continuous = true;
-    recognition.interimResults = true;
+    recognition.continuous = true;       // FIX: keep listening — do not auto-stop after one phrase
+    recognition.interimResults = true;   // FIX: show words as user speaks, not only after silence
     recognition.lang = "en-US";
     recognition.maxAlternatives = 1;
 
@@ -79,28 +82,32 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
       restartCountRef.current = 0;
       restartFailCountRef.current = 0;
 
-      let finalText = "";
-      let interimText = "";
+      let newFinalText = "";
+      let currentInterim = "";
+      // FIX: loop from event.resultIndex, not 0 — only process NEW results to avoid duplicating old ones
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         const t = result[0].transcript;
         if (result.isFinal) {
-          // Accept all final results — the Web Speech API already filters
-          // low-quality results internally. Previously a 0.4 threshold was
-          // dropping legitimate speech, causing word loss.
-          finalText += t;
+          // FIX: only append isFinal results to the final ref — interim text is temporary
+          newFinalText += t;
         } else {
-          interimText += t;
+          currentInterim += t;
         }
       }
-      // Keep track of latest interim for emergency save on restart
-      pendingInterimRef.current = interimText;
 
-      if (finalText) {
-        setTranscript((prev) => (prev.trim() + " " + finalText.trim()).trim());
+      // Keep track of latest interim for emergency save on restart
+      pendingInterimRef.current = currentInterim;
+
+      if (newFinalText) {
+        // FIX: append to persistent ref with a space so sentences don't merge together
+        finalTranscriptRef.current = finalTranscriptRef.current + newFinalText + " ";
+        // FIX: set state from the ref — the ref is the single source of truth, never overwritten
+        setTranscript(finalTranscriptRef.current.trim());
         setLastFinalAt(Date.now());
       }
-      setInterimTranscript(interimText);
+      // FIX: always show finalTranscript + interimTranscript together — set interim to current unconfirmed text
+      setInterimTranscript(currentInterim);
     };
 
     recognition.onerror = (event: any) => {
@@ -110,8 +117,10 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
         setIsListening(false);
         return;
       }
-      // 'no-speech' and 'aborted' are non-fatal — onend will handle restart
-      if (event.error !== "no-speech" && event.error !== "aborted") {
+      // FIX: ignore no-speech silently — do not stop listening, onend will restart if needed
+      if (event.error === "no-speech") return;
+      // 'aborted' is also non-fatal — onend will handle restart
+      if (event.error !== "aborted") {
         console.error("[SpeechRecognition] error:", event.error);
       }
     };
@@ -123,16 +132,16 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
 
     recognition.onend = () => {
       isRunningRef.current = false;
-      setIsListening(false);
 
-      // Auto-restart if we're supposed to be listening
+      // FIX: if user is still supposed to be listening, immediately restart — prevents the gap that eats words between sentences
       if (isActiveRef.current) {
-        // CRITICAL: Save any pending interim text as final BEFORE restarting.
+        // Save any pending interim text as final BEFORE restarting.
         // Chrome kills recognition mid-sentence, losing the interim buffer.
-        // Promoting it to final text prevents word loss during restarts.
         if (pendingInterimRef.current.trim()) {
           const saved = pendingInterimRef.current.trim();
-          setTranscript((prev) => (prev.trim() + " " + saved).trim());
+          // FIX: append saved interim to persistent ref so no words are lost on restart
+          finalTranscriptRef.current = finalTranscriptRef.current + saved + " ";
+          setTranscript(finalTranscriptRef.current.trim());
           setLastFinalAt(Date.now());
           pendingInterimRef.current = "";
           setInterimTranscript("");
@@ -140,9 +149,7 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
 
         if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
 
-        // Restart strategy: IMMEDIATE on first attempt (0ms gap = no lost words),
-        // then minimal backoff on consecutive failures: 100ms, 200ms, max 400ms.
-        // Keeping backoff low to minimize gaps where speech is not captured.
+        // FIX: restart immediately on first attempt (0ms gap = no lost words), minimal backoff only on failures
         const isFirstAttempt = restartCountRef.current === 0;
         const backoff = isFirstAttempt ? 0 : Math.min(400, 100 * restartCountRef.current);
         restartCountRef.current++;
@@ -150,28 +157,28 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
         const doRestart = () => {
           if (!isActiveRef.current || !recognitionRef.current || isRunningRef.current) return;
           try {
-            recognitionRef.current.start();
+            recognitionRef.current.start(); // FIX: immediately call start() again to prevent gap
             setIsListening(true);
-            restartCountRef.current = 0; // reset on success
+            restartCountRef.current = 0;
           } catch {
             restartFailCountRef.current++;
             if (restartFailCountRef.current >= MAX_RESTART_FAILURES) {
               console.warn("[SpeechRecognition] Too many restart failures — recreating instance");
               recreateInstance();
             } else {
-              // Retry after a short delay
               restartTimerRef.current = setTimeout(doRestart, 300);
             }
           }
         };
 
         if (backoff === 0) {
-          doRestart(); // immediate restart — zero gap
+          doRestart(); // FIX: zero-delay restart — no gap where words can be lost
         } else {
           restartTimerRef.current = setTimeout(doRestart, backoff);
         }
       } else {
         // Only clear interim when we're intentionally stopped
+        setIsListening(false);
         setInterimTranscript("");
       }
     };
@@ -186,7 +193,9 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
     // Save any pending interim text as final before recreating
     if (pendingInterimRef.current.trim()) {
       const saved = pendingInterimRef.current.trim();
-      setTranscript((prev) => (prev.trim() + " " + saved).trim());
+      // FIX: append to persistent ref — never overwrite accumulated words
+      finalTranscriptRef.current = finalTranscriptRef.current + saved + " ";
+      setTranscript(finalTranscriptRef.current.trim());
       setLastFinalAt(Date.now());
       pendingInterimRef.current = "";
       setInterimTranscript("");
@@ -237,7 +246,6 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
   /**
    * Health check: detect when Chrome silently kills recognition without
    * firing onend (happens after long sessions). Force-restart if needed.
-   * Now directly restarts instead of only relying on the onend chain.
    */
   useEffect(() => {
     if (healthCheckRef.current) {
@@ -260,7 +268,9 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
         // Save any pending interim text before restart
         if (pendingInterimRef.current.trim()) {
           const saved = pendingInterimRef.current.trim();
-          setTranscript((prev) => (prev.trim() + " " + saved).trim());
+          // FIX: append to persistent ref — never lose words on health-check restart
+          finalTranscriptRef.current = finalTranscriptRef.current + saved + " ";
+          setTranscript(finalTranscriptRef.current.trim());
           setLastFinalAt(Date.now());
           pendingInterimRef.current = "";
           setInterimTranscript("");
@@ -311,6 +321,7 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
     restartFailCountRef.current = 0;
     lastResultAtRef.current = Date.now();
     pendingInterimRef.current = "";
+    finalTranscriptRef.current = ""; // FIX: clear the persistent ref only on explicit start — fresh recording
     setTranscript("");
     setInterimTranscript("");
     setLastFinalAt(0);
@@ -323,18 +334,28 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
     }
   }, []);
 
-  const stop = useCallback(() => {
+  /** Read the complete text right now — final confirmed + any pending interim, straight from refs (no React delay) */
+  const getSnapshot = useCallback((): string => {
+    const final = finalTranscriptRef.current.trim();
+    const pending = pendingInterimRef.current.trim();
+    return pending ? (final + " " + pending).trim() : final;
+  }, []);
+
+  const stop = useCallback((): string => {
     if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
     isActiveRef.current = false;
 
-    // CRITICAL: Save any pending interim text as final BEFORE stopping.
-    // Without this, the last few words the user spoke are lost if Chrome
-    // hadn't finalized them yet.
+    // Save any pending interim text to the persistent ref BEFORE stopping — prevents losing last words
     if (pendingInterimRef.current.trim()) {
       const saved = pendingInterimRef.current.trim();
-      setTranscript((prev) => (prev.trim() + " " + saved).trim());
+      finalTranscriptRef.current = finalTranscriptRef.current + saved + " ";
     }
 
+    // Snapshot the complete text BEFORE clearing anything — this is the return value
+    const completeText = finalTranscriptRef.current.trim();
+
+    // Now sync React state to match the ref
+    setTranscript(completeText);
     setInterimTranscript("");
     setLastFinalAt(0);
     pendingInterimRef.current = "";
@@ -347,14 +368,18 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
     }
     isRunningRef.current = false;
     setIsListening(false);
+
+    // Return the complete text synchronously so callers don't depend on stale React state
+    return completeText;
   }, []);
 
   const reset = useCallback(() => {
+    finalTranscriptRef.current = "";
     setTranscript("");
     setInterimTranscript("");
     setLastFinalAt(0);
     pendingInterimRef.current = "";
   }, []);
 
-  return { transcript, interimTranscript, isListening, isSupported, lastFinalAt, start, stop, reset };
+  return { transcript, interimTranscript, isListening, isSupported, lastFinalAt, start, stop, reset, getSnapshot };
 }
