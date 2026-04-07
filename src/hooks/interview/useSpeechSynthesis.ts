@@ -34,7 +34,16 @@ function splitIntoChunks(text: string): string[] {
   return chunks.length ? chunks : [text];
 }
 
-export function useSpeechSynthesis(): SpeechSynthesisHook {
+/** Language code → TTS voice language prefix */
+const TTS_LANG_MAP: Record<string, string> = {
+  en: "en",
+  hi: "hi",
+  ar: "ar",
+  hinglish: "hi", // Hinglish uses Hindi voice
+};
+
+export function useSpeechSynthesis(language: string = "en"): SpeechSynthesisHook {
+  const ttsLang = TTS_LANG_MAP[language] || "en";
   const [isSpeaking, setIsSpeaking] = useState(false);
   const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -49,16 +58,17 @@ export function useSpeechSynthesis(): SpeechSynthesisHook {
     if (!isSupported) return;
     const loadVoice = () => {
       const voices = window.speechSynthesis.getVoices();
+      // Prefer Google/Natural voices for the selected language
       const preferred = voices.find(
         (v) =>
-          v.lang.startsWith("en") &&
+          v.lang.startsWith(ttsLang) &&
           (v.name.includes("Google") || v.name.includes("Natural") || v.name.includes("Samantha"))
       );
-      voiceRef.current = preferred || voices.find((v) => v.lang.startsWith("en")) || null;
+      voiceRef.current = preferred || voices.find((v) => v.lang.startsWith(ttsLang)) || null;
     };
     loadVoice();
     window.speechSynthesis.onvoiceschanged = loadVoice;
-  }, [isSupported]);
+  }, [isSupported, ttsLang]);
 
   // ── Chrome keepalive: resume if paused every 5 s (prevents 15-min freeze) ──
   useEffect(() => {

@@ -115,7 +115,7 @@ interface InterviewSessionHook {
   autoRegister: (token: string, email: string) => Promise<true | false | null>;
   loginCandidate: (token: string, email: string) => Promise<"ok" | "resume" | "completed" | "not_found" | "error">;
   resumeSession: () => Promise<boolean>;
-  startInterview: () => Promise<void>;
+  startInterview: (language?: string) => Promise<void>;
   sendMessage: (text: string) => Promise<boolean>;
   skipQuestion: () => Promise<boolean>;
   completeInterview: (earlyTermination?: boolean, terminationReason?: string) => Promise<void>;
@@ -352,11 +352,12 @@ export function useInterviewSession(): InterviewSessionHook {
     []
   );
 
-  const startInterview = useCallback(async () => {
+  const startInterview = useCallback(async (language?: string) => {
     if (!sessionId) return;
     setIsAiThinking(true);
     try {
-      const data = await api<any>(`/interview/sessions/${sessionId}/start`, {
+      const langParam = language ? `?language=${language}` : "";
+      const data = await api<any>(`/interview/sessions/${sessionId}/start${langParam}`, {
         method: "POST",
         timeout: 30_000,
       });

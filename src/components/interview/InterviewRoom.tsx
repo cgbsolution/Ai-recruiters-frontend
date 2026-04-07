@@ -43,6 +43,7 @@ interface Props {
   onScreenStreamChanged?: (stream: MediaStream) => void;
   webcamStream: MediaStream | null;
   screenStream: MediaStream | null;
+  interviewLanguage?: string;
 }
 
 const VIOLATION_THRESHOLD = 5;
@@ -129,6 +130,7 @@ export default function InterviewRoom({
   onScreenStreamChanged,
   webcamStream,
   screenStream,
+  interviewLanguage = "en",
 }: Props) {
   /* ── Core Phase State ── */
   const [phase, setPhase] = useState<InterviewPhase>("IDLE");
@@ -184,8 +186,8 @@ export default function InterviewRoom({
   });
 
   /* ── Hooks ── */
-  const { transcript, interimTranscript, isListening, isSupported, lastFinalAt, start, stop, reset, getSnapshot } = useSpeechRecognition();
-  const { speak, cancel, isSpeaking } = useSpeechSynthesis();
+  const { transcript, interimTranscript, isListening, isSupported, lastFinalAt, start, stop, reset, getSnapshot } = useSpeechRecognition(interviewLanguage);
+  const { speak, cancel, isSpeaking } = useSpeechSynthesis(interviewLanguage);
   const { violationCount, lastViolation, shouldTerminate, disable: disableViolations, lastFaceCountRef } = useViolationDetection(sessionId, true, webcamStream, jobConfig.face_match);
   useScreenCapture(sessionId, webcamStream, !isInterviewComplete, lastFaceCountRef);
   const secondaryCam = useSecondaryCamMonitor(sessionId, !!jobConfig.secondary_cam);
@@ -809,9 +811,9 @@ export default function InterviewRoom({
     : correctionApplied && phase === "LISTENING" && voiceState === "answered"
     ? { text: "Correction saved", color: "text-green-600", dot: "bg-green-500" }
     : phase === "PROCESSING" || isThinking
-    ? { text: "Aria is thinking…", color: "text-blue-600", dot: "bg-blue-500" }
+    ? { text: "Nira is thinking…", color: "text-blue-600", dot: "bg-blue-500" }
     : phase === "SPEAKING" || isSpeaking
-    ? { text: "Aria is speaking…", color: "text-purple-600", dot: "bg-purple-500" }
+    ? { text: "Nira is speaking…", color: "text-purple-600", dot: "bg-purple-500" }
     : phase === "LISTENING" && voiceState === "recording"
     ? { text: "Listening… (click stop when done)", color: "text-green-600", dot: "bg-green-500" }
     : phase === "LISTENING" && silenceProgress > 0
@@ -837,7 +839,7 @@ export default function InterviewRoom({
     : "aria_speaking";
 
   const STATE_TABS: { key: StateTab; label: string }[] = [
-    { key: "aria_speaking", label: "Aria speaking" },
+    { key: "aria_speaking", label: "Nira speaking" },
     { key: "candidate_answering", label: "Candidate answering" },
     { key: "silence_detection", label: "Silence detection" },
     { key: "transcript_edit", label: "Transcript error" },
@@ -1367,7 +1369,7 @@ export default function InterviewRoom({
                     />
                   ))}
                 </div>
-                <span>Aria is speaking…</span>
+                <span>Nira is speaking…</span>
               </div>
             )}
           </div>

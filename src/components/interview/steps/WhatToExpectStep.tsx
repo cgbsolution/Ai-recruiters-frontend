@@ -14,9 +14,9 @@ export default function WhatToExpectStep({ jobConfig, onNext }: Props) {
   const managerName = jobConfig.manager_name;
 
   const points = [
-    "Aria is your AI interviewer — she asks questions and listens to your full answer before responding",
+    "Nira is your AI interviewer — she asks questions and listens to your full answer before responding",
     "You'll see a live transcript of your words as you speak — flag any errors instantly",
-    "Take as long as you need — Aria waits for silence before moving to the next question",
+    "Take as long as you need — Nira waits for silence before moving to the next question",
     managerName
       ? `Your responses are reviewed by ${managerName} from ${orgName}'s talent team`
       : `Your responses are reviewed by ${orgName}'s talent team`,

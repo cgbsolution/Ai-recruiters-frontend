@@ -33,7 +33,16 @@ const MAX_DEAD_TIME_MS = 3000;
 /** After this many consecutive restart failures, recreate the instance */
 const MAX_RESTART_FAILURES = 4;
 
-export function useSpeechRecognition(): SpeechRecognitionHook {
+/** Language code → Web Speech API lang tag */
+const LANG_MAP: Record<string, string> = {
+  en: "en-US",
+  hi: "hi-IN",
+  ar: "ar-SA",
+  hinglish: "hi-IN", // Hinglish uses Hindi recognizer (understands mixed)
+};
+
+export function useSpeechRecognition(language: string = "en"): SpeechRecognitionHook {
+  const langTag = LANG_MAP[language] || "en-US";
   const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [isListening, setIsListening] = useState(false);
@@ -69,7 +78,7 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
     const recognition = new SpeechRecognitionAPI();
     recognition.continuous = true;       // FIX: keep listening — do not auto-stop after one phrase
     recognition.interimResults = true;   // FIX: show words as user speaks, not only after silence
-    recognition.lang = "en-US";
+    recognition.lang = langTag;
     recognition.maxAlternatives = 1;
 
     recognition.onresult = (event: any) => {
@@ -184,7 +193,7 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
     };
 
     return recognition;
-  }, [isSupported]);
+  }, [isSupported, langTag]);
 
   /** Recreate the SpeechRecognition instance — used when Chrome completely kills it */
   const recreateInstance = useCallback(() => {

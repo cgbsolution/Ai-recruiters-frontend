@@ -64,17 +64,17 @@ export default function PracticeRoundStep({ onStart, onSkip }: Props) {
           </span>
         </div>
         <p className="text-gray-500 text-sm mb-8">
-          Get familiar with Aria and the format. This does not affect your interview.
+          Get familiar with Nira and the format. This does not affect your interview.
         </p>
 
-        {/* Aria speaking */}
+        {/* Nira speaking */}
         <div className="flex items-start gap-3 mb-6">
           <div className="w-10 h-10 rounded-full bg-violet-100 flex items-center justify-center shrink-0">
             <User className="w-5 h-5 text-violet-600" />
           </div>
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm font-semibold text-gray-900">Aria</span>
+              <span className="text-sm font-semibold text-gray-900">Nira</span>
               <span className="text-xs text-gray-400">· AI Interviewer</span>
             </div>
             {simulating && (

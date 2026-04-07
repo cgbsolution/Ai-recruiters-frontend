@@ -273,9 +273,9 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
       await session.resumeSession();
       isResumingRef.current = false;
     } else {
-      await session.startInterview();
+      await session.startInterview(interviewLanguage);
     }
-  }, [session, webcamStream, screenStream, startRecording]);
+  }, [session, webcamStream, screenStream, startRecording, interviewLanguage]);
 
   const handleWarningConfirm = useCallback(async () => {
     setStep("INTERVIEW");
@@ -560,6 +560,7 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
           onScreenStreamChanged={handleScreenStreamChanged}
           webcamStream={webcamStream}
           screenStream={screenStream}
+          interviewLanguage={interviewLanguage}
         />
       ) : null;
 

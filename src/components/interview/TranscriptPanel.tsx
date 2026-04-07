@@ -25,7 +25,7 @@ export default function TranscriptPanel({ messages, isThinking, liveTranscript }
             {msg.role === "ai" && (
               <div className="flex items-center gap-1.5">
                 <span className="text-red-500">✦</span>
-                <span className="text-gray-800 text-xs font-semibold">Anytimehire AI</span>
+                <span className="text-gray-800 text-xs font-semibold">Nira</span>
               </div>
             )}
             {msg.role === "candidate" && (
@@ -64,7 +64,7 @@ export default function TranscriptPanel({ messages, isThinking, liveTranscript }
         <div className="space-y-1.5">
           <div className="flex items-center gap-1.5">
             <span className="text-red-500">✦</span>
-            <span className="text-gray-800 text-xs font-semibold">Anytimehire AI</span>
+            <span className="text-gray-800 text-xs font-semibold">Nira</span>
           </div>
           <div className="pl-5">
             <div className="flex gap-1.5 items-center h-5">
