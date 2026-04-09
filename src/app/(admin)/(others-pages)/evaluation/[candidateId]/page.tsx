@@ -309,7 +309,7 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
 
       const element = contentRef.current;
 
-      // Convert all cross-origin images to inline base64 to avoid tainted canvas
+      // Convert all images to inline base64 to avoid tainted canvas / CORS issues
       const images = element.querySelectorAll("img");
       const origSrcs: { el: HTMLImageElement; src: string }[] = [];
       await Promise.all(
@@ -317,32 +317,53 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
           try {
             if (!img.src || img.src.startsWith("data:")) return;
             origSrcs.push({ el: img, src: img.src });
-            // Try fetching with credentials and CORS mode first, then fall
-            // back to no-cors. This handles same-origin and cross-origin photos.
-            let blob: Blob | null = null;
+
+            // For images served from our API backend, proxy through the API
+            // to ensure proper CORS headers
+            let fetchUrl = img.src;
+            if (img.src.includes("/uploads/")) {
+              // Extract the path after the domain and use API_BASE to proxy
+              const uploadPath = img.src.substring(img.src.indexOf("/uploads/"));
+              fetchUrl = `${API_BASE.replace(/\/api$/, "")}${uploadPath}`;
+            }
+
+            // Convert to base64 using canvas (avoids CORS fetch issues entirely)
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const tempImg = new Image();
+              tempImg.crossOrigin = "anonymous";
+              tempImg.onload = () => {
+                const canvas = document.createElement("canvas");
+                canvas.width = tempImg.naturalWidth;
+                canvas.height = tempImg.naturalHeight;
+                const ctx = canvas.getContext("2d");
+                if (ctx) {
+                  ctx.drawImage(tempImg, 0, 0);
+                  resolve(canvas.toDataURL("image/jpeg", 0.8));
+                } else {
+                  reject(new Error("No canvas context"));
+                }
+              };
+              tempImg.onerror = reject;
+              tempImg.src = fetchUrl;
+            });
+            img.src = dataUrl;
+          } catch {
+            // If image conversion fails, try direct fetch as fallback
             try {
               const resp = await fetch(img.src, { credentials: "include" });
-              blob = await resp.blob();
-            } catch {
-              try {
-                const resp = await fetch(img.src, { mode: "no-cors" });
-                blob = await resp.blob();
-              } catch {
-                // Give up
+              if (resp.ok) {
+                const blob = await resp.blob();
+                if (blob.size > 0) {
+                  const dataUrl = await new Promise<string>((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result as string);
+                    reader.readAsDataURL(blob);
+                  });
+                  img.src = dataUrl;
+                  return;
+                }
               }
-            }
-            if (blob && blob.size > 0) {
-              const dataUrl = await new Promise<string>((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result as string);
-                reader.readAsDataURL(blob!);
-              });
-              img.src = dataUrl;
-            } else {
-              img.style.visibility = "hidden";
-            }
-          } catch {
-            // If fetch fails, hide the image so it doesn't taint the canvas
+            } catch {}
             img.style.visibility = "hidden";
           }
         })
