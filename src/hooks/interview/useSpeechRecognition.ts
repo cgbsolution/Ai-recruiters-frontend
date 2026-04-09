@@ -25,7 +25,6 @@ const HEALTH_CHECK_MS = 1500;
 const MAX_DEAD_MS = 3000;
 const MAX_RESTART_FAILURES = 4;
 
-/** Enable debug: type window.__STT_DEBUG = true in console */
 const sttLog = (...args: any[]) => {
   if (typeof window !== "undefined" && (window as any).__STT_DEBUG) {
     console.log("[STT]", ...args);
@@ -33,14 +32,15 @@ const sttLog = (...args: any[]) => {
 };
 
 /**
- * Chrome Web Speech API STT hook.
+ * Chrome Web Speech STT — deduplication-safe.
  *
- * Key design: ONLY trust isFinal results from Chrome. Never force-save interim
- * text into the final transcript — this causes duplication because Chrome
- * replays/revises interim text constantly and eventually promotes it to final.
+ * Chrome's key bug: after recognition restarts, event.resultIndex can reset
+ * to 0, and event.results contains ALL previous results (already-processed
+ * finals). Looping from resultIndex re-processes them → duplicates.
  *
- * The ONLY time we save interim is on explicit stop() — when the user clicks
- * "Stop Speaking" and we need to capture whatever was in the buffer.
+ * Fix: Track the highest processed result index. On each onresult, only
+ * process results we haven't seen before. On restart, reset the tracker
+ * since it's a fresh results array.
  */
 export function useSpeechRecognition(language: string = "en"): SpeechRecognitionHook {
   const langTag = LANG_MAP[language] || "en-US";
@@ -58,18 +58,22 @@ export function useSpeechRecognition(language: string = "en"): SpeechRecognition
   const restartCountRef = useRef(0);
   const restartFailCountRef = useRef(0);
 
-  /** Single source of truth — ONLY written by isFinal results and stop() */
+  /** Accumulated final text — only appended, never overwritten */
   const finalRef = useRef("");
-  /** Current interim text — temporary, may change or vanish */
+  /** Current interim text */
   const interimRef = useRef("");
   /** Instance ID to reject stale events */
   const instanceIdRef = useRef(0);
+  /**
+   * Track which result indices we've already processed as FINAL.
+   * This prevents re-processing when Chrome replays the results array.
+   */
+  const processedFinalIndicesRef = useRef<Set<number>>(new Set());
 
   const isSupported =
     typeof window !== "undefined" &&
     ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
 
-  // ── Create recognition instance ────────────────────────────────────────
   const createRecognition = useCallback((myInstanceId: number) => {
     if (!isSupported) return null;
 
@@ -93,26 +97,35 @@ export function useSpeechRecognition(language: string = "en"): SpeechRecognition
       let newFinal = "";
       let newInterim = "";
 
-      for (let i = event.resultIndex; i < event.results.length; i++) {
+      // Build the FULL text from all results — finals we haven't processed + current interim
+      for (let i = 0; i < event.results.length; i++) {
         const result = event.results[i];
         const text = result[0].transcript;
+
         if (result.isFinal) {
+          if (processedFinalIndicesRef.current.has(i)) {
+            continue; // Already processed
+          }
+          processedFinalIndicesRef.current.add(i);
           newFinal += text;
+          sttLog("✅ FINAL [idx=" + i + "]:", JSON.stringify(text));
         } else {
+          // Accumulate ALL non-final results (Chrome may split across multiple)
           newInterim += text;
         }
       }
 
-      // Update interim ref
       interimRef.current = newInterim;
 
       if (newFinal) {
-        sttLog("✅ FINAL:", JSON.stringify(newFinal));
         finalRef.current = finalRef.current + newFinal + " ";
-        setTranscript(finalRef.current.trim());
         setLastFinalAt(Date.now());
       }
 
+      // CRITICAL: Always update transcript to show final + interim together
+      // This gives the "live typing" feel — user sees words as they speak
+      const displayText = (finalRef.current + newInterim).trim();
+      setTranscript(displayText);
       setInterimTranscript(newInterim);
     };
 
@@ -123,22 +136,21 @@ export function useSpeechRecognition(language: string = "en"): SpeechRecognition
         isRunningRef.current = false;
         setIsListening(false);
       }
-      // no-speech, aborted — non-fatal, onend handles restart
     };
 
     recognition.onstart = () => {
       isRunningRef.current = true;
       lastResultAtRef.current = Date.now();
+      // Reset processed indices — new recognition session = new results array
+      processedFinalIndicesRef.current = new Set();
       sttLog("🟢 STARTED");
     };
 
     recognition.onend = () => {
       isRunningRef.current = false;
-      sttLog("🔴 ENDED | interim:", JSON.stringify(interimRef.current.trim()));
+      sttLog("🔴 ENDED");
 
       if (isActiveRef.current && myInstanceId === instanceIdRef.current) {
-        // DO NOT save interim here — Chrome will re-deliver it as final after restart.
-        // Only clear the display.
         interimRef.current = "";
         setInterimTranscript("");
 
@@ -194,7 +206,7 @@ export function useSpeechRecognition(language: string = "en"): SpeechRecognition
     return recognition;
   }, [isSupported, langTag]);
 
-  // ── Initialize ─────────────────────────────────────────────────────────
+  // Initialize
   useEffect(() => {
     if (!isSupported) return;
     instanceIdRef.current++;
@@ -212,7 +224,7 @@ export function useSpeechRecognition(language: string = "en"): SpeechRecognition
     };
   }, [isSupported, createRecognition]);
 
-  // ── Health check: detect silently killed recognition ───────────────────
+  // Health check
   useEffect(() => {
     if (healthCheckRef.current) {
       clearInterval(healthCheckRef.current);
@@ -222,13 +234,11 @@ export function useSpeechRecognition(language: string = "en"): SpeechRecognition
 
     healthCheckRef.current = setInterval(() => {
       if (!isActiveRef.current || !recognitionRef.current) return;
-
       const dead = Date.now() - lastResultAtRef.current;
       if (dead > MAX_DEAD_MS) {
         sttLog("💀 Dead for", dead, "ms — restarting");
         isRunningRef.current = false;
         try { recognitionRef.current.abort(); } catch {}
-        // onend handler will restart
       }
     }, HEALTH_CHECK_MS);
 
@@ -240,8 +250,6 @@ export function useSpeechRecognition(language: string = "en"): SpeechRecognition
     };
   }, [isListening]);
 
-  // ── Public API ─────────────────────────────────────────────────────────
-
   const start = useCallback(() => {
     if (!recognitionRef.current) return;
     if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
@@ -252,6 +260,7 @@ export function useSpeechRecognition(language: string = "en"): SpeechRecognition
     lastResultAtRef.current = Date.now();
     interimRef.current = "";
     finalRef.current = "";
+    processedFinalIndicesRef.current = new Set();
     setTranscript("");
     setInterimTranscript("");
     setLastFinalAt(0);
@@ -273,8 +282,7 @@ export function useSpeechRecognition(language: string = "en"): SpeechRecognition
     if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
     isActiveRef.current = false;
 
-    // ONLY save interim on explicit stop — this is the one case where
-    // Chrome won't get a chance to finalize the pending text
+    // Save pending interim only on explicit stop
     const pending = interimRef.current.trim();
     if (pending.length > 2) {
       sttLog("💾 Saving interim on stop:", JSON.stringify(pending));
@@ -282,7 +290,6 @@ export function useSpeechRecognition(language: string = "en"): SpeechRecognition
     }
 
     const completeText = finalRef.current.trim();
-
     setTranscript(completeText);
     setInterimTranscript("");
     setLastFinalAt(0);
@@ -300,6 +307,7 @@ export function useSpeechRecognition(language: string = "en"): SpeechRecognition
   const reset = useCallback(() => {
     finalRef.current = "";
     interimRef.current = "";
+    processedFinalIndicesRef.current = new Set();
     setTranscript("");
     setInterimTranscript("");
     setLastFinalAt(0);

@@ -853,12 +853,13 @@ export default function InterviewRoom({
   const [liveText, setLiveText] = useState("");
   useEffect(() => {
     if (phase !== "LISTENING" || voiceState !== "recording") {
-      // Not recording — show capturedTranscript for answered state, or nothing
+      // Show capturedTranscript for answered state, or nothing
       if (phase === "LISTENING" && voiceState === "answered" && capturedTranscript) {
         setLiveText(capturedTranscript);
       } else if (phase === "PROCESSING" && capturedTranscript) {
         setLiveText(capturedTranscript);
-      } else if (phase !== "LISTENING") {
+      } else {
+        // Clear for idle state (after delete) or non-LISTENING phase
         setLiveText("");
       }
       return;
