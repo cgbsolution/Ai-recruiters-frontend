@@ -58,13 +58,39 @@ export function useSpeechSynthesis(language: string = "en"): SpeechSynthesisHook
     if (!isSupported) return;
     const loadVoice = () => {
       const voices = window.speechSynthesis.getVoices();
-      // Prefer Google/Natural voices for the selected language
-      const preferred = voices.find(
+      const langVoices = voices.filter((v) => v.lang.startsWith(ttsLang));
+
+      // Female voice indicators (name patterns across Chrome/Edge/Safari)
+      const femaleNames = ["Female", "Samantha", "Zira", "Heera", "Google UK English Female",
+        "Google हिन्दी", "Neerja", "Moira", "Karen", "Fiona", "Victoria", "Tessa",
+        "Lekha", "Veena", "Isha", "Rishi" /* exclude */, "Meijia", "Damayanti"];
+      const maleNames = ["Male", "David", "Daniel", "Google UK English Male", "James",
+        "Rishi", "Fred", "Alex", "Tom", "Jorge"];
+
+      // Priority 1: Female Google/Natural voice
+      const femaleGoogle = langVoices.find(
         (v) =>
-          v.lang.startsWith(ttsLang) &&
-          (v.name.includes("Google") || v.name.includes("Natural") || v.name.includes("Samantha"))
+          (v.name.includes("Google") || v.name.includes("Natural")) &&
+          !maleNames.some((m) => v.name.includes(m)) &&
+          (femaleNames.some((f) => v.name.includes(f)) || !maleNames.some((m) => v.name.includes(m)))
       );
-      voiceRef.current = preferred || voices.find((v) => v.lang.startsWith(ttsLang)) || null;
+      if (femaleGoogle) { voiceRef.current = femaleGoogle; return; }
+
+      // Priority 2: Any explicitly female voice
+      const anyFemale = langVoices.find(
+        (v) => femaleNames.some((f) => v.name.includes(f)) && !maleNames.some((m) => v.name.includes(m))
+      );
+      if (anyFemale) { voiceRef.current = anyFemale; return; }
+
+      // Priority 3: Any voice that's NOT explicitly male
+      const notMale = langVoices.find(
+        (v) => !maleNames.some((m) => v.name.includes(m))
+      );
+      if (notMale) { voiceRef.current = notMale; return; }
+
+      // Priority 4: NO female voice found — set to null, will use pitch shift as fallback
+      voiceRef.current = null;
+      console.warn("[TTS] No female voice found for", ttsLang, "— will use pitch shift. Available:", langVoices.map(v => v.name));
     };
     loadVoice();
     window.speechSynthesis.onvoiceschanged = loadVoice;
@@ -95,7 +121,9 @@ export function useSpeechSynthesis(language: string = "en"): SpeechSynthesisHook
 
       const utterance = new SpeechSynthesisUtterance(chunk);
       utterance.rate = 0.95;
-      utterance.pitch = 1.0;
+      // If we have a confirmed female voice, use normal pitch.
+      // If no female voice was found (voiceRef is null), raise pitch to sound feminine.
+      utterance.pitch = voiceRef.current ? 1.0 : 1.3;
       utterance.volume = 1.0;
       if (voiceRef.current) utterance.voice = voiceRef.current;
 
