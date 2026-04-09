@@ -38,62 +38,128 @@ function splitIntoChunks(text: string): string[] {
 const TTS_LANG_MAP: Record<string, string> = {
   en: "en",
   hi: "hi",
-  ar: "ar",
-  hinglish: "hi", // Hinglish uses Hindi voice
 };
+
+// Male voice names to ALWAYS reject — covers Chrome, Edge, Safari
+const MALE_VOICES = new Set([
+  "male", "david", "daniel", "james", "rishi", "fred", "alex", "tom", "jorge",
+  "mark", "george", "richard", "microsoft david", "microsoft mark", "microsoft george",
+  "google us english", // Often male on Chrome
+]);
+
+/** Check if a voice name is male */
+function isLikelyMale(name: string): boolean {
+  const lower = name.toLowerCase();
+  return Array.from(MALE_VOICES).some((m) => lower.includes(m));
+}
+
+/**
+ * Best female voices ranked by quality (highest first).
+ * LOCAL/offline voices preferred over Online Natural voices because:
+ * - Edge's Online voices sometimes fail silently and fall back to male default
+ * - Local voices are instant, no network dependency
+ */
+const FEMALE_PRIORITY = [
+  // Best: Google voices (Chrome only, always local)
+  "google uk english female",
+  // Good: Microsoft LOCAL desktop voices (reliable, no network)
+  "microsoft zira desktop", "microsoft zira",
+  "zira",
+  // Good: macOS local voices
+  "samantha", "karen", "moira", "fiona", "victoria", "tessa",
+  // Acceptable: Local female voices
+  "neerja", "lekha", "veena", "isha", "damayanti", "sonia", "susan", "hazel",
+  "heera",
+  // Online Natural voices LAST — they're higher quality but unreliable on Edge
+  // Edge sometimes ignores voice assignment and uses male default
+  "microsoft jenny online", "microsoft aria online", "microsoft sara online",
+  "jenny", "aria", "sara",
+];
+
+/** Find the best female voice from a list */
+function pickFemaleVoice(voices: SpeechSynthesisVoice[], langPrefix: string): SpeechSynthesisVoice | null {
+  const langVoices = voices.filter((v) => v.lang.toLowerCase().startsWith(langPrefix));
+  if (langVoices.length === 0) return null;
+
+  // Separate local vs online voices — prefer local (more reliable)
+  const localVoices = langVoices.filter((v) => v.localService || !v.name.includes("Online"));
+  const onlineVoices = langVoices.filter((v) => !v.localService && v.name.includes("Online"));
+
+  // Search local voices first, then online
+  const searchOrder = [...localVoices, ...onlineVoices];
+
+  // Try each preferred female voice in priority order
+  for (const preferred of FEMALE_PRIORITY) {
+    const match = searchOrder.find((v) =>
+      v.name.toLowerCase().includes(preferred) && !isLikelyMale(v.name)
+    );
+    if (match) return match;
+  }
+
+  // Fallback: any LOCAL voice with "female" in name
+  const localFemale = localVoices.find((v) =>
+    v.name.toLowerCase().includes("female") && !isLikelyMale(v.name)
+  );
+  if (localFemale) return localFemale;
+
+  // Fallback: any LOCAL voice NOT male
+  const localNonMale = localVoices.find((v) => !isLikelyMale(v.name));
+  if (localNonMale) return localNonMale;
+
+  // Fallback: any voice NOT male (including online)
+  const nonMale = langVoices.find((v) => !isLikelyMale(v.name));
+  if (nonMale) return nonMale;
+
+  return null;
+}
 
 export function useSpeechSynthesis(language: string = "en"): SpeechSynthesisHook {
   const ttsLang = TTS_LANG_MAP[language] || "en";
   const [isSpeaking, setIsSpeaking] = useState(false);
   const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const voiceLoadedRef = useRef(false);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queueRef = useRef<string[]>([]);
-  const speakingRef = useRef(false); // internal flag, separate from React state
+  const speakingRef = useRef(false);
 
   const isSupported =
     typeof window !== "undefined" && "speechSynthesis" in window;
 
-  // ── Load preferred voice ──────────────────────────────────────────────────
+  // ── Load preferred voice — retries until found ──────────────────────────
   useEffect(() => {
     if (!isSupported) return;
+    let retryCount = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
     const loadVoice = () => {
       const voices = window.speechSynthesis.getVoices();
-      const langVoices = voices.filter((v) => v.lang.startsWith(ttsLang));
+      if (voices.length === 0 && retryCount < 10) {
+        // Voices not loaded yet — retry
+        retryCount++;
+        retryTimer = setTimeout(loadVoice, 300);
+        return;
+      }
 
-      // Female voice indicators (name patterns across Chrome/Edge/Safari)
-      const femaleNames = ["Female", "Samantha", "Zira", "Heera", "Google UK English Female",
-        "Google हिन्दी", "Neerja", "Moira", "Karen", "Fiona", "Victoria", "Tessa",
-        "Lekha", "Veena", "Isha", "Rishi" /* exclude */, "Meijia", "Damayanti"];
-      const maleNames = ["Male", "David", "Daniel", "Google UK English Male", "James",
-        "Rishi", "Fred", "Alex", "Tom", "Jorge"];
+      console.log("[TTS] All voices:", voices.map(v => `${v.name} (${v.lang})`).join(", "));
 
-      // Priority 1: Female Google/Natural voice
-      const femaleGoogle = langVoices.find(
-        (v) =>
-          (v.name.includes("Google") || v.name.includes("Natural")) &&
-          !maleNames.some((m) => v.name.includes(m)) &&
-          (femaleNames.some((f) => v.name.includes(f)) || !maleNames.some((m) => v.name.includes(m)))
-      );
-      if (femaleGoogle) { voiceRef.current = femaleGoogle; return; }
-
-      // Priority 2: Any explicitly female voice
-      const anyFemale = langVoices.find(
-        (v) => femaleNames.some((f) => v.name.includes(f)) && !maleNames.some((m) => v.name.includes(m))
-      );
-      if (anyFemale) { voiceRef.current = anyFemale; return; }
-
-      // Priority 3: Any voice that's NOT explicitly male
-      const notMale = langVoices.find(
-        (v) => !maleNames.some((m) => v.name.includes(m))
-      );
-      if (notMale) { voiceRef.current = notMale; return; }
-
-      // Priority 4: NO female voice found — set to null, will use pitch shift as fallback
-      voiceRef.current = null;
-      console.warn("[TTS] No female voice found for", ttsLang, "— will use pitch shift. Available:", langVoices.map(v => v.name));
+      const picked = pickFemaleVoice(voices, ttsLang);
+      if (picked) {
+        voiceRef.current = picked;
+        voiceLoadedRef.current = true;
+        console.log("[TTS] Selected:", picked.name, picked.lang);
+      } else {
+        voiceRef.current = null;
+        voiceLoadedRef.current = true;
+        console.warn("[TTS] No female voice for", ttsLang, "— will use pitch=1.3");
+      }
     };
+
     loadVoice();
     window.speechSynthesis.onvoiceschanged = loadVoice;
+
+    return () => {
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, [isSupported, ttsLang]);
 
   // ── Chrome keepalive: resume if paused every 5 s (prevents 15-min freeze) ──
@@ -119,13 +185,33 @@ export function useSpeechSynthesis(language: string = "en"): SpeechSynthesisHook
     (chunk: string) => {
       if (!isSupported || !speakingRef.current) return;
 
+      // Last-second voice check — in case voices loaded late
+      if (!voiceRef.current && voiceLoadedRef.current) {
+        const fallback = pickFemaleVoice(window.speechSynthesis.getVoices(), ttsLang);
+        if (fallback) voiceRef.current = fallback;
+      }
+
+      // Always re-pick voice right before speaking — browsers can change available voices
+      if (!voiceRef.current || isLikelyMale(voiceRef.current.name)) {
+        const fresh = pickFemaleVoice(window.speechSynthesis.getVoices(), ttsLang);
+        if (fresh) voiceRef.current = fresh;
+      }
+
       const utterance = new SpeechSynthesisUtterance(chunk);
       utterance.rate = 0.95;
-      // If we have a confirmed female voice, use normal pitch.
-      // If no female voice was found (voiceRef is null), raise pitch to sound feminine.
-      utterance.pitch = voiceRef.current ? 1.0 : 1.3;
       utterance.volume = 1.0;
-      if (voiceRef.current) utterance.voice = voiceRef.current;
+
+      if (voiceRef.current) {
+        utterance.voice = voiceRef.current;
+        utterance.lang = voiceRef.current.lang;
+        // Slightly higher pitch to guarantee feminine sound even if browser
+        // sometimes ignores voice assignment and uses system default
+        utterance.pitch = 1.1;
+      } else {
+        // No female voice at all — pitch shift to force feminine sound
+        utterance.pitch = 1.4;
+      }
+      console.log("[TTS] Speaking:", voiceRef.current?.name || "NO VOICE (pitch=1.4)", "| pitch:", utterance.pitch);
 
       utterance.onend = () => {
         clearWatchdog();
@@ -144,14 +230,34 @@ export function useSpeechSynthesis(language: string = "en"): SpeechSynthesisHook
 
       utterance.onerror = (e) => {
         clearWatchdog();
-        // 'interrupted' means cancel() was called — not a real error
         if (e.error === "interrupted" || e.error === "canceled") {
           speakingRef.current = false;
           setIsSpeaking(false);
           return;
         }
+
+        // Autoplay blocked — retry on first user click
+        if (e.error === "not-allowed") {
+          speakingRef.current = false;
+          setIsSpeaking(false);
+          console.log("[TTS] Blocked by autoplay — will retry on click");
+          const retry = () => {
+            if (pendingSpeakRef.current) {
+              const saved = pendingSpeakRef.current;
+              pendingSpeakRef.current = null;
+              setTimeout(() => {
+                speakingRef.current = true;
+                setIsSpeaking(true);
+                speakChunk(saved);
+              }, 50);
+            }
+          };
+          window.addEventListener("click", retry, { once: true });
+          window.addEventListener("keydown", retry, { once: true });
+          return;
+        }
+
         console.warn("[TTS] utterance error:", e.error);
-        // Try next chunk anyway
         const next = queueRef.current.shift();
         if (next && speakingRef.current) {
           speakChunk(next);
@@ -182,27 +288,33 @@ export function useSpeechSynthesis(language: string = "en"): SpeechSynthesisHook
     [isSupported, clearWatchdog]
   );
 
+  // Track pending text that failed due to autoplay policy
+  const pendingSpeakRef = useRef<string | null>(null);
+
   // ── Public: speak full text ───────────────────────────────────────────────
   const speak = useCallback(
     (text: string) => {
       if (!isSupported || !text.trim()) return;
 
-      // Cancel any ongoing speech
+      // Always save as pending — in case this attempt fails
+      pendingSpeakRef.current = text.trim();
+
       window.speechSynthesis.cancel();
       clearWatchdog();
       queueRef.current = [];
-      speakingRef.current = false;
-
-      const chunks = splitIntoChunks(text);
-      if (!chunks.length) return;
-
       speakingRef.current = true;
       setIsSpeaking(true);
 
-      // Load first chunk immediately, rest into queue
-      const [first, ...rest] = chunks;
-      queueRef.current = rest;
-      speakChunk(first);
+      // Wait for voice to be loaded if not yet
+      if (!voiceRef.current) {
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          const picked = pickFemaleVoice(voices, ttsLang);
+          if (picked) voiceRef.current = picked;
+        }
+      }
+
+      speakChunk(text.trim());
     },
     [isSupported, clearWatchdog, speakChunk]
   );

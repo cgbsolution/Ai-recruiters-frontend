@@ -7,15 +7,11 @@ import { Globe, MessageCircle } from "lucide-react";
 const LANGUAGES = [
   { code: "en", label: "English" },
   { code: "hi", label: "Hindi", native: "हिन्दी" },
-  { code: "ar", label: "Arabic", native: "عربى" },
-  { code: "hinglish", label: "Hinglish" },
 ];
 
 const PREVIEW_TEXTS: Record<string, string> = {
   en: "\"Tell me about a challenging project you've worked on and how you handled it.\"",
   hi: "\"मुझे किसी चुनौतीपूर्ण प्रोजेक्ट के बारे में बताएं जिस पर आपने काम किया और आपने उसे कैसे संभाला।\"",
-  ar: "\"أخبرني عن مشروع صعب عملت عليه وكيف تعاملت معه.\"",
-  hinglish: "\"Mujhe batao kisi challenging project ke baare mein jis par aapne kaam kiya aur use kaise handle kiya.\"",
 };
 
 interface Props {

@@ -15,7 +15,8 @@ import dynamic from "next/dynamic";
 import AvatarScene from "./AvatarScene";
 import TranscriptPanel from "./TranscriptPanel";
 import ViolationModal from "./ViolationModal";
-import { useSpeechRecognition } from "@/hooks/interview/useSpeechRecognition";
+import { useDeepgramSTT } from "@/hooks/interview/useDeepgramSTT";
+import { playStartRecording, playStopRecording, playSendResponse, playDelete, playEndCall } from "@/lib/sounds";
 import { useSpeechSynthesis } from "@/hooks/interview/useSpeechSynthesis";
 import { useViolationDetection } from "@/hooks/interview/useViolationDetection";
 import { useScreenCapture } from "@/hooks/interview/useScreenCapture";
@@ -145,7 +146,7 @@ export default function InterviewRoom({
   const [silenceProgress, setSilenceProgress] = useState(0);
 
   /* ── Manual voice interaction state ── */
-  type VoiceState = "idle" | "recording" | "answered";
+  type VoiceState = "idle" | "connecting" | "recording" | "answered";
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [recordingDuration, setRecordingDuration] = useState(0);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -176,7 +177,10 @@ export default function InterviewRoom({
   const processingStartRef = useRef<number | null>(null);
   const isSubmittingRef = useRef(false);
   const isAutoCompletingRef = useRef(false);
-  // Refs for values needed inside animation-frame callbacks
+  // Refs for callbacks needed inside animation-frame callbacks (avoids stale closures)
+  const handleSubmitRef = useRef<() => void>(() => {});
+  const handleSkipRef = useRef<() => void>(() => {});
+  const cancelSilenceAnimRef = useRef<() => void>(() => {});
   const messagesRef = useRef(messages);
 
   /* ── Draggable PIP ── */
@@ -186,21 +190,20 @@ export default function InterviewRoom({
   });
 
   /* ── Hooks ── */
-  const { transcript, interimTranscript, isListening, isSupported, lastFinalAt, start, stop, reset, getSnapshot } = useSpeechRecognition(interviewLanguage);
+  const { transcript, interimTranscript, isListening, isSupported, lastFinalAt, start, stop, reset, getSnapshot } = useDeepgramSTT(interviewLanguage);
   const { speak, cancel, isSpeaking } = useSpeechSynthesis(interviewLanguage);
   const { violationCount, lastViolation, shouldTerminate, disable: disableViolations, lastFaceCountRef } = useViolationDetection(sessionId, true, webcamStream, jobConfig.face_match);
   useScreenCapture(sessionId, webcamStream, !isInterviewComplete, lastFaceCountRef);
   const secondaryCam = useSecondaryCamMonitor(sessionId, !!jobConfig.secondary_cam);
 
-  /* ── Keep transcriptRef in sync — these are used by silence detection and display ── */
-  useEffect(() => {
-    transcriptRef.current = (transcript + " " + interimTranscript).trim();
-    finalTranscriptRef.current = transcript.trim();
-  }, [transcript, interimTranscript]);
-
-  /* ── Also sync on every render so refs are never more than 1 frame behind ── */
-  transcriptRef.current = (transcript + " " + interimTranscript).trim();
-  finalTranscriptRef.current = transcript.trim();
+  /* ── Keep transcriptRef in sync on every render ── */
+  // transcript from Deepgram hook already includes interim, so don't add interimTranscript again
+  transcriptRef.current = transcript.trim();
+  // finalTranscriptRef = transcript WITHOUT interim (for silence detection)
+  // When interimTranscript is set, strip it from the end of transcript to get finals-only
+  finalTranscriptRef.current = interimTranscript
+    ? transcript.replace(new RegExp(interimTranscript.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "\\s*$"), "").trim()
+    : transcript.trim();
 
   /* ── Keep capturedTranscriptRef in sync ── */
   useEffect(() => {
@@ -257,18 +260,20 @@ export default function InterviewRoom({
   /* ═══════════════════════════════════════════════════════════════ */
 
   const handleSubmit = useCallback(async () => {
-    if (phaseRef.current !== "LISTENING") return;
+    // Lock FIRST to prevent any race condition
     if (isSubmittingRef.current) return;
+    if (phaseRef.current !== "LISTENING") return;
+    isSubmittingRef.current = true;
 
     // Use capturedTranscript if already stopped, otherwise get a live snapshot from the ref
     const text = (
       capturedTranscriptRef.current ||
       getSnapshot()
     ).trim();
-    if (!text || text.length < MIN_SUBMIT_LENGTH) return;
-
-    // Lock immediately to prevent double-submit
-    isSubmittingRef.current = true;
+    if (!text || text.length < MIN_SUBMIT_LENGTH) {
+      isSubmittingRef.current = false;
+      return;
+    }
     setPhase("PROCESSING");
     processingStartRef.current = Date.now();
 
@@ -323,15 +328,30 @@ export default function InterviewRoom({
     }
   }, [stop, cancel, reset, cancelSilenceAnim, onSkipQuestion]);
 
+  // Sync callback refs — used by silence detection effect to avoid stale closures
+  handleSubmitRef.current = handleSubmit;
+  handleSkipRef.current = handleSkip;
+  cancelSilenceAnimRef.current = cancelSilenceAnim;
+
   /* ── Manual voice control handlers ── */
   const handleStartSpeaking = useCallback(() => {
     reset();
     setRecordingDuration(0);
+    setVoiceState("connecting");
     start();
-    setVoiceState("recording");
+    setTimeout(() => {
+      setVoiceState((prev) => {
+        if (prev === "connecting") {
+          playStartRecording();
+          return "recording";
+        }
+        return prev;
+      });
+    }, 800);
   }, [reset, start]);
 
   const handleStopSpeaking = useCallback(() => {
+    playStopRecording();
     const captured = stop();
     capturedTranscriptRef.current = captured;
     setCapturedTranscript(captured);
@@ -431,29 +451,29 @@ export default function InterviewRoom({
     }
 
     // Only start silence countdown when we have final (confirmed) transcript
-    const finalText = transcript.trim();
+    const finalText = finalTranscriptRef.current;
     if (!finalText || lastFinalAt === 0) {
-      cancelSilenceAnim();
+      cancelSilenceAnimRef.current();
       return;
     }
 
     // Check for immediate-action phrases on final text only
     if (isCompletionPhrase(finalText)) {
-      handleSubmit();
+      handleSubmitRef.current();
       return;
     }
     if (isSkipCommand(finalText)) {
-      handleSkip();
+      handleSkipRef.current();
       return;
     }
     if (isEndCommand(finalText)) {
-      handleSubmit();
+      handleSubmitRef.current();
       return;
     }
 
     // If there's active interim text, user is still speaking — don't start countdown
     if (interimTranscript.trim()) {
-      cancelSilenceAnim();
+      cancelSilenceAnimRef.current();
       return;
     }
 
@@ -492,7 +512,8 @@ export default function InterviewRoom({
         silenceAnimRef.current = null;
       }
     };
-  }, [transcript, interimTranscript, lastFinalAt, phase, currentQuestionIndex, showCodeEditor, stop, handleSubmit, handleSkip, cancelSilenceAnim]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transcript, interimTranscript, lastFinalAt, phase, currentQuestionIndex, showCodeEditor]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  EFFECT 4: Interview completion — cleanup only                 */
@@ -757,7 +778,8 @@ export default function InterviewRoom({
   }, []);
 
   const handleEndInterview = useCallback(() => {
-    isAutoCompletingRef.current = true; // prevent Effect 4b from double-calling
+    playEndCall();
+    isAutoCompletingRef.current = true;
     setPhase("IDLE");
     disableViolations();
     cancel();
@@ -778,8 +800,12 @@ export default function InterviewRoom({
   }, [shouldTerminate, handleEndInterview]);
 
   /* ── Draggable PIP handlers ── */
+  const pipCleanupRef = useRef<(() => void) | null>(null);
   const handlePipMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    // Clean up any previous drag listeners
+    pipCleanupRef.current?.();
+
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     pipDragRef.current = { dragging: true, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top };
 
@@ -795,13 +821,20 @@ export default function InterviewRoom({
         y: Math.max(0, Math.min(ny, cr.height - 150)),
       });
     };
-    const onUp = () => {
+    const cleanup = () => {
       pipDragRef.current.dragging = false;
       window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("mouseup", cleanup);
+      pipCleanupRef.current = null;
     };
+    pipCleanupRef.current = cleanup;
     window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("mouseup", cleanup);
+  }, []);
+
+  // Cleanup PIP drag on unmount
+  useEffect(() => {
+    return () => { pipCleanupRef.current?.(); };
   }, []);
 
   /* ── Status indicator ── */
@@ -813,6 +846,8 @@ export default function InterviewRoom({
     ? { text: "Nira is thinking…", color: "text-blue-600", dot: "bg-blue-500" }
     : phase === "SPEAKING" || isSpeaking
     ? { text: "Nira is speaking…", color: "text-purple-600", dot: "bg-purple-500" }
+    : phase === "LISTENING" && voiceState === "connecting"
+    ? { text: "Connecting microphone…", color: "text-amber-600", dot: "bg-amber-500" }
     : phase === "LISTENING" && voiceState === "recording"
     ? { text: "Listening… (click stop when done)", color: "text-green-600", dot: "bg-green-500" }
     : phase === "LISTENING" && silenceProgress > 0
@@ -850,29 +885,20 @@ export default function InterviewRoom({
   // React state (transcript/interimTranscript) updates asynchronously and can
   // briefly show stale or empty text between recognition restarts. Instead, we
   // poll getSnapshot() which reads synchronously from the hook's refs — zero lag.
-  const [liveText, setLiveText] = useState("");
-  useEffect(() => {
-    if (phase !== "LISTENING" || voiceState !== "recording") {
-      // Show capturedTranscript for answered state, or nothing
-      if (phase === "LISTENING" && voiceState === "answered" && capturedTranscript) {
-        setLiveText(capturedTranscript);
-      } else if (phase === "PROCESSING" && capturedTranscript) {
-        setLiveText(capturedTranscript);
-      } else {
-        // Clear for idle state (after delete) or non-LISTENING phase
-        setLiveText("");
-      }
-      return;
+  // liveText: combines final transcript + interim for live display
+  const liveText = (() => {
+    if (phase === "LISTENING" && voiceState === "recording") {
+      // transcript already includes interim from the STT hook
+      return transcript;
     }
-    // During recording: poll getSnapshot() every 100ms for real-time display
-    const poll = setInterval(() => {
-      const snap = getSnapshot();
-      setLiveText(snap);
-    }, 100);
-    // Also set immediately
-    setLiveText(getSnapshot());
-    return () => clearInterval(poll);
-  }, [phase, voiceState, capturedTranscript, getSnapshot]);
+    if (phase === "LISTENING" && voiceState === "answered" && capturedTranscript) {
+      return capturedTranscript;
+    }
+    if (phase === "PROCESSING" && capturedTranscript) {
+      return capturedTranscript;
+    }
+    return "";
+  })();
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  RENDER                                                        */
@@ -1065,7 +1091,7 @@ export default function InterviewRoom({
         <div className={`flex flex-col items-center justify-center transition-all duration-300 px-6 ${
           showCodeEditor ? "w-[30%]" : "w-[35%]"
         }`}>
-          <div className="relative w-full rounded-2xl overflow-hidden bg-[#eef0f8] border border-gray-200/60 shadow-sm aspect-square max-h-[280px]">
+          <div className="relative w-full rounded-2xl overflow-hidden bg-[#eef0f8] border border-gray-200/60 shadow-sm aspect-square max-h-[280px] min-h-[200px]">
             {jobConfig.virtual_avatar ? (
               <AvatarScene isSpeaking={isSpeaking} isThinking={isThinking} />
             ) : (
@@ -1228,7 +1254,7 @@ export default function InterviewRoom({
             )}
 
             {/* Voice not supported warning */}
-            {!isSupported && (
+            {typeof window !== "undefined" && !isSupported && (
               <div className="mt-2 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg shrink-0">
                 <p className="text-yellow-700 text-xs">Voice recognition not supported in this browser.</p>
               </div>
@@ -1288,6 +1314,14 @@ export default function InterviewRoom({
                   </Button>
                 )}
 
+                {/* CONNECTING: Show loader while Deepgram connects */}
+                {voiceState === "connecting" && (
+                  <div className="flex items-center gap-3 px-6 py-3 bg-gray-50 border border-gray-200 rounded-full">
+                    <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-sm text-gray-600 font-medium">Connecting microphone...</span>
+                  </div>
+                )}
+
                 {/* RECORDING: Waveform + timer + stop */}
                 {voiceState === "recording" && (
                   <div className="flex items-center gap-3 px-5 py-2.5 bg-gray-50 border border-gray-200 rounded-full">
@@ -1321,14 +1355,14 @@ export default function InterviewRoom({
                 {voiceState === "answered" && (
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={() => { reset(); capturedTranscriptRef.current = ""; setCapturedTranscript(""); setVoiceState("idle"); setIsEditingTranscript(false); setCorrectionApplied(false); }}
+                      onClick={() => { playDelete(); reset(); capturedTranscriptRef.current = ""; setCapturedTranscript(""); setVoiceState("idle"); setIsEditingTranscript(false); setCorrectionApplied(false); }}
                       className="w-10 h-10 border border-gray-300 hover:border-red-400 rounded-full flex items-center justify-center text-gray-400 hover:text-red-400 transition-colors"
                       title="Delete & Re-record"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                     <Button
-                      onClick={handleSubmit}
+                      onClick={() => { playSendResponse(); handleSubmit(); }}
                       disabled={!(capturedTranscript || transcript) || (capturedTranscript || transcript).length < 3}
                       className="bg-blue-600 hover:bg-blue-500 text-white rounded-full px-8 py-3 gap-2 font-semibold text-sm shadow-lg shadow-blue-200/50"
                     >

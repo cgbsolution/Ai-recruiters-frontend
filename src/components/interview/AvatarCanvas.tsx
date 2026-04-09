@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback, Suspense } from "react";
+import { useEffect, useRef, useCallback, Suspense, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useGLTF, Environment } from "@react-three/drei";
 import * as THREE from "three";
@@ -19,9 +19,10 @@ const VISEME_NAMES = [
 ] as const;
 
 // ── RPM Avatar Model ─────────────────────────────────────────────────────────
-function AvatarModel({ isSpeaking, isThinking }: Props) {
+function AvatarModel({ isSpeaking, isThinking, onLoaded }: Props & { onLoaded?: () => void }) {
   const { scene } = useGLTF("/models/avatar.glb");
   const meshesRef = useRef<THREE.SkinnedMesh[]>([]);
+  const loadedRef = useRef(false);
   const clockRef = useRef(0);
   const blinkTimerRef = useRef(0);
   const nextBlinkRef = useRef(2 + Math.random() * 3);
@@ -68,7 +69,12 @@ function AvatarModel({ isSpeaking, isThinking }: Props) {
       }
     });
     meshesRef.current = meshes;
-  }, [scene]);
+    // Signal that the model is loaded and ready to render
+    if (!loadedRef.current && meshes.length > 0) {
+      loadedRef.current = true;
+      onLoaded?.();
+    }
+  }, [scene, onLoaded]);
 
   // Helper: set a morph target by name across all meshes
   const setMorph = useCallback((name: string, value: number) => {
@@ -260,9 +266,29 @@ function CameraRig() {
 }
 
 // ── Main Export ──────────────────────────────────────────────────────────────
+function LoadingFallback() {
+  return (
+    <mesh>
+      <sphereGeometry args={[0.01, 1, 1]} />
+      <meshBasicMaterial transparent opacity={0} />
+    </mesh>
+  );
+}
+
 export default function AvatarCanvas({ isSpeaking, isThinking }: Props) {
+  const [loaded, setLoaded] = useState(false);
+
   return (
     <div className="relative w-full h-full overflow-hidden bg-[#eef0f8]">
+      {/* Loading spinner — shown until 3D model is ready */}
+      {!loaded && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#eef0f8]">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-10 h-10 border-3 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+            <span className="text-xs text-gray-400">Loading avatar...</span>
+          </div>
+        </div>
+      )}
       <Canvas
         shadows
         camera={{ fov: 30, near: 0.01, far: 10 }}
@@ -316,8 +342,8 @@ export default function AvatarCanvas({ isSpeaking, isThinking }: Props) {
         <Environment preset="apartment" />
 
         {/* Avatar — placed at origin, camera finds the head */}
-        <Suspense fallback={null}>
-          <AvatarModel isSpeaking={isSpeaking} isThinking={isThinking} />
+        <Suspense fallback={<LoadingFallback />}>
+          <AvatarModel isSpeaking={isSpeaking} isThinking={isThinking} onLoaded={() => setLoaded(true)} />
         </Suspense>
       </Canvas>
 
