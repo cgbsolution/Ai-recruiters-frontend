@@ -1358,7 +1358,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                   <p className="text-xs text-gray-500">Triggered by: <span className="font-medium">{email.triggered_by}</span></p>
                   <p className="text-xs text-gray-500">Triggered via: <span className="font-medium">{email.trigger_event}</span></p>
                   <p className="text-xs text-green-600">
-                    Sent At : {email.sent_at ? new Date(email.sent_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "N/A"}
+                    Sent At : {email.sent_at ? new Date(email.sent_at.endsWith("Z") ? email.sent_at : email.sent_at + "Z").toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) : "N/A"}
                   </p>
                 </div>
               ))

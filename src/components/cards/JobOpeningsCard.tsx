@@ -180,10 +180,8 @@ export const JobsOpeningsCard = () => {
 
   const handleChangeStatus = async (jobId: number, newStatus: string) => {
     try {
-      const updated = await api<Job>(`/jobs/${jobId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+      const updated = await api<Job>(`/jobs/${jobId}/status?new_status=${encodeURIComponent(newStatus)}`, {
+        method: "PATCH",
       });
       setJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: updated.status } : j)));
       notifySuccess(`Job status changed to ${newStatus}.`);
@@ -273,33 +271,33 @@ export const JobsOpeningsCard = () => {
           ))}
         </div>
       ) : (
-        <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-5 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
           {filteredJobs.length > 0 ? (
             filteredJobs.map((job) => (
               <Card
                 key={job.id}
-                className="px-2 transition-all duration-200 hover:shadow-md flex flex-col"
+                className="transition-all duration-200 hover:shadow-md flex flex-col overflow-hidden"
               >
-                <CardHeader className="pb-4 border-b">
-                  <div className="flex items-start justify-between gap-3">
+                <CardHeader className="pb-4 border-b px-5">
+                  <div className="flex items-start justify-between gap-2">
                     {/* Left: title + location */}
                     <div className="flex-1 min-w-0">
-                      <CardTitle className="text-base font-semibold leading-snug break-words">
+                      <CardTitle className="text-sm font-semibold leading-snug line-clamp-2">
                         {job.title}
                       </CardTitle>
-                      <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
-                        <MapPin className="w-4 h-4 shrink-0" />
+                      <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                        <MapPin className="w-3.5 h-3.5 shrink-0" />
                         <span className="truncate">{job.location} · {getPostedAgo(job.created_at)}</span>
                       </p>
                     </div>
-                    {/* Right: pencil on top, badge below */}
-                    <div className="flex flex-col items-end gap-1 shrink-0">
+                    {/* Right: status badge */}
+                    <div className="shrink-0">
                       {/* <PencilIcon
                         className="w-4 h-4 text-gray-400 cursor-pointer hover:text-gray-600"
                         onClick={() => handleEditJob(job.id)}
                       /> */}
                       <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
+                        className={`px-2.5 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${
                           statusColors[job.status] || "bg-gray-200 text-gray-600"
                         }`}
                       >
@@ -310,8 +308,8 @@ export const JobsOpeningsCard = () => {
                 </CardHeader>
 
                 {/* Job stats */}
-                <CardContent className="p-0 px-6 space-y-3 flex-1">
-                  <div className="flex items-center justify-between text-sm text-gray-700">
+                <CardContent className="p-0 px-5 py-1 space-y-2.5 flex-1">
+                  <div className="flex items-center justify-between text-xs text-gray-700">
                     <div className="flex items-center gap-2 min-w-0">
                       <Briefcase className="w-4 h-4 text-gray-500 shrink-0" />
                       <span className="whitespace-nowrap">Openings</span>
@@ -319,7 +317,7 @@ export const JobsOpeningsCard = () => {
                     <span className="font-medium">{job.openings ?? 50}</span>
                   </div>
 
-                  <div className="flex items-center justify-between text-sm text-gray-700">
+                  <div className="flex items-center justify-between text-xs text-gray-700">
                     <div className="flex items-center gap-2 min-w-0">
                       <ClipboardList className="w-4 h-4 text-gray-500 shrink-0" />
                       <span className="whitespace-nowrap">Full Time</span>
@@ -327,7 +325,7 @@ export const JobsOpeningsCard = () => {
                     <span className="font-medium">{job.job_type}</span>
                   </div>
 
-                  <div className="flex items-center justify-between text-sm text-gray-700">
+                  <div className="flex items-center justify-between text-xs text-gray-700">
                     <div className="flex items-center gap-2 min-w-0">
                       <Send className="w-4 h-4 text-gray-500 shrink-0" />
                       <span className="whitespace-nowrap">Application Sent</span>
@@ -335,7 +333,7 @@ export const JobsOpeningsCard = () => {
                     <span className="font-medium">{job.applications ?? 0}</span>
                   </div>
 
-                  <div className="flex items-center justify-between text-sm text-gray-700">
+                  <div className="flex items-center justify-between text-xs text-gray-700">
                     <div className="flex items-center gap-2 min-w-0">
                       <CheckCircle2 className="w-4 h-4 text-gray-500 shrink-0" />
                       <span className="whitespace-nowrap">Interview Completed</span>
@@ -343,7 +341,7 @@ export const JobsOpeningsCard = () => {
                     <span className="font-medium">{job.interviews ?? 0}</span>
                   </div>
 
-                  <div className="flex items-center justify-between text-sm text-gray-700">
+                  <div className="flex items-center justify-between text-xs text-gray-700">
                     <div className="flex items-center gap-2 min-w-0">
                       <Users className="w-4 h-4 text-gray-500 shrink-0" />
                       <span className="whitespace-nowrap">Top Candidate Identified</span>
@@ -352,11 +350,11 @@ export const JobsOpeningsCard = () => {
                   </div>
                 </CardContent>
                 {/* Footer */}
-                <CardFooter className="flex justify-between items-center pt-4 mt-auto">
+                <CardFooter className="flex items-center gap-2 pt-4 mt-auto px-5 pb-5">
                   <Button
                     size="sm"
                     variant="primary"
-                    className="flex-1 mr-1"
+                    className="flex-1"
                     onClick={() => handleViewDetails(job.id)}
                   >
                     View Candidates
@@ -364,9 +362,9 @@ export const JobsOpeningsCard = () => {
 
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon">
-                        <MoreVertical className="w-5 h-5 text-gray-600" />
-                      </Button>
+                      <div className="w-9 h-9 rounded-full border border-gray-300 hover:border-blue-400 hover:bg-blue-50 flex items-center justify-center cursor-pointer transition-all shrink-0">
+                        <MoreVertical className="w-4 h-4 text-gray-600" />
+                      </div>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => handleEditJob(job.id)}>

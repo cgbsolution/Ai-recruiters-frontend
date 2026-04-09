@@ -359,7 +359,7 @@ export function useInterviewSession(): InterviewSessionHook {
       const langParam = language ? `?language=${language}` : "";
       const data = await api<any>(`/interview/sessions/${sessionId}/start${langParam}`, {
         method: "POST",
-        timeout: 30_000,
+        timeout: 60_000,
       });
       const aiMsg: Message = { role: "ai", content: data.message, questionIndex: data.question_index, codingQuestion: data.coding_question || undefined };
       setMessages([aiMsg]);

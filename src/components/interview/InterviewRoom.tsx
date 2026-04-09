@@ -332,7 +332,6 @@ export default function InterviewRoom({
   }, [reset, start]);
 
   const handleStopSpeaking = useCallback(() => {
-    // stop() returns the complete text synchronously from refs — no stale React state
     const captured = stop();
     capturedTranscriptRef.current = captured;
     setCapturedTranscript(captured);
@@ -877,11 +876,6 @@ export default function InterviewRoom({
   /* ═══════════════════════════════════════════════════════════════ */
   /*  RENDER                                                        */
   /* ═══════════════════════════════════════════════════════════════ */
-
-  /* ── Progress percentage ── */
-  const progressPercent = jobConfig.max_questions > 0
-    ? (Math.min(completedQuestionCount, jobConfig.max_questions) / jobConfig.max_questions) * 100
-    : 0;
 
   return (
     <div className="flex flex-col h-screen bg-white overflow-hidden">

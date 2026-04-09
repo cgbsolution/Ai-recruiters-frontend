@@ -122,7 +122,7 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     useState<boolean>(false);
   const [scoringCustomText, setScoringCustomText] = useState<string>("");
   const [customQuestionsMode, setCustomQuestionsMode] = useState<
-    "mix" | "only"
+    "mix" | "only" | "ai_only"
   >("mix");
   const [customQuestions, setCustomQuestions] = useState<{text: string; category: string; difficulty: string}[]>([]);
 
@@ -657,8 +657,9 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
               difficulty: q.difficulty || "medium"
             })));
           }
+          const mqVal = (jobData.mix_of_questions || "").toLowerCase();
           setCustomQuestionsMode(
-            jobData.mix_of_questions === "ONLY" ? "only" : "mix"
+            mqVal === "only" ? "only" : mqVal === "ai_only" ? "ai_only" : "mix"
           );
 
           // Set skill groups
@@ -780,7 +781,7 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       manager_phone: manager.phone,
       manager_email: manager.email,
       evaluation_scoring: scoringLeniency,
-      mix_of_questions: customQuestionsMode === "mix" ? "MIX" : "ONLY",
+      mix_of_questions: customQuestionsMode === "mix" ? "mix" : customQuestionsMode === "ai_only" ? "ai_only" : "only",
       questions: customQuestions, // Now includes category and difficulty
       allow_to_contact: interviewSettings.allowCandidateContact,
       upload_jd: uploadJD ? uploadJD.name : "",
@@ -1431,11 +1432,17 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
                   <div className="mt-2">
                     <RadioGroup
                       value={customQuestionsMode}
-                      onValueChange={(value: "mix" | "only") =>
+                      onValueChange={(value: "mix" | "only" | "ai_only") =>
                         setCustomQuestionsMode(value)
                       }
-                      className="flex gap-4"
+                      className="flex flex-wrap gap-4"
                     >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="ai_only" id="questions-ai-only" />
+                        <Label htmlFor="questions-ai-only">
+                          Only AI questions
+                        </Label>
+                      </div>
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem value="mix" id="questions-mix" />
                         <Label htmlFor="questions-mix">
@@ -1451,8 +1458,8 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
                     </RadioGroup>
                   </div>
 
-                  {/* Custom Questions List */}
-                  <div className="mt-3 space-y-2">
+                  {/* Custom Questions List — hidden when AI-only mode */}
+                  {customQuestionsMode !== "ai_only" && <div className="mt-3 space-y-2">
                     {customQuestions.map((q, i) => (
                       <div key={i} className="flex gap-2">
                         <Input
@@ -1487,7 +1494,14 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
                         Select specific Question from Q Bank
                       </Button>
                     </div>
-                  </div>
+                  </div>}
+
+                  {/* AI-only mode hint */}
+                  {customQuestionsMode === "ai_only" && (
+                    <p className="mt-3 text-sm text-gray-500 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
+                      AI will generate all questions dynamically during the interview based on the job title, skills, and experience requirements you&apos;ve configured above.
+                    </p>
+                  )}
 
                   {/* Question Bank Section - Displayed when active */}
                   {showQuestionBank && (

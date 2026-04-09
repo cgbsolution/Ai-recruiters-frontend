@@ -35,7 +35,7 @@ export const JobsDataCard = () => {
     const fetchStats = async () => {
       setLoading(true);
       try {
-        const data = await api<any>("/jobs/stats");
+        const data = await api<any>("/jobs/stats", { timeout: 10_000 });
         setStats(data);
       } catch (err) {
         console.error("Error fetching stats:", err);

@@ -43,7 +43,8 @@ export default function HiringFunnelCharts() {
     setLoading(true);
     try {
       const res = await api<Record<string, string | number>[]>(
-        `/jobs/hiring-funnel?period=${mode}`
+        `/jobs/hiring-funnel?period=${mode}`,
+        { timeout: 10_000 }
       );
       setData(res);
     } catch {
