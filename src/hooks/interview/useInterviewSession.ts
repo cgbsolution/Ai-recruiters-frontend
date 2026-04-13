@@ -149,21 +149,41 @@ export function useInterviewSession(): InterviewSessionHook {
   messagesRef.current = messages;
 
   const loadJobConfig = useCallback(async (token: string): Promise<{ config: JobConfig } | { error: string }> => {
-    try {
-      const data = await api<JobConfig>(`/interview/${token}`);
-      setJobConfig(data);
-      return { config: data };
-    } catch (e: any) {
-      const msg = e instanceof ApiError ? e.detail : e.message;
-      setError(msg);
-      return { error: msg };
+    // Retry once on timeout/network errors — mobile networks are flaky
+    const MAX_RETRIES = 2;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        console.log(`[Interview] Loading job config (attempt ${attempt}/${MAX_RETRIES}) for token: ${token.slice(0, 8)}...`);
+        const data = await api<JobConfig>(`/interview/${token}`, { timeout: 45_000 }); // 45s for slow mobile
+        console.log("[Interview] Job config loaded successfully:", data.title);
+        setJobConfig(data);
+        return { config: data };
+      } catch (e: any) {
+        const status = e instanceof ApiError ? e.status : 0;
+        const msg = e instanceof ApiError ? e.detail : e.message;
+        console.error(`[Interview] loadJobConfig attempt ${attempt} failed:`, { status, message: msg, error: e });
+
+        // Only retry on timeout (408) or network errors (status 0) — not on 404/410/500
+        if (attempt < MAX_RETRIES && (status === 408 || status === 0)) {
+          console.log("[Interview] Retrying after network/timeout error...");
+          await new Promise((r) => setTimeout(r, 2000)); // wait 2s before retry
+          continue;
+        }
+
+        setError(msg);
+        return { error: msg };
+      }
     }
+    // Should never reach here, but satisfy TypeScript
+    return { error: "Unknown error" };
   }, []);
 
   const verifyAccess = useCallback(
     async (token: string, email: string) => {
       try {
-        const data = await apiPost<any>(`/interview/${token}/verify-access`, { email });
+        console.log(`[Interview] Verifying access for: ${email}, token: ${token.slice(0, 8)}...`);
+        const data = await apiPost<any>(`/interview/${token}/verify-access`, { email }, { timeout: 45_000 });
+        console.log("[Interview] Access result:", { access: data.access, canResume: data.can_resume, sessionId: data.session_id, message: data.message });
         if (data.session_id) setSessionId(data.session_id);
         if (data.candidate_id) setCandidateId(data.candidate_id);
         setCanResume(data.can_resume ?? false);
@@ -179,7 +199,10 @@ export function useInterviewSession(): InterviewSessionHook {
           allowJoiningEarly: data.allow_joining_early ?? undefined,
         };
       } catch (e: any) {
-        setError(e instanceof ApiError ? e.detail : e.message);
+        const status = e instanceof ApiError ? e.status : 0;
+        const msg = e instanceof ApiError ? e.detail : e.message;
+        console.error("[Interview] verifyAccess failed:", { status, message: msg, email, error: e });
+        setError(msg);
         return { access: "apply" as const, canResume: false, message: "Verification failed. Please try again." };
       }
     },

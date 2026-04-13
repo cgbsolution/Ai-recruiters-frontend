@@ -6,6 +6,8 @@ import {
   Minimize,
   Pause,
   Play,
+  RotateCcw,
+  RotateCw,
   Volume2,
   VolumeX,
 } from "lucide-react";
@@ -47,7 +49,7 @@ export default function VideoPlayer({ src }: Props) {
   const [speed, setSpeed] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [showControls, setShowControls] = useState(true);
-  const [resolving, setResolving] = useState(true); // loading state while resolving duration
+  const [resolving, setResolving] = useState(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resolvedRef = useRef(false);
 
@@ -60,6 +62,16 @@ export default function VideoPlayer({ src }: Props) {
     } else {
       video.pause();
     }
+  }, [video]);
+
+  const skipForward = useCallback(() => {
+    if (!video) return;
+    video.currentTime = Math.min(video.currentTime + 10, duration);
+  }, [video, duration]);
+
+  const skipBackward = useCallback(() => {
+    if (!video) return;
+    video.currentTime = Math.max(video.currentTime - 10, 0);
   }, [video]);
 
   const toggleMute = useCallback(() => {
@@ -100,12 +112,10 @@ export default function VideoPlayer({ src }: Props) {
     [seekTo]
   );
 
-  // Drag to seek on progress bar
   const handleSeekDragStart = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       e.preventDefault();
       seekTo(e.clientX);
-
       const onMove = (ev: MouseEvent) => seekTo(ev.clientX);
       const onUp = () => {
         document.removeEventListener("mousemove", onMove);
@@ -136,9 +146,44 @@ export default function VideoPlayer({ src }: Props) {
     }
   }, []);
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!videoRef.current) return;
+      // Don't capture if user is typing in an input
+      if ((e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "TEXTAREA") return;
+
+      switch (e.key) {
+        case " ":
+        case "k":
+          e.preventDefault();
+          togglePlay();
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          skipForward();
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          skipBackward();
+          break;
+        case "m":
+          e.preventDefault();
+          toggleMute();
+          break;
+        case "f":
+          e.preventDefault();
+          toggleFullscreen();
+          break;
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [togglePlay, skipForward, skipBackward, toggleMute, toggleFullscreen]);
+
   /**
    * Resolve WebM duration — MediaRecorder WebM files often report Infinity.
-   * Uses small incremental seek to find actual end without showing huge numbers.
+   * Seek to a huge time -> browser clamps -> read back real duration.
    */
   const resolveDuration = useCallback((v: HTMLVideoElement) => {
     if (resolvedRef.current) return;
@@ -152,65 +197,28 @@ export default function VideoPlayer({ src }: Props) {
       setResolving(false);
     };
 
-    // If duration is already finite, we're good
     if (v.duration && isFinite(v.duration) && v.duration > 0.5) {
       finishResolve(v.duration);
       return;
     }
 
-    // WebM workaround: use buffered ranges if available
-    if (v.buffered.length > 0) {
-      const bufferedEnd = v.buffered.end(v.buffered.length - 1);
-      if (bufferedEnd > 0.5) {
-        finishResolve(bufferedEnd);
-        return;
+    const onSeeked = () => {
+      v.removeEventListener("seeked", onSeeked);
+      if (v.duration && isFinite(v.duration) && v.duration > 0.5) {
+        finishResolve(v.duration);
+      } else if (v.currentTime > 0) {
+        finishResolve(v.currentTime);
+      } else {
+        resolvedRef.current = true;
+        setResolving(false);
       }
-    }
-
-    // Binary search for duration: start at 1 hour, double until we overshoot,
-    // then narrow down. Much safer than seeking to 1e10.
-    let testTime = 3600; // start at 1 hour
-    let lastValid = 0;
-    let attempts = 0;
-    const maxAttempts = 15;
-
-    const trySeek = () => {
-      if (resolvedRef.current || attempts >= maxAttempts) {
-        if (!resolvedRef.current) {
-          finishResolve(lastValid || 0);
-        }
-        return;
-      }
-      attempts++;
-
-      const onSeeked = () => {
-        v.removeEventListener("seeked", onSeeked);
-
-        // Check if duration became finite
-        if (v.duration && isFinite(v.duration) && v.duration > 0.5) {
-          finishResolve(v.duration);
-          return;
-        }
-
-        // currentTime got clamped = we overshot the end
-        if (v.currentTime < testTime * 0.9) {
-          finishResolve(v.currentTime);
-        } else {
-          lastValid = v.currentTime;
-          testTime *= 2;
-          trySeek();
-        }
-      };
-
-      v.addEventListener("seeked", onSeeked, { once: true });
-      v.currentTime = testTime;
     };
+    v.addEventListener("seeked", onSeeked, { once: true });
+    v.currentTime = 1e15;
 
-    trySeek();
-
-    // Safety timeout
     setTimeout(() => {
       if (!resolvedRef.current) {
+        v.removeEventListener("seeked", onSeeked);
         resolvedRef.current = true;
         if (v.duration && isFinite(v.duration)) {
           setDuration(v.duration);
@@ -221,22 +229,20 @@ export default function VideoPlayer({ src }: Props) {
     }, 5000);
   }, []);
 
-  // Sync state from video events
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
 
-    // Reset resolve state when src changes
     resolvedRef.current = false;
     setResolving(true);
     setDuration(0);
     setCurrentTime(0);
+    v.load();
 
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     const onTime = () => {
       setCurrentTime(v.currentTime);
-      // Also update duration if it becomes finite during playback
       if (!resolvedRef.current && v.duration && isFinite(v.duration) && v.duration > 0.5) {
         resolvedRef.current = true;
         setDuration(v.duration);
@@ -255,7 +261,6 @@ export default function VideoPlayer({ src }: Props) {
     };
     const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
 
-    // If video is already loaded (cached), resolve immediately
     if (v.readyState >= 1) {
       resolveDuration(v);
     }
@@ -277,7 +282,6 @@ export default function VideoPlayer({ src }: Props) {
     };
   }, [src, resolveDuration]);
 
-  // Auto-hide controls during playback
   const resetHideTimer = useCallback(() => {
     setShowControls(true);
     if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -293,7 +297,6 @@ export default function VideoPlayer({ src }: Props) {
     }
   }, [playing]);
 
-  // Close speed menu on outside click
   useEffect(() => {
     if (!showSpeedMenu) return;
     const close = () => setShowSpeedMenu(false);
@@ -309,15 +312,18 @@ export default function VideoPlayer({ src }: Props) {
       className="relative group rounded-lg overflow-hidden bg-black select-none"
       onMouseMove={resetHideTimer}
       onClick={(e) => {
-        // Only toggle play if clicking the video area, not controls
         if ((e.target as HTMLElement).closest("[data-controls]")) return;
-        if (resolving) return; // Don't toggle during duration resolve
+        if (resolving) return;
         togglePlay();
       }}
     >
-      <video ref={videoRef} src={src} className="w-full block" preload="metadata" />
+      <video ref={videoRef} className="w-full block" preload="auto" crossOrigin="anonymous">
+        <source src={src} type="video/webm;codecs=vp9,opus" />
+        <source src={src} type="video/webm;codecs=vp8,opus" />
+        <source src={src} type="video/webm" />
+      </video>
 
-      {/* Loading overlay while resolving duration */}
+      {/* Loading overlay */}
       {resolving && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/60">
           <div className="text-center">
@@ -339,7 +345,7 @@ export default function VideoPlayer({ src }: Props) {
       {/* Controls bar */}
       <div
         data-controls
-        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent pt-8 pb-2 px-3 transition-opacity duration-300 ${
+        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent pt-8 pb-3 px-3 transition-opacity duration-300 ${
           showControls ? "opacity-100" : "opacity-0"
         }`}
         onClick={(e) => e.stopPropagation()}
@@ -347,7 +353,7 @@ export default function VideoPlayer({ src }: Props) {
         {/* Progress bar */}
         <div
           ref={progressRef}
-          className="h-1.5 bg-white/25 rounded-full cursor-pointer mb-2 group/progress hover:h-2.5 transition-all"
+          className="h-1.5 bg-white/25 rounded-full cursor-pointer group/progress hover:h-2.5 transition-all"
           onClick={handleSeek}
           onMouseDown={handleSeekDragStart}
         >
@@ -359,15 +365,17 @@ export default function VideoPlayer({ src }: Props) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Play / Pause */}
-          <Button variant="ghost" size="icon" onClick={togglePlay} className="text-white hover:text-blue-400 transition-colors size-8">
-            {playing ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-          </Button>
+        {/* Time below progress bar */}
+        <div className="flex justify-between px-0.5 mt-1 mb-1.5">
+          <span className="text-white/70 text-[11px] tabular-nums">{fmt(currentTime)}</span>
+          <span className="text-white/70 text-[11px] tabular-nums">{fmt(duration)}</span>
+        </div>
 
+        {/* Controls row */}
+        <div className="flex items-center gap-1">
           {/* Volume */}
           <Button variant="ghost" size="icon" onClick={toggleMute} className="text-white hover:text-blue-400 transition-colors size-8">
-            {muted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+            {muted || volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
           </Button>
           <Slider
             value={[muted ? 0 : volume]}
@@ -375,7 +383,7 @@ export default function VideoPlayer({ src }: Props) {
             max={1}
             step={0.05}
             onValueChange={handleVolumeChange}
-            className="w-16 cursor-pointer"
+            className="w-14 cursor-pointer"
           >
             <SliderTrack className="h-1 bg-white/25">
               <SliderRange className="bg-blue-500" />
@@ -383,10 +391,22 @@ export default function VideoPlayer({ src }: Props) {
             <SliderThumb className="size-3 border-blue-500" />
           </Slider>
 
-          {/* Time */}
-          <span className="text-white/80 text-xs tabular-nums ml-1">
-            {fmt(currentTime)} / {fmt(duration)}
-          </span>
+          <div className="flex-1" />
+
+          {/* Skip backward 10s */}
+          <Button variant="ghost" size="icon" onClick={skipBackward} className="text-white hover:text-blue-400 transition-colors size-8" title="Back 10s">
+            <RotateCcw className="w-4 h-4" />
+          </Button>
+
+          {/* Play / Pause */}
+          <Button variant="ghost" size="icon" onClick={togglePlay} className="text-white hover:text-blue-400 transition-colors size-9">
+            {playing ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6" />}
+          </Button>
+
+          {/* Skip forward 10s */}
+          <Button variant="ghost" size="icon" onClick={skipForward} className="text-white hover:text-blue-400 transition-colors size-8" title="Forward 10s">
+            <RotateCw className="w-4 h-4" />
+          </Button>
 
           <div className="flex-1" />
 
@@ -429,7 +449,7 @@ export default function VideoPlayer({ src }: Props) {
 
           {/* Fullscreen */}
           <Button variant="ghost" size="icon" onClick={toggleFullscreen} className="text-white hover:text-blue-400 transition-colors size-8">
-            {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+            {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
           </Button>
         </div>
       </div>

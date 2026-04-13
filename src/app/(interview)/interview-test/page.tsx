@@ -7,7 +7,7 @@ import type { Message, QuestionState, JobConfig } from "@/hooks/interview/useInt
 /**
  * Test page: exact same InterviewRoom component as production.
  * URL: /interview-test
- * No backend, no session, no violations, no API calls.
+ * No backend session, no violations, no API calls (mock AI responses).
  */
 
 const MOCK_CONFIG: JobConfig = {
@@ -19,7 +19,7 @@ const MOCK_CONFIG: JobConfig = {
   experience_min: 3,
   experience_max: 5,
   max_questions: 5,
-  mode: "SCENARIO",
+  mode: "TRADITIONAL",
   virtual_avatar: true,
   webcam_required: false,
   face_match: false,
@@ -30,14 +30,14 @@ const MOCK_CONFIG: JobConfig = {
   manual_interview: false,
   special_instructions: "",
   auto_skip_timeout: 0,
-  skills: ["React", "Node.js", "TypeScript", "CSS"],
+  skills: ["React", "Node.js", "TypeScript"],
 };
 
 const AI_RESPONSES = [
-  "Great, thanks for sharing that! Now, imagine you're working on a React project and a client reports that a specific page loads very slowly on mobile. You check and find the page has 50+ components rendering on mount. Walk me through what steps you'd take to diagnose and fix the performance issue.",
-  "Good approach. Let's say you're building a REST API with Node.js and Express. A teammate pushes code that causes the API to return 500 errors intermittently — sometimes it works, sometimes it doesn't. How would you debug this? What tools would you use?",
-  "Interesting. Now imagine you're reviewing a pull request from a junior developer. The code works but has no error handling, uses var instead of const/let, and has deeply nested callbacks. How would you give feedback without discouraging them?",
-  "Nice answer. One last question — your team needs to choose between Next.js and Remix for a new project. The client needs SEO, fast page loads, and real-time features. What would you recommend and why?",
+  "Great, thanks for sharing! Now imagine you're working on a React project and a client reports the app is loading slowly on mobile. Walk me through how you'd diagnose and fix the performance issue.",
+  "Good answer. Tell me about a challenging bug you debugged recently. How did you approach it?",
+  "Interesting. How do you handle code reviews? What do you look for when reviewing a junior developer's PR?",
+  "Nice. One last question — describe your ideal development workflow and the tools you use daily.",
   "Thank you for your time! That concludes our interview. We'll be in touch soon.",
 ];
 
@@ -45,7 +45,7 @@ export default function InterviewTestPage() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "ai",
-      content: "Hi there! I'm Nira, your AI interviewer for the Senior Software Developer position. Before we begin, could you take a moment to introduce yourself? Tell me about your background and what you've been working on recently.",
+      content: "Hi there! I'm Nira, your AI interviewer for the Senior Software Developer position. Could you take a moment to introduce yourself and tell me about your background?",
       questionIndex: 0,
     },
   ]);
@@ -105,7 +105,7 @@ export default function InterviewTestPage() {
         </button>
       </div>
 
-      {/* Exact same InterviewRoom as production */}
+      {/* Real InterviewRoom — exact same as production */}
       <div className="flex-1 overflow-hidden">
         <InterviewRoom
           sessionId={0}

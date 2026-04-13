@@ -17,7 +17,7 @@ import TranscriptPanel from "./TranscriptPanel";
 import ViolationModal from "./ViolationModal";
 import { useDeepgramSTT } from "@/hooks/interview/useDeepgramSTT";
 import { playStartRecording, playStopRecording, playSendResponse, playDelete, playEndCall } from "@/lib/sounds";
-import { useSpeechSynthesis } from "@/hooks/interview/useSpeechSynthesis";
+import { useGoogleTTS } from "@/hooks/interview/useGoogleTTS";
 import { useViolationDetection } from "@/hooks/interview/useViolationDetection";
 import { useScreenCapture } from "@/hooks/interview/useScreenCapture";
 import { useSecondaryCamMonitor } from "@/hooks/interview/useSecondaryCamMonitor";
@@ -191,7 +191,7 @@ export default function InterviewRoom({
 
   /* ── Hooks ── */
   const { transcript, interimTranscript, isListening, isSupported, lastFinalAt, start, stop, reset, getSnapshot } = useDeepgramSTT(interviewLanguage);
-  const { speak, cancel, isSpeaking } = useSpeechSynthesis(interviewLanguage);
+  const { speak, cancel, isSpeaking } = useGoogleTTS(interviewLanguage);
   const { violationCount, lastViolation, shouldTerminate, disable: disableViolations, lastFaceCountRef } = useViolationDetection(sessionId, true, webcamStream, jobConfig.face_match);
   useScreenCapture(sessionId, webcamStream, !isInterviewComplete, lastFaceCountRef);
   const secondaryCam = useSecondaryCamMonitor(sessionId, !!jobConfig.secondary_cam);

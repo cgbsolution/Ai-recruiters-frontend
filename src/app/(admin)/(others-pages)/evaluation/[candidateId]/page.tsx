@@ -831,11 +831,18 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
                       <Button variant="outline" size="sm" onClick={copyRecordingUrl} className="gap-1">
                         <Copy className="w-3.5 h-3.5" /> Copy Recording URL
                       </Button>
-                      <a href={recordingHref} download target="_blank" rel="noreferrer">
-                        <Button variant="outline" size="sm" className="gap-1">
-                          <Download className="w-3.5 h-3.5" /> Download video
-                        </Button>
-                      </a>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1"
+                        onClick={() => {
+                          const recFile = recording.link?.split("/").pop() || "recording.webm";
+                          const downloadUrl = `${API_STATIC}/recordings/${recFile}/download?format=original`;
+                          window.open(downloadUrl, "_blank");
+                        }}
+                      >
+                        <Download className="w-3.5 h-3.5" /> Download video
+                      </Button>
                     </div>
                     {recording.duration && (
                       <p className="text-sm text-gray-500">Duration: {recording.duration}</p>

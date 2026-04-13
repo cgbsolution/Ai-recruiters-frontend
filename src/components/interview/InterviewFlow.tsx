@@ -136,16 +136,25 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
 
   // Load job config on mount
   useEffect(() => {
+    console.log("[Interview] Initializing interview flow", {
+      token: token.slice(0, 8) + "...",
+      candidateEmail: candidateEmail || "(none — will show verify form)",
+      userAgent: navigator.userAgent,
+      timestamp: new Date().toISOString(),
+    });
+
     session.loadJobConfig(token).then(async (result) => {
       if ("config" in result) {
         const config = result.config;
         setJobConfig(config);
+        console.log("[Interview] Job config loaded:", { title: config.title, allowMobile: config.allow_mobile, mode: config.mode });
 
         // Block mobile devices if allow_mobile is disabled
         if (!config.allow_mobile) {
           const ua = navigator.userAgent || "";
           const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
           if (isMobile) {
+            console.warn("[Interview] Mobile device blocked — allow_mobile is disabled");
             setLoadError("Please join using a desktop or laptop. Mobile devices are not supported for this interview.");
             setStep("ERROR");
             return;
@@ -156,8 +165,9 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
         if (candidateEmail && !autoVerifiedRef.current) {
           autoVerifiedRef.current = true;
           const accessResult = await session.verifyAccess(token, candidateEmail);
+          console.log("[Interview] Auto-verify result:", accessResult.access, accessResult.message);
+
           if (accessResult.access === "granted") {
-            // Store scheduling settings for enforcement
             const sInfo = {
               interviewDate: accessResult.interviewDate,
               interviewTimezone: accessResult.interviewTimezone,
@@ -166,9 +176,9 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
             };
             setSchedulingInfo(sInfo);
 
-            // Check if candidate is allowed to join now
             const blockMsg = checkJoiningAllowed(sInfo);
             if (blockMsg) {
+              console.warn("[Interview] Candidate blocked by schedule:", blockMsg);
               setLoadError(blockMsg);
               setStep("ERROR");
               return;
@@ -183,16 +193,18 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
             setStep("WELCOME");
             return;
           } else if (accessResult.access === "completed" || accessResult.access === "terminated") {
+            console.warn("[Interview] Access denied:", accessResult.access, accessResult.message);
             setLoadError(accessResult.message);
             setStep("ERROR");
             return;
           }
           // access === "apply" — fall through to verify
+          console.log("[Interview] Candidate not invited — showing verify/apply form");
         }
 
         setStep("VERIFY_EMAIL");
       } else {
-        // Show the actual API error (e.g., "This interview link has expired")
+        console.error("[Interview] Failed to load job config:", result.error);
         setLoadError(result.error);
         setStep("ERROR");
       }
@@ -361,21 +373,84 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   }
 
   if (step === "ERROR") {
-    const isExpired = loadError?.toLowerCase().includes("expired");
+    const errLower = (loadError || "").toLowerCase();
+    const isExpired = errLower.includes("expired");
+    const isNetwork = errLower.includes("failed to fetch") || errLower.includes("network error");
+    const isTimeout = errLower.includes("timed out");
+    const isTerminated = errLower.includes("terminated") || errLower.includes("contact hr");
+    const isCompleted = errLower.includes("already completed");
+    const isMobileBlocked = errLower.includes("desktop or laptop");
+    const isNotFound = errLower.includes("not found") || errLower.includes("no longer active");
+    const isScheduled = errLower.includes("scheduled for") || errLower.includes("come back");
+    const canRetry = isNetwork || isTimeout;
+
+    let icon = ":/";
+    let title = "Something Went Wrong";
+    let subtitle = loadError || "An unexpected error occurred.";
+    let hint: string | null = null;
+
+    if (isNetwork) {
+      icon = "📡";
+      title = "Connection Error";
+      subtitle = "Unable to connect to the interview server.";
+      hint = "Please check your internet connection, disable any VPN or ad-blocker, and try again. If the issue persists, try a different network (e.g. mobile hotspot).";
+    } else if (isTimeout) {
+      icon = "⏱";
+      title = "Connection Slow";
+      subtitle = "The server took too long to respond. This usually happens on slow or unstable networks.";
+      hint = "Please try again. If the problem continues, switch to a stronger Wi-Fi or mobile data connection.";
+    } else if (isExpired) {
+      icon = "⏰";
+      title = "Interview Link Expired";
+      subtitle = loadError || "This interview link is no longer valid.";
+      hint = "Please contact your recruiter to get a new interview link.";
+    } else if (isCompleted) {
+      icon = "✅";
+      title = "Interview Already Completed";
+      subtitle = loadError || "You have already completed your interview for this position.";
+      hint = "If you believe this is an error, please contact your recruiter.";
+    } else if (isTerminated) {
+      icon = "🚫";
+      title = "Interview Session Ended";
+      subtitle = loadError || "Your interview session was ended.";
+      hint = "Please contact your recruiter for next steps.";
+    } else if (isMobileBlocked) {
+      icon = "💻";
+      title = "Desktop Required";
+      subtitle = loadError || "This interview requires a desktop or laptop computer.";
+      hint = "Please open this link on a computer with a webcam and microphone.";
+    } else if (isNotFound) {
+      icon = "🔍";
+      title = "Interview Not Found";
+      subtitle = loadError || "This interview link is invalid or no longer active.";
+      hint = "Please check the link or contact your recruiter.";
+    } else if (isScheduled) {
+      icon = "📅";
+      title = "Interview Not Yet Available";
+      subtitle = loadError || "Your interview is scheduled for a later time.";
+    }
+
+    // Log full error details to console for debugging
+    console.error("[Interview] Error screen shown:", { title, error: loadError, isNetwork, isTimeout, isExpired, isCompleted, isTerminated, isNotFound });
+
     return (
       <div className="flex items-center justify-center min-h-screen px-6 text-center bg-white">
-        <div>
+        <div className="max-w-md">
           <div className="w-16 h-16 rounded-full bg-red-50 border border-red-100 flex items-center justify-center mx-auto mb-6">
-            <span className="text-2xl">:/</span>
+            <span className="text-2xl">{icon}</span>
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            {isExpired ? "Interview Link Expired" : "Interview Not Found"}
-          </h2>
-          <p className="text-gray-500 max-w-md">{loadError || "This link is invalid or has expired."}</p>
-          {isExpired && (
-            <p className="text-gray-400 text-sm mt-3 max-w-md">
-              Please contact your recruiter to get a new interview link.
-            </p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">{title}</h2>
+          <p className="text-gray-500">{subtitle}</p>
+          {hint && (
+            <p className="text-gray-400 text-sm mt-3">{hint}</p>
+          )}
+          {canRetry && (
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-5 px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-medium transition-colors"
+            >
+              Try Again
+            </button>
           )}
         </div>
       </div>
