@@ -66,7 +66,10 @@ export default function VideoPlayer({ src }: Props) {
 
   const skipForward = useCallback(() => {
     if (!video) return;
-    video.currentTime = Math.min(video.currentTime + 10, duration);
+    // Use the video element's native duration (may be Infinity for unfixed WebMs)
+    // so skip still works even before our duration resolution completes.
+    const end = (duration > 0) ? duration : (isFinite(video.duration) ? video.duration : Infinity);
+    video.currentTime = Math.min(video.currentTime + 10, end);
   }, [video, duration]);
 
   const skipBackward = useCallback(() => {
@@ -98,11 +101,14 @@ export default function VideoPlayer({ src }: Props) {
 
   const seekTo = useCallback(
     (clientX: number) => {
-      if (!videoRef.current || !progressRef.current || duration <= 0) return;
+      if (!videoRef.current || !progressRef.current) return;
+      // Use resolved duration, or fall back to the video element's native duration
+      const dur = duration > 0 ? duration : (videoRef.current.duration && isFinite(videoRef.current.duration) ? videoRef.current.duration : 0);
+      if (dur <= 0) return;
       const rect = progressRef.current.getBoundingClientRect();
       const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-      videoRef.current.currentTime = pct * duration;
-      setCurrentTime(pct * duration);
+      videoRef.current.currentTime = pct * dur;
+      setCurrentTime(pct * dur);
     },
     [duration]
   );
@@ -304,7 +310,9 @@ export default function VideoPlayer({ src }: Props) {
     return () => document.removeEventListener("click", close);
   }, [showSpeedMenu]);
 
-  const pct = duration > 0 ? (currentTime / duration) * 100 : 0;
+  // Use resolved duration; if not available yet, try the native video.duration
+  const effectiveDuration = duration > 0 ? duration : (video?.duration && isFinite(video.duration) ? video.duration : 0);
+  const pct = effectiveDuration > 0 ? (currentTime / effectiveDuration) * 100 : 0;
 
   return (
     <div
@@ -368,7 +376,7 @@ export default function VideoPlayer({ src }: Props) {
         {/* Time below progress bar */}
         <div className="flex justify-between px-0.5 mt-1 mb-1.5">
           <span className="text-white/70 text-[11px] tabular-nums">{fmt(currentTime)}</span>
-          <span className="text-white/70 text-[11px] tabular-nums">{fmt(duration)}</span>
+          <span className="text-white/70 text-[11px] tabular-nums">{fmt(effectiveDuration)}</span>
         </div>
 
         {/* Controls row */}
