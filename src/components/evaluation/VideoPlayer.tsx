@@ -50,6 +50,9 @@ export default function VideoPlayer({ src }: Props) {
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [resolving, setResolving] = useState(true);
+  // For un-remuxed WebMs where duration=Infinity and seeking fails,
+  // track the buffered range end as a fallback "known duration"
+  const [bufferedEnd, setBufferedEnd] = useState(0);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resolvedRef = useRef(false);
 
@@ -188,8 +191,14 @@ export default function VideoPlayer({ src }: Props) {
   }, [togglePlay, skipForward, skipBackward, toggleMute, toggleFullscreen]);
 
   /**
-   * Resolve WebM duration — MediaRecorder WebM files often report Infinity.
-   * Seek to a huge time -> browser clamps -> read back real duration.
+   * Resolve WebM duration.
+   *
+   * Strategy (in order):
+   * 1. If video.duration is already finite → use it (normal files, remuxed WebMs)
+   * 2. Seek to 1e15 → browser clamps to real end → read currentTime (works on some browsers)
+   * 3. If seek trick also fails → just dismiss the loading overlay and let the
+   *    bufferedEnd fallback handle progress display as the video plays.
+   *    The progress bar and time won't be perfect, but the video IS playable.
    */
   const resolveDuration = useCallback((v: HTMLVideoElement) => {
     if (resolvedRef.current) return;
@@ -197,42 +206,49 @@ export default function VideoPlayer({ src }: Props) {
     const finishResolve = (dur: number) => {
       if (resolvedRef.current) return;
       resolvedRef.current = true;
-      setDuration(dur);
-      v.currentTime = 0;
-      setCurrentTime(0);
+      if (dur > 0) {
+        setDuration(dur);
+        v.currentTime = 0;
+        setCurrentTime(0);
+      }
       setResolving(false);
     };
 
+    // 1. Already finite
     if (v.duration && isFinite(v.duration) && v.duration > 0.5) {
       finishResolve(v.duration);
       return;
     }
 
+    // 2. Try the seek trick
     const onSeeked = () => {
       v.removeEventListener("seeked", onSeeked);
       if (v.duration && isFinite(v.duration) && v.duration > 0.5) {
         finishResolve(v.duration);
-      } else if (v.currentTime > 0) {
+      } else if (v.currentTime > 0.5) {
         finishResolve(v.currentTime);
       } else {
-        resolvedRef.current = true;
-        setResolving(false);
+        // Seek trick failed — un-remuxed WebM without seek index.
+        // Dismiss loading overlay; bufferedEnd will be used for progress.
+        console.warn("[VideoPlayer] Duration could not be resolved — using buffered range as fallback. Remux the WebM to fix.");
+        finishResolve(0);
       }
     };
     v.addEventListener("seeked", onSeeked, { once: true });
     v.currentTime = 1e15;
 
+    // Safety timeout — don't leave loading overlay forever
     setTimeout(() => {
       if (!resolvedRef.current) {
         v.removeEventListener("seeked", onSeeked);
-        resolvedRef.current = true;
+        console.warn("[VideoPlayer] Duration resolve timed out — dismissing loading overlay");
         if (v.duration && isFinite(v.duration)) {
-          setDuration(v.duration);
+          finishResolve(v.duration);
+        } else {
+          finishResolve(0);
         }
-        v.currentTime = 0;
-        setResolving(false);
       }
-    }, 5000);
+    }, 3000); // 3s max — don't block the UI
   }, []);
 
   useEffect(() => {
@@ -249,6 +265,13 @@ export default function VideoPlayer({ src }: Props) {
     const onPause = () => setPlaying(false);
     const onTime = () => {
       setCurrentTime(v.currentTime);
+      // Track the buffered end — for un-remuxed WebMs this grows as the
+      // video loads, giving us a usable "known duration" even when
+      // video.duration is Infinity
+      if (v.buffered.length > 0) {
+        const end = v.buffered.end(v.buffered.length - 1);
+        setBufferedEnd((prev) => Math.max(prev, end));
+      }
       if (!resolvedRef.current && v.duration && isFinite(v.duration) && v.duration > 0.5) {
         resolvedRef.current = true;
         setDuration(v.duration);
@@ -310,9 +333,15 @@ export default function VideoPlayer({ src }: Props) {
     return () => document.removeEventListener("click", close);
   }, [showSpeedMenu]);
 
-  // Use resolved duration; if not available yet, try the native video.duration
-  const effectiveDuration = duration > 0 ? duration : (video?.duration && isFinite(video.duration) ? video.duration : 0);
-  const pct = effectiveDuration > 0 ? (currentTime / effectiveDuration) * 100 : 0;
+  // Priority: resolved duration > native finite duration > buffered end (for broken WebMs)
+  const effectiveDuration = duration > 0
+    ? duration
+    : (video?.duration && isFinite(video.duration) && video.duration > 0.5)
+      ? video.duration
+      : bufferedEnd > 0
+        ? bufferedEnd
+        : 0;
+  const pct = effectiveDuration > 0 ? Math.min((currentTime / effectiveDuration) * 100, 100) : 0;
 
   return (
     <div
