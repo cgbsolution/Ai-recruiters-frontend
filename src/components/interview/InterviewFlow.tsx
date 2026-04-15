@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useInterviewSession, type JobConfig } from "@/hooks/interview/useInterviewSession";
 import { useVideoRecording } from "@/hooks/interview/useVideoRecording";
+import { useOrphanRecordingRecovery } from "@/hooks/interview/useOrphanRecordingRecovery";
+import { updateMeta as updateRecordingMeta } from "@/lib/recordingStorage";
 
 import WelcomeStep from "./steps/WelcomeStep";
 import EmailVerifyStep from "./steps/EmailVerifyStep";
@@ -76,7 +78,19 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   } | null>(null);
 
   const session = useInterviewSession();
-  const { startRecording, stopRecording } = useVideoRecording();
+  const { startRecording, stopRecording, getRecordingId } = useVideoRecording();
+  // Re-upload any recordings that survived a previous crashed / closed session.
+  useOrphanRecordingRecovery();
+
+  // As soon as we know BOTH a recordingId (recording started) and a sessionId
+  // (backend session created), link them in IndexedDB. This ensures that if
+  // the tab / browser / device dies mid-interview, orphan recovery on the
+  // next load has enough info to upload the partial recording.
+  useEffect(() => {
+    const rid = getRecordingId();
+    if (!rid || !session.sessionId) return;
+    void updateRecordingMeta(rid, { sessionId: session.sessionId });
+  }, [session.sessionId, getRecordingId]);
   const isCompletingRef = useRef(false);
   const isResumingRef = useRef(false);
   const autoVerifiedRef = useRef(false);
@@ -343,9 +357,24 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     // The uploadRecording function handles its own beforeunload protection
     // so users are warned if they try to close during upload.
     if (recording && session.sessionId) {
-      console.log(`[InterviewFlow] Starting recording upload — blob size: ${(recording.blob.size / (1024 * 1024)).toFixed(1)} MB`);
-      await session.uploadRecording(recording.blob, session.sessionId, recording.duration);
-      console.log("[InterviewFlow] Recording upload completed");
+      console.log(
+        `[InterviewFlow] Starting recording upload — blob size: ${(recording.blob.size / (1024 * 1024)).toFixed(1)} MB, recordingId=${recording.recordingId}`,
+      );
+      const ok = await session.uploadRecording(
+        recording.blob,
+        session.sessionId,
+        recording.duration,
+        recording.recordingId,
+      );
+      if (ok) {
+        console.log("[InterviewFlow] Recording upload completed and confirmed");
+      } else {
+        // Chunks remain in IndexedDB — orphan-recovery will re-attempt on any
+        // future app load until the server confirms a save.
+        console.warn(
+          "[InterviewFlow] Upload could not be confirmed this session. Recording is safe in IndexedDB and will auto-resume next time the candidate opens the app.",
+        );
+      }
     } else {
       console.warn("[InterviewFlow] No recording to upload:", {
         hasRecording: !!recording,

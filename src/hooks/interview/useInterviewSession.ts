@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { api, apiPost, apiUpload, ApiError, API_BASE } from "@/lib/api";
+import { api, apiPost, apiUpload, ApiError } from "@/lib/api";
+import {
+  updateMeta as updateRecordingMeta,
+  deleteRecording as deleteStoredRecording,
+  assembleBlob as assembleStoredRecording,
+} from "@/lib/recordingStorage";
 
 export interface CodingQuestion {
   title: string;
@@ -119,7 +124,12 @@ interface InterviewSessionHook {
   sendMessage: (text: string) => Promise<boolean>;
   skipQuestion: () => Promise<boolean>;
   completeInterview: (earlyTermination?: boolean, terminationReason?: string) => Promise<void>;
-  uploadRecording: (blob: Blob, sessionId: number, duration: string) => Promise<void>;
+  uploadRecording: (
+    blob: Blob,
+    sessionId: number,
+    duration: string,
+    recordingId?: string,
+  ) => Promise<boolean>;
   loadMeetingSlots: () => Promise<MeetingSlot[]>;
   scheduleMeeting: (slotId: number) => Promise<boolean>;
 }
@@ -556,64 +566,96 @@ export function useInterviewSession(): InterviewSessionHook {
   }, [sessionId, _pollForEvaluation]);
 
   const uploadRecording = useCallback(
-    async (blob: Blob, sid: number, duration: string): Promise<void> => {
-      const MAX_RETRIES = 3;
+    async (
+      blob: Blob,
+      sid: number,
+      duration: string,
+      recordingId?: string,
+    ): Promise<boolean> => {
+      // Much higher retry ceiling — the server-side save is idempotent per
+      // session id, so repeating is safe. We never give up silently; we keep
+      // chunks in IndexedDB (via recordingId) so recovery can continue later.
+      const MAX_ATTEMPTS = 6;
       const blobSizeMB = (blob.size / (1024 * 1024)).toFixed(1);
-      console.log(`[uploadRecording] Starting upload for session ${sid} — ${blobSizeMB} MB, duration: ${duration}`);
+      console.log(
+        `[uploadRecording] Starting upload for session ${sid} — ${blobSizeMB} MB, duration: ${duration}, recordingId=${recordingId ?? "(none)"}`,
+      );
+
+      if (recordingId) {
+        await updateRecordingMeta(recordingId, { sessionId: sid, duration });
+      }
+
+      // Refuse to confirm success for an empty blob — the server might accept
+      // zero bytes but that's a silent data loss. Surface it.
+      if (!blob || blob.size === 0) {
+        console.error(`[uploadRecording] Blob is empty for session ${sid}. Refusing to upload.`);
+        return false;
+      }
 
       // Prevent accidental tab close during upload
       const preventClose = (e: BeforeUnloadEvent) => {
         e.preventDefault();
-        e.returnValue = "Your interview recording is still uploading. Leaving now may lose your recording.";
+        e.returnValue =
+          "Your interview recording is still uploading. Leaving now may lose your recording.";
       };
       window.addEventListener("beforeunload", preventClose);
 
       try {
-        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+          // On retries after the first failure, prefer re-assembling from
+          // IndexedDB — the in-memory blob reference may have been garbage
+          // collected if we're inside a recovery flow.
+          let body = blob;
+          if (attempt > 0 && recordingId) {
+            const reassembled = await assembleStoredRecording(recordingId);
+            if (reassembled && reassembled.size > 0) body = reassembled;
+          }
+
           try {
-            console.log(`[uploadRecording] Attempt ${attempt + 1}/${MAX_RETRIES} for session ${sid}`);
+            console.log(
+              `[uploadRecording] Attempt ${attempt + 1}/${MAX_ATTEMPTS} for session ${sid}`,
+            );
             const form = new FormData();
-            form.append("file", blob, `interview_${sid}.webm`);
+            form.append("file", body, `interview_${sid}.webm`);
             form.append("duration", duration);
+            if (recordingId) form.append("recording_id", recordingId);
             await apiUpload(`/interview/sessions/${sid}/upload-recording`, form, {
               timeout: 3600_000, // 1 hour — recordings can be very large
             });
-            console.log(`[uploadRecording] SUCCESS for session ${sid} on attempt ${attempt + 1}`);
-            return; // success
-          } catch (err: any) {
-            const errMsg = err instanceof ApiError
-              ? `HTTP ${err.status}: ${err.detail}`
-              : (err?.message || "Unknown error");
-            console.error(`[uploadRecording] Attempt ${attempt + 1} FAILED for session ${sid}: ${errMsg}`);
-
-            if (attempt < MAX_RETRIES - 1) {
-              const delay = 3000 * (attempt + 1);
+            console.log(
+              `[uploadRecording] SUCCESS for session ${sid} on attempt ${attempt + 1}`,
+            );
+            if (recordingId) {
+              await updateRecordingMeta(recordingId, { uploaded: true });
+              // Only purge local chunks once the server has confirmed a save.
+              await deleteStoredRecording(recordingId);
+            }
+            return true;
+          } catch (err: unknown) {
+            const errMsg =
+              err instanceof ApiError
+                ? `HTTP ${err.status}: ${err.detail}`
+                : (err as Error)?.message || "Unknown error";
+            console.error(
+              `[uploadRecording] Attempt ${attempt + 1} FAILED for session ${sid}: ${errMsg}`,
+            );
+            if (attempt < MAX_ATTEMPTS - 1) {
+              // Exponential backoff capped at 60s: 3s, 6s, 12s, 24s, 48s.
+              const delay = Math.min(3000 * Math.pow(2, attempt), 60_000);
               console.log(`[uploadRecording] Retrying in ${delay}ms...`);
               await new Promise((r) => setTimeout(r, delay));
-            } else {
-              console.error(`[uploadRecording] ALL ${MAX_RETRIES} retries exhausted for session ${sid}. Blob size: ${blobSizeMB} MB`);
-
-              // Last resort: use fetch with keepalive flag — this survives tab close
-              // for payloads up to ~64KB (browser limit). For larger blobs, try a
-              // regular fetch that may complete if the page stays open briefly.
-              try {
-                console.log("[uploadRecording] Attempting keepalive fetch fallback...");
-                const form = new FormData();
-                form.append("file", blob, `interview_${sid}.webm`);
-                form.append("duration", duration);
-                const keepAlive = blob.size < 60000;
-                await fetch(`${API_BASE}/interview/sessions/${sid}/upload-recording`, {
-                  method: "POST",
-                  body: form,
-                  keepalive: keepAlive,
-                });
-                console.log("[uploadRecording] Keepalive fallback succeeded");
-              } catch (fallbackErr: any) {
-                console.error("[uploadRecording] Keepalive fallback ALSO failed:", fallbackErr?.message || fallbackErr);
-              }
             }
           }
         }
+
+        // All retries failed. The chunks are still safe in IndexedDB; the
+        // orphan-recovery hook will re-attempt on the next app load.
+        console.error(
+          `[uploadRecording] All ${MAX_ATTEMPTS} attempts failed for session ${sid}. ` +
+            `Recording preserved in IndexedDB under recordingId=${recordingId ?? "(none)"} — ` +
+            `will auto-retry on next app load.`,
+        );
+        return false;
       } finally {
         window.removeEventListener("beforeunload", preventClose);
       }

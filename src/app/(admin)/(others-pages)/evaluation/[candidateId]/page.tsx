@@ -88,6 +88,32 @@ interface SkillRating {
   evaluation: string;
 }
 
+interface CodingTestResult {
+  test_index: number;
+  description: string;
+  input: string;
+  expected_output: string;
+  actual_output: string;
+  passed: boolean;
+  stderr?: string;
+  error?: string | null;
+}
+
+interface CodingSubmission {
+  id: number;
+  question_index: number | null;
+  title: string | null;
+  description: string | null;
+  difficulty: string | null;
+  language: string;
+  code: string;
+  test_cases_total: number;
+  test_cases_passed: number;
+  test_results: CodingTestResult[];
+  execution_time_ms: number | null;
+  submitted_at: string | null;
+}
+
 interface EvaluationData {
   candidate: {
     id: number;
@@ -138,6 +164,7 @@ interface EvaluationData {
     communication_score: number | null;
     problem_solving_score: number | null;
     confidence_score: number | null;
+    coding_score: number | null;
     overall_score: number | null;
     per_question_evaluations: PerQuestionEval[];
     skills_ratings: SkillRating[];
@@ -225,6 +252,7 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
   const router = useRouter();
   const { candidateId } = React.use(params);
   const [data, setData] = useState<EvaluationData | null>(null);
+  const [codingSubmissions, setCodingSubmissions] = useState<CodingSubmission[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("evaluation");
@@ -238,7 +266,21 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
     (async () => {
       setLoading(true);
       try {
-        setData(await api<EvaluationData>(`/candidates/${candidateId}/evaluation`));
+        const evalData = await api<EvaluationData>(`/candidates/${candidateId}/evaluation`);
+        setData(evalData);
+        // Fetch coding submissions if a session exists. Failure is non-fatal —
+        // an interview without coding will simply hide the tab.
+        if (evalData.session?.id) {
+          try {
+            const sub = await api<{ submissions: CodingSubmission[]; count: number }>(
+              `/interview/sessions/${evalData.session.id}/coding-submissions`,
+            );
+            setCodingSubmissions(sub.submissions || []);
+          } catch (subErr) {
+            console.warn("[evaluation] coding submissions fetch failed:", subErr);
+            setCodingSubmissions([]);
+          }
+        }
       } catch (err: any) {
         setError(err.message);
       } finally {
@@ -571,6 +613,9 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
               { value: "evaluation", label: "Evaluation" },
               { value: "recording", label: "Recording" },
               { value: "transcript", label: "Interview Transcript" },
+              ...(codingSubmissions.length > 0
+                ? [{ value: "coding", label: `Coding (${codingSubmissions.length})` }]
+                : []),
               { value: "face-detection", label: "Face Detection Frames" },
             ].map((tab) => (
               <TabsTrigger
@@ -940,6 +985,14 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
           </Card>
         </TabsContent>
 
+        {/* ═══════════════════════ TAB: CODING ═════════════════════════════ */}
+        <TabsContent value="coding" className="mt-6">
+          <CodingTab
+            submissions={codingSubmissions}
+            codingScore={data?.evaluation?.coding_score ?? null}
+          />
+        </TabsContent>
+
         {/* ═══════════════════════ TAB: FACE DETECTION ═════════════════════ */}
         <TabsContent value="face-detection" className="mt-6">
           <FaceDetectionTab screenshots={screenshots} timezone={tz} />
@@ -1080,5 +1133,247 @@ function FaceDetectionTab({ screenshots, timezone }: { screenshots: { file_path:
         </Tabs>
       </CardContent>
     </Card>
+  );
+}
+
+// ── Coding Tab ──────────────────────────────────────────────────────────────
+
+function CodingTab({
+  submissions,
+  codingScore,
+}: {
+  submissions: CodingSubmission[];
+  codingScore: number | null;
+}) {
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  if (submissions.length === 0) {
+    return (
+      <Card className="border border-gray-200 shadow-sm">
+        <CardContent className="p-10 text-center text-gray-400">
+          <FileText className="w-12 h-12 mx-auto mb-3 opacity-40" />
+          <p className="text-base font-medium">No coding submissions</p>
+          <p className="text-sm mt-1">
+            The candidate did not submit any code during this interview.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const totalPassed = submissions.reduce((s, x) => s + x.test_cases_passed, 0);
+  const totalTests = submissions.reduce((s, x) => s + x.test_cases_total, 0);
+  const overallPct = totalTests > 0 ? Math.round((totalPassed / totalTests) * 100) : 0;
+  const current = submissions[activeIdx] ?? submissions[0];
+
+  return (
+    <div className="space-y-6">
+      {/* Summary header */}
+      <Card className="border border-gray-200 shadow-sm">
+        <CardContent className="p-5">
+          <div className="flex flex-wrap items-center gap-6">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold">
+                Coding Score
+              </p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">
+                {codingScore != null ? `${Math.round(codingScore)}%` : "—"}
+              </p>
+            </div>
+            <div className="h-10 w-px bg-gray-200" />
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold">
+                Submissions
+              </p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">{submissions.length}</p>
+            </div>
+            <div className="h-10 w-px bg-gray-200" />
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold">
+                Tests Passed
+              </p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">
+                {totalPassed}/{totalTests}{" "}
+                <span className="text-base text-gray-500">({overallPct}%)</span>
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Submission picker */}
+      {submissions.length > 1 && (
+        <div className="flex flex-wrap gap-2">
+          {submissions.map((s, i) => {
+            const passed = s.test_cases_total > 0
+              ? Math.round((s.test_cases_passed / s.test_cases_total) * 100)
+              : 0;
+            const isActive = i === activeIdx;
+            return (
+              <button
+                key={s.id}
+                onClick={() => setActiveIdx(i)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                  isActive
+                    ? "bg-brand-500 text-white border-brand-500"
+                    : "bg-white text-gray-700 border-gray-200 hover:border-gray-300"
+                }`}
+              >
+                #{i + 1} · {s.title || s.language} · {passed}%
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Current submission detail */}
+      <Card className="border border-gray-200 shadow-sm">
+        <CardContent className="p-6 space-y-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">
+                {current.title || "Coding Challenge"}
+              </h3>
+              <div className="flex flex-wrap items-center gap-2 mt-2">
+                <Badge variant="secondary" className="text-xs">
+                  {current.language}
+                </Badge>
+                {current.difficulty && (
+                  <Badge
+                    variant="secondary"
+                    className={`text-xs ${
+                      current.difficulty === "easy"
+                        ? "bg-green-100 text-green-700"
+                        : current.difficulty === "hard"
+                        ? "bg-red-100 text-red-700"
+                        : "bg-yellow-100 text-yellow-700"
+                    }`}
+                  >
+                    {current.difficulty}
+                  </Badge>
+                )}
+                <Badge
+                  variant="secondary"
+                  className={`text-xs ${
+                    current.test_cases_passed === current.test_cases_total
+                      ? "bg-green-100 text-green-700"
+                      : current.test_cases_passed > 0
+                      ? "bg-yellow-100 text-yellow-700"
+                      : "bg-red-100 text-red-700"
+                  }`}
+                >
+                  {current.test_cases_passed}/{current.test_cases_total} tests passed
+                </Badge>
+                {current.execution_time_ms != null && (
+                  <Badge variant="secondary" className="text-xs">
+                    <Clock className="w-3 h-3 mr-1" />
+                    {current.execution_time_ms} ms
+                  </Badge>
+                )}
+                {current.submitted_at && (
+                  <span className="text-xs text-gray-500">
+                    Submitted {new Date(current.submitted_at).toLocaleString()}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {current.description && (
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold mb-2">
+                Problem
+              </p>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                {current.description}
+              </p>
+            </div>
+          )}
+
+          <div>
+            <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold mb-2">
+              Candidate&apos;s Code
+            </p>
+            <pre className="text-xs bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto leading-relaxed">
+              <code>{current.code}</code>
+            </pre>
+          </div>
+
+          {current.test_results.length > 0 && (
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold mb-2">
+                Test Results
+              </p>
+              <div className="space-y-2">
+                {current.test_results.map((tr, i) => (
+                  <div
+                    key={i}
+                    className={`rounded-lg border p-3 ${
+                      tr.passed
+                        ? "bg-green-50 border-green-200"
+                        : "bg-red-50 border-red-200"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        {tr.passed ? (
+                          <CheckCircle className="w-4 h-4 text-green-600" />
+                        ) : (
+                          <XCircle className="w-4 h-4 text-red-600" />
+                        )}
+                        <span className="text-sm font-medium text-gray-800">
+                          Test {i + 1}
+                          {tr.description ? ` — ${tr.description}` : ""}
+                        </span>
+                      </div>
+                      <Badge
+                        variant="secondary"
+                        className={`text-xs ${
+                          tr.passed
+                            ? "bg-green-100 text-green-700"
+                            : "bg-red-100 text-red-700"
+                        }`}
+                      >
+                        {tr.passed ? "Passed" : "Failed"}
+                      </Badge>
+                    </div>
+                    {!tr.passed && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 text-xs">
+                        <div>
+                          <p className="text-gray-500 font-semibold mb-1">Input</p>
+                          <pre className="bg-white border border-gray-200 rounded p-2 overflow-x-auto">
+                            {tr.input || "(empty)"}
+                          </pre>
+                        </div>
+                        <div>
+                          <p className="text-gray-500 font-semibold mb-1">Expected</p>
+                          <pre className="bg-white border border-gray-200 rounded p-2 overflow-x-auto">
+                            {tr.expected_output || "(empty)"}
+                          </pre>
+                        </div>
+                        <div>
+                          <p className="text-gray-500 font-semibold mb-1">Got</p>
+                          <pre className="bg-white border border-gray-200 rounded p-2 overflow-x-auto">
+                            {tr.actual_output || "(empty)"}
+                          </pre>
+                        </div>
+                      </div>
+                    )}
+                    {tr.stderr && (
+                      <div className="mt-2 text-xs">
+                        <p className="text-gray-500 font-semibold mb-1">Stderr</p>
+                        <pre className="bg-white border border-red-200 rounded p-2 overflow-x-auto text-red-700">
+                          {tr.stderr}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

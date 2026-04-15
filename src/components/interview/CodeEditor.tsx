@@ -49,15 +49,51 @@ interface CodeEditorProps {
 
 // ── Language Config ──────────────────────────────────────────────────────────
 
+// Mirrors the backend Piston runtime list. Monaco fallback to "plaintext"
+// for languages without first-class syntax support in monaco-editor.
 const LANGUAGES = [
   { id: "python", label: "Python", monacoId: "python" },
+  { id: "python2", label: "Python 2", monacoId: "python" },
   { id: "javascript", label: "JavaScript", monacoId: "javascript" },
   { id: "typescript", label: "TypeScript", monacoId: "typescript" },
   { id: "java", label: "Java", monacoId: "java" },
+  { id: "kotlin", label: "Kotlin", monacoId: "kotlin" },
+  { id: "scala", label: "Scala", monacoId: "scala" },
+  { id: "groovy", label: "Groovy", monacoId: "plaintext" },
   { id: "cpp", label: "C++", monacoId: "cpp" },
   { id: "c", label: "C", monacoId: "c" },
-  { id: "go", label: "Go", monacoId: "go" },
   { id: "csharp", label: "C#", monacoId: "csharp" },
+  { id: "fsharp", label: "F#", monacoId: "fsharp" },
+  { id: "vbnet", label: "VB.NET", monacoId: "vb" },
+  { id: "go", label: "Go", monacoId: "go" },
+  { id: "rust", label: "Rust", monacoId: "rust" },
+  { id: "ruby", label: "Ruby", monacoId: "ruby" },
+  { id: "php", label: "PHP", monacoId: "php" },
+  { id: "swift", label: "Swift", monacoId: "swift" },
+  { id: "dart", label: "Dart", monacoId: "dart" },
+  { id: "perl", label: "Perl", monacoId: "perl" },
+  { id: "lua", label: "Lua", monacoId: "lua" },
+  { id: "bash", label: "Bash", monacoId: "shell" },
+  { id: "powershell", label: "PowerShell", monacoId: "powershell" },
+  { id: "r", label: "R", monacoId: "r" },
+  { id: "julia", label: "Julia", monacoId: "julia" },
+  { id: "haskell", label: "Haskell", monacoId: "plaintext" },
+  { id: "elixir", label: "Elixir", monacoId: "elixir" },
+  { id: "erlang", label: "Erlang", monacoId: "plaintext" },
+  { id: "ocaml", label: "OCaml", monacoId: "plaintext" },
+  { id: "clojure", label: "Clojure", monacoId: "clojure" },
+  { id: "pascal", label: "Pascal", monacoId: "pascal" },
+  { id: "fortran", label: "Fortran", monacoId: "plaintext" },
+  { id: "cobol", label: "COBOL", monacoId: "plaintext" },
+  { id: "nim", label: "Nim", monacoId: "plaintext" },
+  { id: "crystal", label: "Crystal", monacoId: "plaintext" },
+  { id: "zig", label: "Zig", monacoId: "plaintext" },
+  { id: "v", label: "V", monacoId: "plaintext" },
+  { id: "d", label: "D", monacoId: "plaintext" },
+  { id: "racket", label: "Racket", monacoId: "scheme" },
+  { id: "lisp", label: "Common Lisp", monacoId: "plaintext" },
+  { id: "prolog", label: "Prolog", monacoId: "plaintext" },
+  { id: "sqlite3", label: "SQLite", monacoId: "sql" },
 ];
 
 const DIFFICULTY_COLORS = {
@@ -145,9 +181,29 @@ export default function CodeEditor({
         }
       );
       const data = await resp.json();
-      setTestResults(data);
+      // Guard: server may return `{detail: "..."}` on error. Only accept a
+      // well-formed RunResult so we don't crash the UI on HTTP 4xx/5xx.
+      if (!resp.ok || !data || !Array.isArray(data.results)) {
+        const detail =
+          typeof data?.detail === "string" ? data.detail : `HTTP ${resp.status}`;
+        console.error("Run failed:", detail, data);
+        setTestResults({
+          total: question.test_cases?.length || 0,
+          passed: 0,
+          failed: question.test_cases?.length || 0,
+          results: [],
+        });
+      } else {
+        setTestResults(data);
+      }
     } catch (err) {
       console.error("Run failed:", err);
+      setTestResults({
+        total: question.test_cases?.length || 0,
+        passed: 0,
+        failed: question.test_cases?.length || 0,
+        results: [],
+      });
     } finally {
       setRunning(false);
     }
@@ -158,7 +214,10 @@ export default function CodeEditor({
     setSubmitting(true);
 
     try {
-      // Run tests first
+      // 1. Run tests so the candidate sees results AND we have something to
+      //    persist. We time the round trip so the recruiter dashboard can show
+      //    how long the submission took to evaluate.
+      const startedAt = performance.now();
       const resp = await fetch(
         `${apiBase}/interview/sessions/${sessionId}/run-code`,
         {
@@ -171,18 +230,56 @@ export default function CodeEditor({
           }),
         }
       );
-      const finalResult: RunResult = await resp.json();
+      const rawFinal = await resp.json();
+      const executionMs = Math.round(performance.now() - startedAt);
+      // Same defensive guard as handleRun — never hand a malformed object to
+      // the results panel, it crashes .map().
+      const finalResult: RunResult =
+        resp.ok && rawFinal && Array.isArray(rawFinal.results)
+          ? rawFinal
+          : {
+              total: question.test_cases?.length || 0,
+              passed: 0,
+              failed: question.test_cases?.length || 0,
+              results: [],
+            };
       setTestResults(finalResult);
       setActiveTab("results");
 
-      // Submit to interview
+      // 2. Persist a structured submission row. This is what powers the
+      //    Coding tab on the recruiter's evaluation page. Failure here MUST
+      //    NOT block the AI conversation from continuing — log and move on.
+      try {
+        await fetch(
+          `${apiBase}/interview/sessions/${sessionId}/save-coding-submission`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              language,
+              code,
+              title: question.title,
+              description: question.description,
+              difficulty: question.difficulty,
+              question_index: undefined,
+              execution_time_ms: executionMs,
+              test_result: finalResult,
+            }),
+          },
+        );
+      } catch (saveErr) {
+        console.warn("[CodeEditor] save-coding-submission failed:", saveErr);
+      }
+
+      // 3. Hand off to the existing message flow so the AI can react to the
+      //    submission verbally — unchanged from before.
       onSubmit(code, language, finalResult);
     } catch (err) {
       console.error("Submit failed:", err);
     } finally {
       setSubmitting(false);
     }
-  }, [code, language, sessionId, apiBase, question.test_cases, submitting, onSubmit]);
+  }, [code, language, sessionId, apiBase, question, submitting, onSubmit]);
 
   const handleReset = () => {
     setCode("");
@@ -239,7 +336,7 @@ export default function CodeEditor({
               <ChevronDown className="w-3 h-3" />
             </Button>
             {showLangDropdown && (
-              <div className="absolute right-0 top-8 bg-[#2d2d2d] border border-gray-600 rounded-lg shadow-xl z-50 py-1 min-w-[140px]">
+              <div className="absolute right-0 top-8 bg-[#2d2d2d] border border-gray-600 rounded-lg shadow-xl z-50 py-1 min-w-[160px] max-h-[60vh] overflow-y-auto">
                 {LANGUAGES.map((lang) => (
                   <Button
                     key={lang.id}
@@ -361,6 +458,31 @@ export default function CodeEditor({
                   </p>
                 ) : (
                   <>
+                    {/* Sandbox failure banner — shown when every test has an
+                         `error` field (i.e. Piston itself rejected the run
+                         rather than the candidate's code being wrong). */}
+                    {(() => {
+                      const rs = testResults.results ?? [];
+                      const allErrored =
+                        rs.length > 0 && rs.every((x) => x.error);
+                      if (!allErrored) return null;
+                      const firstErr = rs[0].error || "Code execution service error";
+                      return (
+                        <div className="rounded-lg p-3 bg-amber-900/30 border border-amber-700/50 text-amber-200 text-xs">
+                          <p className="font-semibold mb-1">
+                            ⚠️ Code sandbox is unreachable
+                          </p>
+                          <p className="leading-relaxed break-words">
+                            {firstErr}
+                          </p>
+                          <p className="mt-2 text-amber-300/70">
+                            This is a temporary sandbox issue, not a problem
+                            with your code. Please try Run again in a moment.
+                          </p>
+                        </div>
+                      );
+                    })()}
+
                     {/* Summary */}
                     <div
                       className={`text-center py-3 rounded-lg text-sm font-medium ${
@@ -374,8 +496,8 @@ export default function CodeEditor({
                         : `${testResults.passed}/${testResults.total} test cases passed`}
                     </div>
 
-                    {/* Individual results */}
-                    {testResults.results.map((r) => (
+                    {/* Individual results — guard against malformed server responses */}
+                    {(testResults.results ?? []).map((r) => (
                       <div
                         key={r.test_index}
                         className={`rounded-lg p-3 text-xs border ${
