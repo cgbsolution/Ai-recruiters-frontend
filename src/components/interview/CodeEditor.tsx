@@ -116,6 +116,14 @@ export default function CodeEditor({
   const [running, setRunning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [testResults, setTestResults] = useState<RunResult | null>(null);
+  // Plain stdout/stderr from "Run Code" (free run, no test-case comparison).
+  // Cleared when the user hits Submit (which switches the panel back to test-case mode).
+  const [runOutput, setRunOutput] = useState<{
+    stdout: string;
+    stderr: string;
+    exit_code: number;
+    error: string | null;
+  } | null>(null);
   const [showLangDropdown, setShowLangDropdown] = useState(false);
   const [activeTab, setActiveTab] = useState<"problem" | "results">("problem");
   const [isExpanded, setIsExpanded] = useState(false);
@@ -166,6 +174,10 @@ export default function CodeEditor({
     if (!code.trim() || running) return;
     setRunning(true);
     setActiveTab("results");
+    // Switch the Results panel into "console" mode — clear any prior test
+    // results so the user only sees the raw stdout from this run.
+    setTestResults(null);
+    setRunOutput(null);
 
     try {
       const resp = await fetch(
@@ -173,45 +185,39 @@ export default function CodeEditor({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            language,
-            code,
-            test_cases: question.test_cases,
-          }),
+          // No test_cases → backend just executes the code once and returns
+          // the raw stdout/stderr in `output`. Matches a normal REPL run.
+          body: JSON.stringify({ language, code }),
         }
       );
       const data = await resp.json();
-      // Guard: server may return `{detail: "..."}` on error. Only accept a
-      // well-formed RunResult so we don't crash the UI on HTTP 4xx/5xx.
-      if (!resp.ok || !data || !Array.isArray(data.results)) {
+      if (!resp.ok || !data) {
         const detail =
           typeof data?.detail === "string" ? data.detail : `HTTP ${resp.status}`;
-        console.error("Run failed:", detail, data);
-        setTestResults({
-          total: question.test_cases?.length || 0,
-          passed: 0,
-          failed: question.test_cases?.length || 0,
-          results: [],
-        });
+        setRunOutput({ stdout: "", stderr: detail, exit_code: -1, error: detail });
       } else {
-        setTestResults(data);
+        const out = data.output || {};
+        setRunOutput({
+          stdout: out.stdout ?? "",
+          stderr: out.stderr ?? "",
+          exit_code: typeof out.exit_code === "number" ? out.exit_code : 0,
+          error: out.error ?? null,
+        });
       }
     } catch (err) {
-      console.error("Run failed:", err);
-      setTestResults({
-        total: question.test_cases?.length || 0,
-        passed: 0,
-        failed: question.test_cases?.length || 0,
-        results: [],
-      });
+      const msg = err instanceof Error ? err.message : String(err);
+      setRunOutput({ stdout: "", stderr: msg, exit_code: -1, error: msg });
     } finally {
       setRunning(false);
     }
-  }, [code, language, sessionId, apiBase, question.test_cases, running]);
+  }, [code, language, sessionId, apiBase, running]);
 
   const handleSubmit = useCallback(async () => {
     if (!code.trim() || submitting) return;
     setSubmitting(true);
+    // Submit switches the Results panel from "console" mode back to
+    // test-case mode — clear any prior free-run output.
+    setRunOutput(null);
 
     try {
       // 1. Run tests so the candidate sees results AND we have something to
@@ -452,9 +458,39 @@ export default function CodeEditor({
               </div>
             ) : (
               <div className="space-y-2">
-                {!testResults ? (
+                {runOutput ? (
+                  // ── Console output (from "Run Code" — free run, no tests) ──
+                  <div className="space-y-2">
+                    {runOutput.error && (
+                      <div className="rounded-lg p-3 bg-amber-900/30 border border-amber-700/50 text-amber-200 text-xs">
+                        <p className="font-semibold mb-1">Sandbox error</p>
+                        <p className="leading-relaxed break-words">{runOutput.error}</p>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between text-[11px] text-gray-400">
+                      <span>Console output</span>
+                      <span className={runOutput.exit_code === 0 ? "text-green-400" : "text-red-400"}>
+                        exit {runOutput.exit_code}
+                      </span>
+                    </div>
+                    <pre className="rounded-lg p-3 bg-black/60 border border-gray-800 text-xs text-gray-100 font-mono whitespace-pre-wrap break-words min-h-[80px] max-h-[300px] overflow-auto">
+                      {runOutput.stdout || (runOutput.stderr ? "" : "(no output)")}
+                    </pre>
+                    {runOutput.stderr && (
+                      <>
+                        <div className="text-[11px] text-red-400">Stderr</div>
+                        <pre className="rounded-lg p-3 bg-red-950/40 border border-red-900/60 text-xs text-red-200 font-mono whitespace-pre-wrap break-words max-h-[200px] overflow-auto">
+                          {runOutput.stderr}
+                        </pre>
+                      </>
+                    )}
+                    <p className="text-[11px] text-gray-500 pt-1">
+                      Tip: hit <span className="text-gray-300">Submit Solution</span> to evaluate against the test cases.
+                    </p>
+                  </div>
+                ) : !testResults ? (
                   <p className="text-xs text-gray-500 text-center py-8">
-                    Run your code to see test results
+                    Run your code to see the output, or Submit to evaluate against test cases.
                   </p>
                 ) : (
                   <>
@@ -483,6 +519,38 @@ export default function CodeEditor({
                       );
                     })()}
 
+                    {/* Runtime error banner — when the candidate's program
+                         crashed identically for every test (same stderr), we
+                         show ONE clean error line at the top instead of
+                         repeating the full Node/Python stack trace under each
+                         failing test card. */}
+                    {(() => {
+                      const rs = testResults.results ?? [];
+                      const failed = rs.filter((x) => !x.passed && x.stderr);
+                      if (failed.length === 0 || failed.length !== rs.length) return null;
+                      const firstStderr = failed[0].stderr;
+                      const allSame = failed.every((x) => x.stderr === firstStderr);
+                      if (!allSame) return null;
+                      const cleanLine =
+                        firstStderr
+                          .split("\n")
+                          .map((l) => l.trim())
+                          .find((l) => /Error:|error:/i.test(l)) ||
+                        firstStderr.split("\n").find((l) => l.trim()) ||
+                        firstStderr;
+                      return (
+                        <div className="rounded-lg p-3 bg-red-900/20 border border-red-800/50 text-red-200 text-xs">
+                          <p className="font-semibold mb-1">Runtime error</p>
+                          <p className="leading-relaxed break-words font-mono">
+                            {cleanLine.slice(0, 240)}
+                          </p>
+                          <p className="mt-2 text-red-300/70">
+                            Your program failed before producing output on every test. Fix this error, then run again.
+                          </p>
+                        </div>
+                      );
+                    })()}
+
                     {/* Summary */}
                     <div
                       className={`text-center py-3 rounded-lg text-sm font-medium ${
@@ -496,8 +564,16 @@ export default function CodeEditor({
                         : `${testResults.passed}/${testResults.total} test cases passed`}
                     </div>
 
-                    {/* Individual results — guard against malformed server responses */}
-                    {(testResults.results ?? []).map((r) => (
+                    {/* If the universal-crash banner above fired, skip per-test
+                         stderr dumps so each card stays Expected / Got only. */}
+                    {(testResults.results ?? []).map((r) => {
+                      const rs = testResults.results ?? [];
+                      const failed = rs.filter((x) => !x.passed && x.stderr);
+                      const hideStderr =
+                        failed.length > 0 &&
+                        failed.length === rs.length &&
+                        failed.every((x) => x.stderr === failed[0].stderr);
+                      return (
                       <div
                         key={r.test_index}
                         className={`rounded-lg p-3 text-xs border ${
@@ -528,7 +604,7 @@ export default function CodeEditor({
                                 {r.actual_output || "(empty)"}
                               </span>
                             </div>
-                            {r.stderr && (
+                            {r.stderr && !hideStderr && (
                               <div className="mt-1 text-red-400/70 break-all">
                                 {r.stderr.slice(0, 200)}
                               </div>
@@ -536,7 +612,8 @@ export default function CodeEditor({
                           </div>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </>
                 )}
               </div>

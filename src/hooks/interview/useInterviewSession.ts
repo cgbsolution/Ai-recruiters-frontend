@@ -511,17 +511,30 @@ export function useInterviewSession(): InterviewSessionHook {
 
   const _pollForEvaluation = useCallback(async (sid: number) => {
     setEvaluationStatus("processing");
-    const MAX_POLLS = 150; // 150 × 4s = 10 minutes
+    const MAX_POLLS = 100; // 100 × 4s = ~6.7 minutes — matches backend TOTAL_TIMEOUT
     for (let i = 0; i < MAX_POLLS; i++) {
       await new Promise((r) => setTimeout(r, 4000));
       try {
-        const evalData = await api<EvaluationResult>(`/interview/sessions/${sid}/evaluation`);
-        setEvaluation(evalData);
-        setEvaluationStatus("completed");
-        setIsAiThinking(false);
-        return;
+        // Cheap status probe — never 404s, so the browser console stays clean
+        // and we find out about backend failure within one poll cycle.
+        const status = await api<{ state: string; error?: string | null }>(
+          `/interview/sessions/${sid}/evaluation-status`,
+        );
+        if (status.state === "done") {
+          const evalData = await api<EvaluationResult>(`/interview/sessions/${sid}/evaluation`);
+          setEvaluation(evalData);
+          setEvaluationStatus("completed");
+          setIsAiThinking(false);
+          return;
+        }
+        if (status.state === "failed") {
+          setEvaluationStatus("failed");
+          setIsAiThinking(false);
+          return;
+        }
+        // "processing" or "idle" — keep polling
       } catch {
-        // 404 = not ready yet, keep polling
+        // Network blip — try again next tick
       }
     }
     // Timed out — evaluation still not available

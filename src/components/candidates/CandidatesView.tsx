@@ -294,15 +294,21 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
     } catch { return false; }
   });
 
+  // Also refresh while any candidate is scheduled / mid-interview so the row
+  // flips to "Completed" without the recruiter having to reload the page.
+  const hasInFlightInterview = candidates.some(
+    (c) => !TERMINAL_STATUSES.has(c.interview_status) && c.interview_status !== "New",
+  );
+
   useEffect(() => {
-    if (!hasSmartScoring || !jobId) return;
+    if ((!hasSmartScoring && !hasInFlightInterview) || !jobId) return;
 
     const interval = setInterval(() => {
       fetchCandidates();
     }, 15000);
 
     return () => clearInterval(interval);
-  }, [hasSmartScoring, jobId, fetchCandidates]);
+  }, [hasSmartScoring, hasInFlightInterview, jobId, fetchCandidates]);
 
   // ── Tab change handler ────────────────────────────────────────────────────
   const handleTabChange = useCallback((tab: string) => {

@@ -200,11 +200,9 @@ function AvatarModel({ isSpeaking, isThinking, onLoaded }: Props & { onLoaded?: 
         head.rotation.x = base.x + Math.sin(t * 1.5) * 0.02 + Math.sin(t * 3.1) * 0.01;
         head.rotation.y = base.y + Math.sin(t * 0.8) * 0.025 + Math.sin(t * 2.2) * 0.01;
         head.rotation.z = base.z + Math.sin(t * 1.1) * 0.008;
-      } else if (isThinking) {
-        head.rotation.x = base.x + Math.sin(t * 0.5) * 0.015 - 0.02;
-        head.rotation.y = base.y + Math.sin(t * 0.3) * 0.02;
-        head.rotation.z = base.z + Math.sin(t * 0.4) * 0.01 + 0.015;
       } else {
+        // Always face the camera directly (no chin-down/head-tilt offset),
+        // even while "thinking" — micro-motion only, so she keeps eye contact.
         head.rotation.x = base.x + Math.sin(t * 0.4) * 0.008 + Math.sin(t * 0.9) * 0.004;
         head.rotation.y = base.y + Math.sin(t * 0.3) * 0.01 + Math.sin(t * 0.7) * 0.005;
         head.rotation.z = base.z + Math.sin(t * 0.35) * 0.005;

@@ -6,7 +6,12 @@ import { API_BASE } from "@/lib/api";
 interface SpeechSynthesisHook {
   speak: (text: string) => void;
   cancel: () => void;
+  /** True from the moment speak() is called until audio ends. Drives the
+   *  interview state machine (gates SPEAKING → LISTENING). */
   isSpeaking: boolean;
+  /** True only while audio is actually playing through the speakers. Drives
+   *  the avatar visemes so lip-sync matches the voice. */
+  isLipSyncing: boolean;
   isSupported: boolean;
 }
 
@@ -17,6 +22,7 @@ interface SpeechSynthesisHook {
  */
 export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isLipSyncing, setIsLipSyncing] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const speakingRef = useRef(false);
   const langRef = useRef(language);
@@ -35,6 +41,34 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
       audioRef.current = null;
     }
     setIsSpeaking(false);
+    setIsLipSyncing(false);
+  }, []);
+
+  const fetchTTS = useCallback(async (text: string): Promise<string> => {
+    // Retry Google TTS up to 3 times with backoff before giving up.
+    // We never fall back to browser speechSynthesis — that swaps the voice
+    // mid-interview, which candidates have flagged. Better to silently retry
+    // and stay on the same Indian female voice every time.
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(`${API_BASE}/interview/tts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: text.trim(), language: langRef.current }),
+        });
+        if (!res.ok) throw new Error(`TTS API error: ${res.status}`);
+        const data = await res.json();
+        if (!data.audio) throw new Error("No audio in response");
+        return data.audio as string;
+      } catch (err) {
+        lastErr = err;
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+        }
+      }
+    }
+    throw lastErr ?? new Error("TTS failed");
   }, []);
 
   const speak = useCallback(
@@ -43,34 +77,37 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
 
       cancel();
       speakingRef.current = true;
+      // isSpeaking goes true immediately so the interview state machine
+      // (which gates SPEAKING → LISTENING on isSpeaking) doesn't transition
+      // away during the fetch/decode window.
       setIsSpeaking(true);
 
       try {
-        const res = await fetch(`${API_BASE}/interview/tts`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: text.trim(), language: langRef.current }),
-        });
-
-        if (!res.ok) throw new Error(`TTS API error: ${res.status}`);
-
-        const data = await res.json();
-        if (!data.audio) throw new Error("No audio in response");
+        const audioB64 = await fetchTTS(text);
         if (!speakingRef.current) return;
 
-        const audio = new Audio(`data:audio/mp3;base64,${data.audio}`);
+        const audio = new Audio(`data:audio/mp3;base64,${audioB64}`);
         audio.volume = 1.0;
         audioRef.current = audio;
+
+        // isLipSyncing flips only when audio actually plays — keeps the
+        // avatar's mouth in sync with the voice, regardless of network/decode
+        // latency.
+        audio.onplaying = () => {
+          if (speakingRef.current) setIsLipSyncing(true);
+        };
 
         audio.onended = () => {
           speakingRef.current = false;
           setIsSpeaking(false);
+          setIsLipSyncing(false);
           audioRef.current = null;
         };
 
         audio.onerror = () => {
           speakingRef.current = false;
           setIsSpeaking(false);
+          setIsLipSyncing(false);
           audioRef.current = null;
         };
 
@@ -82,30 +119,20 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
             pendingTextRef.current = text;
             speakingRef.current = false;
             setIsSpeaking(false);
+            setIsLipSyncing(false);
             audioRef.current = null;
           } else {
             throw err;
           }
         }
       } catch (err) {
-        console.error("[GoogleTTS] Failed:", err);
+        console.error("[GoogleTTS] Failed after retries:", err);
         speakingRef.current = false;
         setIsSpeaking(false);
-        // Fallback to browser TTS if Google fails
-        try {
-          if ("speechSynthesis" in window) {
-            const utt = new SpeechSynthesisUtterance(text);
-            utt.rate = 0.95;
-            utt.pitch = 1.1;
-            window.speechSynthesis.speak(utt);
-            setIsSpeaking(true);
-            utt.onend = () => setIsSpeaking(false);
-            utt.onerror = () => setIsSpeaking(false);
-          }
-        } catch {}
+        setIsLipSyncing(false);
       }
     },
-    [isSupported, cancel]
+    [isSupported, cancel, fetchTTS]
   );
 
   // Unlock autoplay on first user interaction — retry pending speech
@@ -136,5 +163,5 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
     return () => { cancel(); };
   }, [cancel]);
 
-  return { speak, cancel, isSpeaking, isSupported };
+  return { speak, cancel, isSpeaking, isLipSyncing, isSupported };
 }
