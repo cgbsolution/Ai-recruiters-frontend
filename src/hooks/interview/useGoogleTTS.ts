@@ -12,6 +12,10 @@ interface SpeechSynthesisHook {
   /** True only while audio is actually playing through the speakers. Drives
    *  the avatar visemes so lip-sync matches the voice. */
   isLipSyncing: boolean;
+  /** Currently playing TTS audio element. Exposed so a visualizer can wrap
+   *  it in a Web Audio AnalyserNode for real-time amplitude data. Null
+   *  whenever nothing is playing. */
+  audioElement: HTMLAudioElement | null;
   isSupported: boolean;
 }
 
@@ -23,6 +27,7 @@ interface SpeechSynthesisHook {
 export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLipSyncing, setIsLipSyncing] = useState(false);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const speakingRef = useRef(false);
   const langRef = useRef(language);
@@ -40,6 +45,7 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
       } catch {}
       audioRef.current = null;
     }
+    setAudioElement(null);
     setIsSpeaking(false);
     setIsLipSyncing(false);
   }, []);
@@ -88,7 +94,12 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
 
         const audio = new Audio(`data:audio/mp3;base64,${audioB64}`);
         audio.volume = 1.0;
+        // crossOrigin needed so MediaElementAudioSourceNode can read the
+        // audio data (data: URIs are fine, but setting this keeps us safe
+        // if the source ever changes to an HTTP URL).
+        audio.crossOrigin = "anonymous";
         audioRef.current = audio;
+        setAudioElement(audio);
 
         // isLipSyncing flips only when audio actually plays — keeps the
         // avatar's mouth in sync with the voice, regardless of network/decode
@@ -102,6 +113,7 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
           setIsSpeaking(false);
           setIsLipSyncing(false);
           audioRef.current = null;
+          setAudioElement(null);
         };
 
         audio.onerror = () => {
@@ -109,6 +121,7 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
           setIsSpeaking(false);
           setIsLipSyncing(false);
           audioRef.current = null;
+          setAudioElement(null);
         };
 
         try {
@@ -121,6 +134,7 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
             setIsSpeaking(false);
             setIsLipSyncing(false);
             audioRef.current = null;
+            setAudioElement(null);
           } else {
             throw err;
           }
@@ -130,6 +144,7 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
         speakingRef.current = false;
         setIsSpeaking(false);
         setIsLipSyncing(false);
+        setAudioElement(null);
       }
     },
     [isSupported, cancel, fetchTTS]
@@ -163,5 +178,5 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
     return () => { cancel(); };
   }, [cancel]);
 
-  return { speak, cancel, isSpeaking, isLipSyncing, isSupported };
+  return { speak, cancel, isSpeaking, isLipSyncing, audioElement, isSupported };
 }

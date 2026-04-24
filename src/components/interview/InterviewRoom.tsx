@@ -13,6 +13,7 @@ import {
 import { PhoneOff, Mic, MicOff, GripVertical, SkipForward, Monitor, Square, Send, Trash2, Pencil, Check, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import AvatarScene from "./AvatarScene";
+import VoiceVisualizer, { type VoiceMode } from "./VoiceVisualizer";
 import TranscriptPanel from "./TranscriptPanel";
 import ViolationModal from "./ViolationModal";
 import { useDeepgramSTT } from "@/hooks/interview/useDeepgramSTT";
@@ -190,8 +191,8 @@ export default function InterviewRoom({
   });
 
   /* ── Hooks ── */
-  const { transcript, interimTranscript, isListening, isSupported, lastFinalAt, start, stop, reset, getSnapshot } = useDeepgramSTT(interviewLanguage);
-  const { speak, cancel, isSpeaking, isLipSyncing } = useGoogleTTS(interviewLanguage);
+  const { transcript, interimTranscript, isListening, isSupported, lastFinalAt, micStream, start, stop, reset, getSnapshot } = useDeepgramSTT(interviewLanguage);
+  const { speak, cancel, isSpeaking, isLipSyncing, audioElement } = useGoogleTTS(interviewLanguage);
   const { violationCount, lastViolation, shouldTerminate, disable: disableViolations, lastFaceCountRef } = useViolationDetection(sessionId, true, webcamStream, jobConfig.face_match);
   useScreenCapture(sessionId, webcamStream, !isInterviewComplete, lastFaceCountRef);
   const secondaryCam = useSecondaryCamMonitor(sessionId, !!jobConfig.secondary_cam);
@@ -1094,6 +1095,20 @@ export default function InterviewRoom({
           <div className="relative w-full rounded-2xl overflow-hidden bg-[#eef0f8] border border-gray-200/60 shadow-sm aspect-square max-h-[280px] min-h-[200px]">
             {jobConfig.virtual_avatar ? (
               <AvatarScene isSpeaking={isLipSyncing} isThinking={isThinking} />
+            ) : jobConfig.manual_interview ? (
+              <VoiceVisualizer
+                mode={
+                  (isThinking || phase === "PROCESSING"
+                    ? "processing"
+                    : phase === "SPEAKING" || isSpeaking
+                      ? "speaking"
+                      : phase === "LISTENING" && isListening
+                        ? "listening"
+                        : "idle") as VoiceMode
+                }
+                micStream={micStream}
+                ttsAudio={audioElement}
+              />
             ) : (
               <div className="flex items-center justify-center h-full">
                 <div className="w-24 h-24 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-3xl">

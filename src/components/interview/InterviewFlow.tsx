@@ -634,23 +634,9 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
       );
 
     case "INTERVIEW":
-      if (jobConfig.manual_interview) {
-        return (
-          <div className="flex flex-col items-center justify-center min-h-screen px-6 text-center bg-white">
-            <div className="w-16 h-16 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center mb-6">
-              <span className="text-3xl">📹</span>
-            </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-3">Manual Interview</h2>
-            <p className="text-gray-500 max-w-md mb-6">
-              This interview will be conducted by a human recruiter via video call.
-              A meeting link has been sent to your email. Please check your inbox and join the meeting at the scheduled time.
-            </p>
-            <p className="text-gray-400 text-sm">
-              If you haven&apos;t received the link, please contact the recruiter directly.
-            </p>
-          </div>
-        );
-      }
+      // manual_interview no longer shortcuts to a "human recruiter will call
+      // you" screen — it runs the same AI interview flow as the avatar path,
+      // but InterviewRoom renders a VoiceVisualizer in place of the 3D avatar.
       return session.sessionId ? (
         <InterviewRoom
           sessionId={session.sessionId}

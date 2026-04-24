@@ -175,7 +175,14 @@ function formatSchedule(date: string | null, tz: string | null): string | null {
     IST: "Asia/Kolkata",
   };
   const ianaZone = tz ? tzMap[tz] || tz : undefined;
-  const formatted = new Date(date).toLocaleString("en-US", {
+  // Backend stores interview_date as NAIVE UTC (TIMESTAMP WITHOUT TIME ZONE)
+  // and FastAPI serializes it without a trailing "Z". Browsers interpret an
+  // ISO string without an offset as *local* time, which shifts the displayed
+  // moment by the local↔UTC offset. Force UTC interpretation here so the
+  // dashboard matches the email + the time the recruiter actually picked.
+  const hasTzSuffix = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(date);
+  const utcIso = hasTzSuffix ? date : date + "Z";
+  const formatted = new Date(utcIso).toLocaleString("en-US", {
     weekday: "short",
     year: "numeric",
     month: "short",
@@ -271,15 +278,27 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
     } catch {}
   }, [jobId]);
 
-  const fetchCandidates = useCallback(async () => {
-    setLoading(true);
+  const fetchCandidates = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true;
+    if (!silent) setLoading(true);
     try {
       // Always fetch all candidates for this job; filtering is done client-side
       const params = new URLSearchParams({ job_id: String(jobId) });
       const data = await api<Candidate[]>(`/candidates/?${params}`);
-      setCandidates(data);
+      // Background polls write a fresh array every 15s even when nothing
+      // meaningful changed, which forces a full re-render of the table and
+      // any downstream memoization. Short-circuit when the payload is
+      // byte-equal to what we already have.
+      setCandidates((prev) => {
+        if (silent && prev.length === data.length) {
+          try {
+            if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
+          } catch {}
+        }
+        return data;
+      });
     } catch {}
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   }, [jobId]);
 
   useEffect(() => { fetchJob(); }, [fetchJob]);
@@ -303,8 +322,11 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
   useEffect(() => {
     if ((!hasSmartScoring && !hasInFlightInterview) || !jobId) return;
 
+    // Poll silently — never toggle the page-wide `loading` spinner for a
+    // background refresh. The old behaviour caused the table to flash into
+    // a loading state every 15s, which read as "refreshing continuously".
     const interval = setInterval(() => {
-      fetchCandidates();
+      fetchCandidates({ silent: true });
     }, 15000);
 
     return () => clearInterval(interval);

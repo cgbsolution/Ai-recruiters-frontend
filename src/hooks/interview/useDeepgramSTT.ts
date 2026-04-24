@@ -9,6 +9,10 @@ interface DeepgramSTTHook {
   isListening: boolean;
   isSupported: boolean;
   lastFinalAt: number;
+  /** Currently active microphone stream. Exposed so a visualizer can wrap
+   *  it in a MediaStreamAudioSourceNode for real-time amplitude data. Null
+   *  when the mic is not active. */
+  micStream: MediaStream | null;
   start: () => void;
   stop: () => string;
   reset: () => void;
@@ -31,6 +35,7 @@ export function useDeepgramSTT(language: string = "en"): DeepgramSTTHook {
   const [interimTranscript, setInterimTranscript] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [lastFinalAt, setLastFinalAt] = useState(0);
+  const [micStream, setMicStream] = useState<MediaStream | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -61,6 +66,7 @@ export function useDeepgramSTT(language: string = "en"): DeepgramSTTHook {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
+    setMicStream(null);
   }, []);
 
   const start = useCallback(async () => {
@@ -81,6 +87,7 @@ export function useDeepgramSTT(language: string = "en"): DeepgramSTTHook {
         audio: { echoCancellation: true, noiseSuppression: true }
       });
       streamRef.current = stream;
+      setMicStream(stream);
     } catch {
       console.error("[Deepgram] Microphone denied");
       activeRef.current = false;
@@ -218,5 +225,5 @@ export function useDeepgramSTT(language: string = "en"): DeepgramSTTHook {
     return () => { activeRef.current = false; cleanup(); };
   }, [cleanup]);
 
-  return { transcript, interimTranscript, isListening, isSupported, lastFinalAt, start, stop, reset, getSnapshot };
+  return { transcript, interimTranscript, isListening, isSupported, lastFinalAt, micStream, start, stop, reset, getSnapshot };
 }
