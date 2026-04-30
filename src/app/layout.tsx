@@ -6,7 +6,9 @@ import { SidebarProvider } from "@/components/ui/context/SidebarContext";
 import { ThemeProvider } from "@/components/ui/context/ThemeContext";
 import { AuthProvider } from "@/context/AuthContext";
 import { ModalProvider } from "@/context/ModalContext";
+import { AIAssistantProvider } from "@/context/AIAssistantContext";
 import { GlobalCreateOpeningModal } from "@/components/modals/GlobalCreateOpeningModal";
+import { AIAssistantDrawer } from "@/components/ai-assistant/AIAssistantDrawer";
 import { Toaster } from "sonner";
 
 
@@ -31,9 +33,12 @@ export default function RootLayout({
           <ThemeProvider>
             <SidebarProvider>
               <ModalProvider>
-                {children}
-                <Toaster richColors closeButton position="top-right" />
-                <GlobalCreateOpeningModal />
+                <AIAssistantProvider>
+                  {children}
+                  <Toaster richColors closeButton position="top-right" />
+                  <GlobalCreateOpeningModal />
+                  <AIAssistantDrawer />
+                </AIAssistantProvider>
               </ModalProvider>
             </SidebarProvider>
           </ThemeProvider>

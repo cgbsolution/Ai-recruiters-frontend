@@ -20,34 +20,37 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   AlertTriangle,
-  ArrowLeft,
   Bot,
-  Calendar,
   CheckCircle,
   ChevronDown,
   Clock,
   Copy,
   Download,
-  ExternalLink,
   Eye,
+  ExternalLink,
   FileText,
   ImageIcon,
   Mail,
   MessageSquare,
-  Mic,
   Monitor,
   Phone,
   Shield,
   Star,
-  ThumbsDown,
-  ThumbsUp,
   TrendingUp,
   User,
   UserCheck,
   Users,
   Video,
   XCircle,
+  Briefcase,
+  Calendar,
+  CalendarClock,
+  CalendarCheck,
+  Sparkles,
+  ThumbsUp,
+  Clipboard,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import VideoPlayer from "@/components/evaluation/VideoPlayer";
 import { api, API_BASE } from "@/lib/api";
 import { notifySuccess, notifyError } from "@/lib/notify";
@@ -525,126 +528,274 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
   const cheatingDisplay = cheatingScore != null
     ? `${Math.round((100 - cheatingScore) / 10)} / 10` : null;
 
+  // ── Derived values for stat cards ────────────────────────────────────────
+  const fitPct = (() => {
+    const r = data.fit_score.reasoning;
+    const raw = r?.fit_percentage ?? r?.percentage;
+    if (typeof raw === "number" && raw > 0) return Math.round(raw);
+    return null;
+  })();
+  const fitTagline =
+    fitPct === null
+      ? "No fit data"
+      : fitPct >= 70
+      ? "Strong match"
+      : fitPct >= 40
+      ? "Partial match"
+      : "Weak match";
+
+  const trustOutOfTen = scores.trust != null ? (scores.trust / 10).toFixed(1) : null;
+  const trustTagline =
+    scores.trust == null
+      ? "Not scored"
+      : scores.trust >= 70
+      ? "High trust"
+      : scores.trust >= 40
+      ? "Moderate trust"
+      : "Low trust";
+
+  const aiRoundPct = scores.overall != null ? Math.round(scores.overall) : null;
+  const aiRoundTagline =
+    aiRoundPct === null
+      ? "Pending"
+      : aiRoundPct >= 70
+      ? "Strong performance"
+      : aiRoundPct >= 40
+      ? "Fair performance"
+      : "Weak performance";
+
+  const cleanCheating = cheatingScore != null ? Math.round((100 - cheatingScore) / 10) : null;
+  const cheatingTagline =
+    cleanCheating === null
+      ? "Not scored"
+      : cleanCheating >= 9
+      ? "Clean session"
+      : cleanCheating >= 6
+      ? "Minor flags"
+      : "Multiple flags";
+
   return (
-    <div ref={contentRef} className="max-w-7xl mx-auto pb-12 min-w-0">
+    <div ref={contentRef} className="max-w-7xl mx-auto px-4 sm:px-6 pb-12 pt-4 min-w-0 space-y-5">
 
       {/* ══════════════════════════════════════════════════════════════════════
-          CANDIDATE HEADER
+          MODERN CANDIDATE HERO
          ══════════════════════════════════════════════════════════════════════ */}
-      <Card className="border border-gray-200 shadow-sm">
-        <CardContent className="p-6">
-          <div className="flex flex-col sm:flex-row gap-6">
-            <div className="flex-1 min-w-0">
-              <h1 className="text-2xl font-bold text-gray-900">{candidate.name}</h1>
-              <p className="text-base font-semibold text-gray-700 mt-0.5">
-                {candidate.role || job?.title || "—"}
-              </p>
+      <div className="relative overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-5 sm:p-6 dark:border-indigo-500/20 dark:from-indigo-500/10 dark:via-gray-900 dark:to-purple-500/10">
+        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-500/10" />
+        <div className="pointer-events-none absolute -bottom-20 -left-10 h-48 w-48 rounded-full bg-purple-200/40 blur-3xl dark:bg-purple-500/10" />
 
-              <div className="mt-2 space-y-1 text-sm text-gray-600">
-                <p>{candidate.email}</p>
-                {candidate.phone && <p>Phone: {candidate.phone}</p>}
-                {interviewDateStr && <p>Interview Date: {interviewDateStr}</p>}
-                {interviewEndStr && <p>Interview Ended: {interviewEndStr}</p>}
-                {expRange && <p>Experience Range: {expRange}</p>}
-                {durationStr && <p>Interview Duration: {durationStr}</p>}
+        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-start">
+          {/* Avatar */}
+          <div className="shrink-0">
+            {candidate.image ? (
+              <img
+                src={candidate.image.startsWith("/") ? `${API_STATIC}${candidate.image}` : candidate.image}
+                alt={candidate.name}
+                crossOrigin="anonymous"
+                className="h-28 w-28 sm:h-32 sm:w-32 rounded-2xl object-cover shadow-md ring-4 ring-white dark:ring-white/10"
+              />
+            ) : (
+              <div className="flex h-28 w-28 sm:h-32 sm:w-32 items-center justify-center rounded-2xl bg-white shadow-md ring-4 ring-white dark:bg-gray-900 dark:ring-white/10">
+                <User className="h-10 w-10 text-gray-300" />
               </div>
+            )}
+          </div>
 
-              {/* AI Cheating Score */}
+          {/* Identity + meta */}
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-600 shadow-sm ring-1 ring-indigo-100 dark:bg-gray-900/80 dark:text-indigo-300 dark:ring-indigo-500/20">
+                <User className="h-3 w-3" />
+                Candidate
+              </span>
               {cheatingDisplay && (
-                <div className="flex items-center gap-3 mt-3">
-                  <span className="text-sm text-gray-700">
-                    AI-Cheating Score: <strong>{cheatingDisplay}</strong>
-                  </span>
-                  {violations.length > 0 && !generatingPdf && (
-                    <Button
-                      size="sm"
-                      className="h-7 text-xs bg-red-500 hover:bg-red-600 text-white"
-                      onClick={() => setShowViolations(true)}
-                    >
-                      View Reasons
-                    </Button>
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold shadow-sm ring-1",
+                    (cleanCheating ?? 10) >= 9
+                      ? "bg-emerald-50 text-emerald-600 ring-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-500/30"
+                      : (cleanCheating ?? 10) >= 6
+                      ? "bg-amber-50 text-amber-600 ring-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-500/30"
+                      : "bg-rose-50 text-rose-600 ring-rose-200 dark:bg-rose-500/15 dark:text-rose-300 dark:ring-rose-500/30"
                   )}
+                >
+                  <span className={cn(
+                    "h-1.5 w-1.5 rounded-full",
+                    (cleanCheating ?? 10) >= 9 ? "bg-emerald-500" : (cleanCheating ?? 10) >= 6 ? "bg-amber-500" : "bg-rose-500"
+                  )} />
+                  AI-Cheating {cheatingDisplay}
+                </span>
+              )}
+              {violations.length > 0 && !generatingPdf && (
+                <button
+                  onClick={() => setShowViolations(true)}
+                  className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-600 ring-1 ring-rose-200 hover:bg-rose-100 dark:bg-rose-500/15 dark:text-rose-300 dark:ring-rose-500/30"
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  {violations.length} flag{violations.length !== 1 ? "s" : ""}
+                </button>
+              )}
+            </div>
+
+            <h1 className="mt-2 truncate text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl dark:text-white">
+              {candidate.name}
+            </h1>
+            <p className="text-sm font-semibold text-gray-600 dark:text-gray-300">
+              {candidate.role || job?.title || "—"}
+            </p>
+
+            {/* Contact + session meta — two columns */}
+            <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm text-gray-600 sm:grid-cols-2 dark:text-gray-300">
+              <div className="flex items-center gap-2">
+                <Mail className="h-3.5 w-3.5 text-gray-400" />
+                <span className="truncate">{candidate.email}</span>
+              </div>
+              {candidate.phone && (
+                <div className="flex items-center gap-2">
+                  <Phone className="h-3.5 w-3.5 text-gray-400" />
+                  <span>+91({candidate.phone})</span>
                 </div>
               )}
+              {expRange && (
+                <div className="flex items-center gap-2">
+                  <Briefcase className="h-3.5 w-3.5 text-gray-400" />
+                  <span>Experience: {expRange}</span>
+                </div>
+              )}
+              {durationStr && (
+                <div className="flex items-center gap-2">
+                  <Clock className="h-3.5 w-3.5 text-gray-400" />
+                  <span>Duration: {durationStr}</span>
+                </div>
+              )}
+              {interviewDateStr && (
+                <div className="flex items-center gap-2">
+                  <CalendarClock className="h-3.5 w-3.5 text-indigo-400" />
+                  <span>Started: {interviewDateStr}</span>
+                </div>
+              )}
+              {interviewEndStr && (
+                <div className="flex items-center gap-2">
+                  <CalendarCheck className="h-3.5 w-3.5 text-emerald-400" />
+                  <span>Ended: {interviewEndStr}</span>
+                </div>
+              )}
+            </div>
 
-              {recordingHref && (
-                generatingPdf ? (
-                  <p className="text-brand-500 text-sm mt-2 break-all">
+            {recordingHref && (
+              <div className="mt-4">
+                {generatingPdf ? (
+                  <p className="break-all text-xs text-indigo-600">
                     Recording: {`${API_STATIC}${recording.link}`}
                   </p>
                 ) : (
-                  <button
-                    onClick={copyRecordingUrl}
-                    className="text-brand-500 hover:underline text-sm flex items-center gap-1 mt-2"
-                  >
+                  <Button variant="outline" size="sm" onClick={copyRecordingUrl} className="gap-1.5 rounded-xl bg-white/80 backdrop-blur dark:bg-gray-900/60">
+                    <Clipboard className="h-3.5 w-3.5" />
                     Copy recording URL
-                  </button>
-                )
-              )}
-            </div>
-
-            {/* Candidate Photo */}
-            <div className="shrink-0 flex items-start justify-center sm:justify-end">
-              {candidate.image ? (
-                <img
-                  src={candidate.image.startsWith("/") ? `${API_STATIC}${candidate.image}` : candidate.image}
-                  alt={candidate.name}
-                  crossOrigin="anonymous"
-                  className="w-36 h-44 object-cover rounded-lg border border-gray-200 shadow-sm"
-                />
-              ) : (
-                <div className="w-36 h-44 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
-                  <User className="w-12 h-12 text-gray-300" />
-                </div>
-              )}
-            </div>
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* ══════════════════════════════════════════════════════════════════════
-          TABS
+          STAT CARDS
          ══════════════════════════════════════════════════════════════════════ */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard
+          label="Fit Score"
+          value={fitPct !== null ? `${fitPct}%` : "—"}
+          tagline={fitTagline}
+          icon={<TrendingUp className="h-4 w-4" />}
+          iconWrap="bg-emerald-50 text-emerald-500 ring-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-500/20"
+          topBar="bg-gradient-to-r from-emerald-400 to-green-500"
+        />
+        <StatCard
+          label="Trust Score"
+          value={trustOutOfTen != null ? `${trustOutOfTen}/10` : "—"}
+          tagline={trustTagline}
+          icon={<Shield className="h-4 w-4" />}
+          iconWrap="bg-indigo-50 text-indigo-500 ring-indigo-100 dark:bg-indigo-500/15 dark:text-indigo-300 dark:ring-indigo-500/20"
+          topBar="bg-gradient-to-r from-indigo-400 to-violet-500"
+        />
+        <StatCard
+          label="AI Round Score"
+          value={aiRoundPct !== null ? `${aiRoundPct}%` : "—"}
+          tagline={aiRoundTagline}
+          icon={<Briefcase className="h-4 w-4" />}
+          iconWrap="bg-sky-50 text-sky-500 ring-sky-100 dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-500/20"
+          topBar="bg-gradient-to-r from-sky-400 to-cyan-500"
+        />
+        <StatCard
+          label="Cheating Flags"
+          value={cleanCheating !== null ? `${cleanCheating}/10` : "—"}
+          tagline={cheatingTagline}
+          icon={<AlertTriangle className="h-4 w-4" />}
+          iconWrap={cn(
+            "ring-1",
+            (cleanCheating ?? 10) >= 9
+              ? "bg-emerald-50 text-emerald-500 ring-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-500/20"
+              : (cleanCheating ?? 10) >= 6
+              ? "bg-amber-50 text-amber-500 ring-amber-100 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-500/20"
+              : "bg-rose-50 text-rose-500 ring-rose-100 dark:bg-rose-500/15 dark:text-rose-300 dark:ring-rose-500/20"
+          )}
+          topBar={cn(
+            (cleanCheating ?? 10) >= 9
+              ? "bg-gradient-to-r from-emerald-400 to-green-500"
+              : (cleanCheating ?? 10) >= 6
+              ? "bg-gradient-to-r from-amber-400 to-orange-500"
+              : "bg-gradient-to-r from-rose-400 to-red-500"
+          )}
+        />
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          MODERN PILL TABS
+         ══════════════════════════════════════════════════════════════════════ */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         {!generatingPdf && (
-        <div className="border-b border-gray-200 overflow-x-auto flex items-center">
-          <TabsList className="bg-transparent h-auto p-0 gap-0 rounded-none flex-1">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <TabsList className="h-auto gap-1 rounded-full bg-gray-100 p-1 dark:bg-white/5">
             {[
-              { value: "evaluation", label: "Evaluation" },
-              { value: "recording", label: "Recording" },
-              { value: "transcript", label: "Interview Transcript" },
+              { value: "evaluation", label: "Overview", icon: <Star className="h-3.5 w-3.5" /> },
+              { value: "recording", label: "Interview Recording", icon: <Video className="h-3.5 w-3.5" /> },
               ...(codingSubmissions.length > 0
-                ? [{ value: "coding", label: `Coding (${codingSubmissions.length})` }]
+                ? [{ value: "coding", label: `Coding (${codingSubmissions.length})`, icon: <FileText className="h-3.5 w-3.5" /> }]
                 : []),
-              { value: "face-detection", label: "Face Detection Frames" },
+              { value: "resume", label: "Resume & Portfolio", icon: <FileText className="h-3.5 w-3.5" /> },
+              { value: "activity", label: "Activity", icon: <Clock className="h-3.5 w-3.5" /> },
             ].map((tab) => (
               <TabsTrigger
                 key={tab.value}
                 value={tab.value}
-                className="rounded-none border-b-2 border-transparent data-[state=active]:border-brand-500 data-[state=active]:text-brand-500 data-[state=active]:shadow-none data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700"
+                className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-gray-600 transition-all data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm data-[state=active]:ring-1 data-[state=active]:ring-gray-200 dark:text-gray-300 dark:data-[state=active]:bg-gray-900 dark:data-[state=active]:text-white dark:data-[state=active]:ring-white/10"
               >
+                {tab.icon}
                 {tab.label}
               </TabsTrigger>
             ))}
           </TabsList>
 
-          {/* Download Dropdown */}
+          {/* Export Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-1 h-8 text-xs mx-2 shrink-0">
-                <Download className="w-3.5 h-3.5" />
-                <ChevronDown className="w-3 h-3" />
+              <Button variant="outline" size="sm" className="gap-1.5 rounded-xl">
+                <Download className="h-3.5 w-3.5" />
+                Export
+                <ChevronDown className="h-3 w-3 opacity-60" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={downloadPdf} disabled={generatingPdf}>
-                <FileText className="w-4 h-4 mr-2" /> {generatingPdf ? "Generating PDF…" : "Download Evaluation Pdf"}
+                <FileText className="mr-2 h-4 w-4" /> {generatingPdf ? "Generating PDF…" : "Download Evaluation PDF"}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => window.open(`${API_BASE}/candidates/${candidateId}/evaluation/download-docx`, "_blank")}>
-                <FileText className="w-4 h-4 mr-2" /> Download Evaluation as Docx
+                <FileText className="mr-2 h-4 w-4" /> Download Evaluation as Docx
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => window.open(`${API_BASE}/candidates/${candidateId}/evaluation/download-transcript`, "_blank")}>
-                <MessageSquare className="w-4 h-4 mr-2" /> Download Interview Transcript
+                <MessageSquare className="mr-2 h-4 w-4" /> Download Interview Transcript
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -652,12 +803,64 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
         )}
 
         {/* ═══════════════════════ TAB: EVALUATION ═══════════════════════════ */}
-        <TabsContent value="evaluation" className="mt-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <TabsContent value="evaluation" className="mt-5 space-y-6">
+          {/* ── Recommendation / Verdict card ─────────────────────────────── */}
+          {evaluation?.recommendation && (
+            <div className={cn(
+              "relative overflow-hidden rounded-2xl border p-5 sm:p-6",
+              evaluation.meets_threshold
+                ? "border-emerald-100 bg-gradient-to-br from-emerald-50/70 to-white dark:border-emerald-500/20 dark:from-emerald-500/10 dark:to-transparent"
+                : "border-amber-100 bg-gradient-to-br from-amber-50/70 to-white dark:border-amber-500/20 dark:from-amber-500/10 dark:to-transparent"
+            )}>
+              <div className="flex items-start gap-4">
+                <span className={cn(
+                  "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1",
+                  evaluation.meets_threshold
+                    ? "bg-emerald-100 text-emerald-600 ring-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:ring-emerald-500/30"
+                    : "bg-amber-100 text-amber-600 ring-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:ring-amber-500/30"
+                )}>
+                  <ThumbsUp className="h-5 w-5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={cn(
+                      "rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider",
+                      evaluation.meets_threshold
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
+                        : "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+                    )}>
+                      {evaluation.meets_threshold ? "Recommended" : "Review"}
+                    </span>
+                    <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      {evaluation.recommendation}
+                    </span>
+                  </div>
+                  <h3 className="mt-2 text-lg font-bold text-gray-900 dark:text-white">
+                    Justification for Recommendation
+                  </h3>
+                  {evaluation.detailed_feedback && (
+                    <p className="mt-2 text-sm leading-relaxed text-gray-700 dark:text-gray-200">
+                      {evaluation.detailed_feedback}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
 
             {/* ── LEFT: Questions and Evaluations ──────────────────────────── */}
             <div className="space-y-4">
-              <h2 className="text-xl font-bold text-gray-900">Questions and Evaluations</h2>
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-500 ring-1 ring-indigo-100 dark:bg-indigo-500/15 dark:text-indigo-300 dark:ring-indigo-500/20">
+                  <MessageSquare className="h-4 w-4" />
+                </span>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900 dark:text-white">Questions &amp; Evaluations</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Per-question scoring with AI feedback</p>
+                </div>
+              </div>
 
               {transcript.length > 0 ? transcript.map((pair) => {
                 const pq = pqMap.get(pair.index);
@@ -666,194 +869,254 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
                 const isSkipped = answerText === "[No answer provided — skipped]";
                 const showToggle = !isSkipped && answerText.length > 250;
                 const displayAnswer = isExpanded ? answerText : showToggle ? answerText.slice(0, 250) + "..." : answerText;
+                const scoreColor = pq
+                  ? pq.score >= 70
+                    ? "bg-emerald-100 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-500/30"
+                    : pq.score >= 40
+                    ? "bg-amber-100 text-amber-700 ring-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-500/30"
+                    : "bg-rose-100 text-rose-700 ring-rose-200 dark:bg-rose-500/15 dark:text-rose-300 dark:ring-rose-500/30"
+                  : "";
 
                 return (
-                  <Card key={pair.index} className="border border-gray-200">
-                    <CardContent className="p-5 space-y-3">
-                      <p className="font-bold text-gray-800">Question {pair.index}:</p>
-                      <p className="text-sm text-gray-700 leading-relaxed">{pair.question}</p>
-
-                      <div>
-                        <p className="text-sm font-semibold text-gray-700">Candidate&apos;s Answer:</p>
-                        <p className={`text-sm leading-relaxed mt-1 ${isSkipped ? "italic text-gray-400" : "text-gray-600"}`}>
-                          {displayAnswer}
-                          {showToggle && (
-                            <button onClick={() => toggleQA(pair.index)}
-                              className="text-brand-500 hover:underline ml-1 font-medium">
-                              {isExpanded ? "Show less" : "Read more"}
-                            </button>
-                          )}
-                        </p>
-                      </div>
-
-                      {/* Per-question evaluation */}
+                  <div
+                    key={pair.index}
+                    className="rounded-2xl border border-gray-200 bg-white p-5 transition-all hover:border-indigo-200 hover:shadow-sm dark:border-white/10 dark:bg-gray-900/40"
+                  >
+                    {/* Q header */}
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-white">
+                        Q{pair.index}
+                        <span className="opacity-80">Question</span>
+                      </span>
                       {pq && (
-                        <>
-                          <div className="pt-2 border-t border-gray-100">
-                            <p className="text-sm font-semibold text-gray-700">Score:</p>
-                            <p className="text-sm text-gray-800">{pq.score}%</p>
-                          </div>
-
-                          <div>
-                            <p className="text-sm font-semibold text-gray-700">Evaluation</p>
-
-                            {pq.positives.length > 0 && (
-                              <div className="mt-1">
-                                <p className="text-sm font-semibold text-gray-700">Positives</p>
-                                <ul className="list-disc list-inside space-y-0.5 mt-1">
-                                  {pq.positives.map((p, i) => (
-                                    <li key={i} className="text-sm text-gray-600">{p}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-
-                            {pq.negatives.length > 0 && (
-                              <div className="mt-2">
-                                <p className="text-sm font-semibold text-gray-700">Negatives</p>
-                                <ul className="list-disc list-inside space-y-0.5 mt-1">
-                                  {pq.negatives.map((n, i) => (
-                                    <li key={i} className="text-sm text-gray-600">{n}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                          </div>
-                        </>
+                        <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-bold ring-1", scoreColor)}>
+                          {pq.score}%
+                        </span>
                       )}
-                    </CardContent>
-                  </Card>
+                    </div>
+
+                    <p className="mt-3 text-sm leading-relaxed text-gray-700 dark:text-gray-200">
+                      {pair.question}
+                    </p>
+
+                    {/* Candidate's Answer */}
+                    <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50/60 p-3 dark:border-white/10 dark:bg-white/5">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                        Candidate&apos;s Answer
+                      </p>
+                      <p className={cn(
+                        "mt-1 text-sm leading-relaxed",
+                        isSkipped ? "italic text-gray-400" : "text-gray-700 dark:text-gray-200"
+                      )}>
+                        {displayAnswer}
+                        {showToggle && (
+                          <button
+                            onClick={() => toggleQA(pair.index)}
+                            className="ml-1 font-medium text-indigo-600 hover:underline dark:text-indigo-300"
+                          >
+                            {isExpanded ? "Show less" : "Read more"}
+                          </button>
+                        )}
+                      </p>
+                    </div>
+
+                    {/* Per-question positives + concerns */}
+                    {pq && (pq.positives.length > 0 || pq.negatives.length > 0) && (
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {pq.positives.length > 0 && (
+                          <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-3 dark:border-emerald-500/20 dark:bg-emerald-500/5">
+                            <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-300">
+                              <ThumbsUp className="h-3 w-3" /> Positives
+                            </p>
+                            <ul className="space-y-1">
+                              {pq.positives.map((p, i) => (
+                                <li key={i} className="flex gap-2 text-xs leading-relaxed text-gray-700 dark:text-gray-200">
+                                  <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-emerald-500" />
+                                  <span>{p}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {pq.negatives.length > 0 && (
+                          <div className="rounded-xl border border-rose-100 bg-rose-50/50 p-3 dark:border-rose-500/20 dark:bg-rose-500/5">
+                            <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-rose-600 dark:text-rose-300">
+                              <AlertTriangle className="h-3 w-3" /> Concerns
+                            </p>
+                            <ul className="space-y-1">
+                              {pq.negatives.map((n, i) => (
+                                <li key={i} className="flex gap-2 text-xs leading-relaxed text-gray-700 dark:text-gray-200">
+                                  <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-rose-500" />
+                                  <span>{n}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 );
               }) : (
-                <Card className="border border-gray-200">
-                  <CardContent className="p-8 text-center text-gray-400">
-                    <MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                    <p>No interview questions available yet.</p>
-                  </CardContent>
-                </Card>
+                <div className="rounded-2xl border border-dashed border-gray-200 bg-white py-10 text-center text-gray-400 dark:border-white/10 dark:bg-gray-900/40">
+                  <MessageSquare className="mx-auto mb-2 h-10 w-10 opacity-50" />
+                  <p className="text-sm">No interview questions available yet.</p>
+                </div>
               )}
             </div>
 
             {/* ── RIGHT: Overall Summary ───────────────────────────────────── */}
-            <div className="space-y-6">
-              <h2 className="text-xl font-bold text-gray-900">Overall Summary</h2>
+            <div className="space-y-5">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-50 text-purple-500 ring-1 ring-purple-100 dark:bg-purple-500/15 dark:text-purple-300 dark:ring-purple-500/20">
+                  <Sparkles className="h-4 w-4" />
+                </span>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900 dark:text-white">Overall Summary</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">AI-generated verdict and insights</p>
+                </div>
+              </div>
 
               {/* Score + Summary */}
-              <Card className="border border-gray-200">
-                <CardContent className="p-5 space-y-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-medium text-gray-600">Score:</span>
-                    <ScoreCircle value={scores.overall} />
+              <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-gray-900/40">
+                <div className="flex items-center gap-4">
+                  <ScoreCircle value={scores.overall} />
+                  <div className="flex-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Overall Score</p>
+                    <p className="text-base font-bold text-gray-900 dark:text-white">
+                      {aiRoundTagline} candidate
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Based on {transcript.length} {transcript.length === 1 ? "question" : "questions"}
+                    </p>
                   </div>
+                </div>
 
-                  {evaluation?.summary && (
-                    <div className="space-y-4">
-                      <p className="text-sm text-gray-700 leading-relaxed">
-                        <span className="font-bold">Interview Summary: </span>
+                {evaluation?.summary && (
+                  <div className="mt-5 space-y-4">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Interview Summary</p>
+                      <p className="mt-1 text-sm leading-relaxed text-gray-700 dark:text-gray-200">
                         {evaluation.summary}
                       </p>
-
-                      {evaluation.strengths.length > 0 && (
-                        <div>
-                          <p className="text-sm font-bold text-gray-800">Strengths</p>
-                          <ul className="list-disc list-inside space-y-1 mt-1">
-                            {evaluation.strengths.map((s, i) => (
-                              <li key={i} className="text-sm text-gray-700">
-                                <strong>{s.split(":")[0]}{s.includes(":") ? ":" : ""}</strong>
-                                {s.includes(":") ? s.split(":").slice(1).join(":") : ""}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {evaluation.weaknesses.length > 0 && (
-                        <div>
-                          <p className="text-sm font-bold text-gray-800">Weaknesses</p>
-                          <ul className="list-disc list-inside space-y-1 mt-1">
-                            {evaluation.weaknesses.map((w, i) => (
-                              <li key={i} className="text-sm text-gray-700">
-                                <strong>{w.split(":")[0]}{w.includes(":") ? ":" : ""}</strong>
-                                {w.includes(":") ? w.split(":").slice(1).join(":") : ""}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {evaluation.detailed_feedback && (
-                        <div className="pt-3 border-t border-gray-100">
-                          <p className="text-sm text-gray-700 leading-relaxed">
-                            <span className="font-bold">Overall Verdict: </span>
-                            {evaluation.detailed_feedback}
-                          </p>
-                        </div>
-                      )}
                     </div>
-                  )}
 
-                  {!evaluation && (
-                    <div className="text-center py-6 space-y-4">
-                      <div className="w-12 h-12 rounded-full bg-yellow-50 border border-yellow-100 flex items-center justify-center mx-auto">
-                        <TrendingUp className="w-6 h-6 text-yellow-500" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-700">
-                          {session?.status === "completed" || session?.status === "terminated"
-                            ? "Evaluation report was not generated"
-                            : "Evaluation will appear after the interview is completed."}
+                    {evaluation.strengths.length > 0 && (
+                      <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-3 dark:border-emerald-500/20 dark:bg-emerald-500/5">
+                        <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-300">
+                          <ThumbsUp className="h-3 w-3" /> Strengths
                         </p>
-                        {(session?.status === "completed" || session?.status === "terminated") && (
-                          <p className="text-xs text-gray-400 mt-1">
-                            Click below to regenerate it. This may take 1–3 minutes.
-                          </p>
-                        )}
+                        <ul className="space-y-1.5">
+                          {evaluation.strengths.map((s, i) => (
+                            <li key={i} className="flex gap-2 text-xs leading-relaxed text-gray-700 dark:text-gray-200">
+                              <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-emerald-500" />
+                              <span>
+                                <strong className="text-gray-900 dark:text-white">
+                                  {s.split(":")[0]}{s.includes(":") ? ":" : ""}
+                                </strong>
+                                {s.includes(":") ? s.split(":").slice(1).join(":") : ""}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
-                      {session?.id && (session?.status === "completed" || session?.status === "terminated") && (
-                        <Button
-                          onClick={generateEvaluation}
-                          disabled={generatingEval}
-                          className="gap-2"
-                        >
-                          {generatingEval ? (
-                            <>
-                              <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                              Generating… (up to 3 min)
-                            </>
-                          ) : (
-                            <>
-                              <TrendingUp className="w-4 h-4" />
-                              Generate Evaluation Report
-                            </>
-                          )}
-                        </Button>
+                    )}
+
+                    {evaluation.weaknesses.length > 0 && (
+                      <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-3 dark:border-amber-500/20 dark:bg-amber-500/5">
+                        <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-300">
+                          <AlertTriangle className="h-3 w-3" /> Weaknesses
+                        </p>
+                        <ul className="space-y-1.5">
+                          {evaluation.weaknesses.map((w, i) => (
+                            <li key={i} className="flex gap-2 text-xs leading-relaxed text-gray-700 dark:text-gray-200">
+                              <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-amber-500" />
+                              <span>
+                                <strong className="text-gray-900 dark:text-white">
+                                  {w.split(":")[0]}{w.includes(":") ? ":" : ""}
+                                </strong>
+                                {w.includes(":") ? w.split(":").slice(1).join(":") : ""}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!evaluation && (
+                  <div className="space-y-4 py-6 text-center">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 ring-1 ring-amber-100">
+                      <TrendingUp className="h-6 w-6 text-amber-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                        {session?.status === "completed" || session?.status === "terminated"
+                          ? "Evaluation report was not generated"
+                          : "Evaluation will appear after the interview is completed."}
+                      </p>
+                      {(session?.status === "completed" || session?.status === "terminated") && (
+                        <p className="mt-1 text-xs text-gray-400">
+                          Click below to regenerate it. This may take 1–3 minutes.
+                        </p>
                       )}
                     </div>
-                  )}
-                </CardContent>
-              </Card>
+                    {session?.id && (session?.status === "completed" || session?.status === "terminated") && (
+                      <Button onClick={generateEvaluation} disabled={generatingEval} className="gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600">
+                        {generatingEval ? (
+                          <>
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                            Generating… (up to 3 min)
+                          </>
+                        ) : (
+                          <>
+                            <TrendingUp className="h-4 w-4" />
+                            Generate Evaluation Report
+                          </>
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Skills Rating */}
               {evaluation?.skills_ratings && evaluation.skills_ratings.length > 0 && (
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900 mb-3">Skills Rating</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="mb-3 flex items-center gap-2.5">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-amber-500 ring-1 ring-amber-100 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-500/20">
+                      <Star className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <h3 className="text-base font-bold text-gray-900 dark:text-white">Skills Rating</h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Breakdown by evaluated competency</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {evaluation.skills_ratings.map((sr, idx) => (
-                      <Card key={idx} className="border border-gray-200">
-                        <CardContent className="p-4 space-y-2">
-                          <p className="text-sm font-bold text-gray-800">{sr.skill}</p>
-                          <div className="flex items-center gap-0.5">
-                            <span className="text-sm text-gray-600 mr-1">Rating:</span>
-                            {Array.from({ length: 5 }).map((_, i) => (
-                              <Star key={i} className={`w-4 h-4 ${i < sr.rating ? "text-yellow-400 fill-yellow-400" : "text-gray-300"}`} />
-                            ))}
-                          </div>
-                          <p className="text-sm text-gray-600 leading-relaxed">
-                            <span className="font-semibold">Evaluation: </span>
-                            {sr.evaluation}
-                          </p>
-                        </CardContent>
-                      </Card>
+                      <div key={idx} className="rounded-2xl border border-gray-200 bg-white p-4 transition-all hover:border-indigo-200 hover:shadow-sm dark:border-white/10 dark:bg-gray-900/40">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm font-semibold text-gray-900 dark:text-white">{sr.skill}</p>
+                          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-600 dark:bg-amber-500/15 dark:text-amber-300">
+                            {sr.rating}/5
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-0.5">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <Star
+                              key={i}
+                              className={cn(
+                                "h-3.5 w-3.5",
+                                i < sr.rating ? "fill-amber-400 text-amber-400" : "text-gray-200 dark:text-white/10"
+                              )}
+                            />
+                          ))}
+                        </div>
+                        <p className="mt-2 text-xs leading-relaxed text-gray-600 dark:text-gray-300">
+                          {sr.evaluation}
+                        </p>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -862,83 +1125,108 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
           </div>
         </TabsContent>
 
-        {/* ═══════════════════════ TAB: RECORDING ═══════════════════════════ */}
-        <TabsContent value="recording" className="mt-6">
-          <Card className="border border-gray-200 shadow-sm">
-            <CardContent className="p-6">
+        {/* ═══════════════════════ TAB: RECORDING + TRANSCRIPT ═════════════ */}
+        <TabsContent value="recording" className="mt-5 space-y-5">
+          {/* Recording card */}
+          <div className="overflow-hidden rounded-2xl border border-gray-900 bg-gray-950 text-white shadow-xl">
+            <div className="flex items-center justify-between gap-3 border-b border-white/10 px-5 py-3">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white">
+                  <Video className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold">Interview Recording</p>
+                  {recording.duration && (
+                    <p className="flex items-center gap-1 text-xs text-gray-400">
+                      <Clock className="h-3 w-3" /> {recording.duration}
+                    </p>
+                  )}
+                </div>
+              </div>
+              {recordingHref && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={copyRecordingUrl}
+                    className="h-8 gap-1.5 rounded-lg border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                  >
+                    <Copy className="h-3.5 w-3.5" /> Copy URL
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      const recFile = recording.link?.split("/").pop() || "recording.webm";
+                      const downloadUrl = `${API_STATIC}/recordings/${recFile}/download?format=original`;
+                      window.open(downloadUrl, "_blank");
+                    }}
+                    className="h-8 gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600"
+                  >
+                    <Download className="h-3.5 w-3.5" /> Download
+                  </Button>
+                </div>
+              )}
+            </div>
+            <div className="p-5">
               {recordingHref ? (
-                <div className="space-y-4">
-                  <div className="max-w-4xl mx-auto">
-                    <VideoPlayer src={recordingHref} />
-                  </div>
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-gray-200">
-                    <div className="flex items-center gap-3">
-                      <Button variant="outline" size="sm" onClick={copyRecordingUrl} className="gap-1">
-                        <Copy className="w-3.5 h-3.5" /> Copy Recording URL
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-1"
-                        onClick={() => {
-                          const recFile = recording.link?.split("/").pop() || "recording.webm";
-                          const downloadUrl = `${API_STATIC}/recordings/${recFile}/download?format=original`;
-                          window.open(downloadUrl, "_blank");
-                        }}
-                      >
-                        <Download className="w-3.5 h-3.5" /> Download video
-                      </Button>
-                    </div>
-                    {recording.duration && (
-                      <p className="text-sm text-gray-500">Duration: {recording.duration}</p>
-                    )}
-                  </div>
+                <div className="mx-auto max-w-4xl overflow-hidden rounded-xl bg-black">
+                  <VideoPlayer src={recordingHref} />
                 </div>
               ) : (
                 <div className="py-16 text-center text-gray-400">
-                  <Video className="w-16 h-16 mx-auto mb-3 opacity-40" />
+                  <Video className="mx-auto mb-3 h-16 w-16 opacity-40" />
                   <p className="text-lg font-medium">No recording available</p>
-                  <p className="text-sm mt-1">The recording will appear here after the interview is completed.</p>
+                  <p className="mt-1 text-sm">The recording will appear here after the interview is completed.</p>
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </div>
+          </div>
 
-        {/* ═══════════════════════ TAB: TRANSCRIPT ═══════════════════════════ */}
-        <TabsContent value="transcript" className="mt-6">
-          <Card className="border border-gray-200 shadow-sm">
-            <CardContent className="p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-6">Interview Transcript</h2>
-
+          {/* Transcript — always shown under the recording */}
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900/40">
+            <div className="flex items-center justify-between gap-3 border-b border-gray-100 bg-gradient-to-r from-indigo-50/50 to-white px-5 py-3 dark:border-white/10 dark:from-indigo-500/5 dark:to-transparent">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-500 ring-1 ring-indigo-100 dark:bg-indigo-500/15 dark:text-indigo-300 dark:ring-indigo-500/20">
+                  <MessageSquare className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">Interview Transcript</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Full conversation between AI interviewer and candidate</p>
+                </div>
+              </div>
+              <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300">
+                {full_transcript.length > 0 ? full_transcript.length : transcript.length * 2} messages
+              </span>
+            </div>
+            <div className="p-5">
               {full_transcript.length > 0 ? (
-                <div className="max-w-3xl mx-auto space-y-4">
+                <div className="mx-auto max-w-3xl space-y-4">
                   {full_transcript.map((msg, idx) => {
                     const isAI = msg.role === "ai";
                     const time = msg.timestamp
-                      ? new Date(msg.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                      ? new Date(msg.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
                       : null;
-
                     return (
-                      <div key={idx} className={`flex gap-3 ${isAI ? "justify-start" : "justify-end"}`}>
+                      <div key={idx} className={cn("flex gap-3", isAI ? "justify-start" : "justify-end")}>
                         {isAI && (
-                          <div className="shrink-0 w-8 h-8 rounded-full bg-brand-50 flex items-center justify-center">
-                            <Bot className="w-4 h-4 text-brand-500" />
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-500/15">
+                            <Bot className="h-4 w-4 text-indigo-600 dark:text-indigo-300" />
                           </div>
                         )}
-                        <div className={`max-w-[75%] rounded-2xl px-4 py-3 ${
+                        <div className={cn(
+                          "max-w-[75%] rounded-2xl px-4 py-2.5",
                           isAI
-                            ? "bg-gray-100 text-gray-800 rounded-tl-sm"
-                            : "bg-brand-500 text-white rounded-tr-sm"
-                        }`}>
-                          <p className="text-xs font-semibold mb-1 opacity-70">
+                            ? "rounded-tl-sm bg-gray-100 text-gray-800 dark:bg-white/5 dark:text-gray-100"
+                            : "rounded-tr-sm bg-gradient-to-br from-indigo-500 to-indigo-600 text-white"
+                        )}>
+                          <p className="mb-1 text-[11px] font-semibold opacity-70">
                             {isAI ? "AI Interviewer" : "Candidate"}{time && ` · ${time}`}
                           </p>
                           <p className="text-sm leading-relaxed">{msg.content}</p>
                         </div>
                         {!isAI && (
-                          <div className="shrink-0 w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center">
-                            <User className="w-4 h-4 text-brand-600" />
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-500/15">
+                            <User className="h-4 w-4 text-purple-600 dark:text-purple-300" />
                           </div>
                         )}
                       </div>
@@ -946,56 +1234,82 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
                   })}
                 </div>
               ) : transcript.length > 0 ? (
-                <div className="max-w-3xl mx-auto space-y-4">
+                <div className="mx-auto max-w-3xl space-y-4">
                   {transcript.map((pair) => (
                     <React.Fragment key={pair.index}>
-                      <div className="flex gap-3 justify-start">
-                        <div className="shrink-0 w-8 h-8 rounded-full bg-brand-50 flex items-center justify-center">
-                          <Bot className="w-4 h-4 text-brand-500" />
+                      <div className="flex justify-start gap-3">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-500/15">
+                          <Bot className="h-4 w-4 text-indigo-600 dark:text-indigo-300" />
                         </div>
-                        <div className="max-w-[75%] rounded-2xl rounded-tl-sm bg-gray-100 text-gray-800 px-4 py-3">
-                          <p className="text-xs font-semibold mb-1 opacity-70">AI Interviewer · Q{pair.index}</p>
+                        <div className="max-w-[75%] rounded-2xl rounded-tl-sm bg-gray-100 px-4 py-2.5 text-gray-800 dark:bg-white/5 dark:text-gray-100">
+                          <p className="mb-1 text-[11px] font-semibold opacity-70">AI Interviewer · Q{pair.index}</p>
                           <p className="text-sm leading-relaxed">{pair.question}</p>
                         </div>
                       </div>
-                      <div className="flex gap-3 justify-end">
-                        <div className={`max-w-[75%] rounded-2xl rounded-tr-sm px-4 py-3 ${
+                      <div className="flex justify-end gap-3">
+                        <div className={cn(
+                          "max-w-[75%] rounded-2xl rounded-tr-sm px-4 py-2.5",
                           pair.answer === "[No answer provided — skipped]"
-                            ? "bg-gray-200 text-gray-500"
-                            : "bg-brand-500 text-white"
-                        }`}>
-                          <p className="text-xs font-semibold mb-1 opacity-70">Candidate</p>
-                          <p className={`text-sm leading-relaxed ${pair.answer === "[No answer provided — skipped]" ? "italic" : ""}`}>{pair.answer}</p>
+                            ? "bg-gray-200 text-gray-500 dark:bg-white/10 dark:text-gray-400"
+                            : "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white"
+                        )}>
+                          <p className="mb-1 text-[11px] font-semibold opacity-70">Candidate</p>
+                          <p className={cn("text-sm leading-relaxed", pair.answer === "[No answer provided — skipped]" && "italic")}>
+                            {pair.answer}
+                          </p>
                         </div>
-                        <div className="shrink-0 w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center">
-                          <User className="w-4 h-4 text-brand-600" />
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-500/15">
+                          <User className="h-4 w-4 text-purple-600 dark:text-purple-300" />
                         </div>
                       </div>
                     </React.Fragment>
                   ))}
                 </div>
               ) : (
-                <div className="py-16 text-center text-gray-400">
-                  <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-40" />
-                  <p className="text-lg font-medium">No transcript available</p>
-                  <p className="text-sm mt-1">The transcript will appear here after the interview is completed.</p>
+                <div className="py-12 text-center text-gray-400">
+                  <MessageSquare className="mx-auto mb-2 h-10 w-10 opacity-40" />
+                  <p className="text-sm">No transcript available yet.</p>
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
+
         </TabsContent>
 
-        {/* ═══════════════════════ TAB: CODING ═════════════════════════════ */}
-        <TabsContent value="coding" className="mt-6">
-          <CodingTab
-            submissions={codingSubmissions}
-            codingScore={data?.evaluation?.coding_score ?? null}
+        {/* ═══════════════════════ TAB: CODING ══════════════════════════════ */}
+        {codingSubmissions.length > 0 && (
+          <TabsContent value="coding" className="mt-5">
+            <CodingTab
+              submissions={codingSubmissions}
+              codingScore={data?.evaluation?.coding_score ?? null}
+            />
+          </TabsContent>
+        )}
+
+        {/* ═══════════════════════ TAB: RESUME & PORTFOLIO ═════════════════ */}
+        <TabsContent value="resume" className="mt-5">
+          <ResumePortfolioTab
+            candidate={candidate}
+            job={job}
+            resumeUrl={data.resume.url}
+            resumePath={data.resume.path}
+            fitPct={fitPct}
+            fitSummary={data.fit_score.reasoning?.summary ?? null}
           />
         </TabsContent>
 
-        {/* ═══════════════════════ TAB: FACE DETECTION ═════════════════════ */}
-        <TabsContent value="face-detection" className="mt-6">
-          <FaceDetectionTab screenshots={screenshots} timezone={tz} />
+        {/* ═══════════════════════ TAB: ACTIVITY ════════════════════════════ */}
+        <TabsContent value="activity" className="mt-5">
+          <ActivityTab
+            candidate={candidate}
+            job={job}
+            session={session}
+            screenshots={screenshots}
+            violations={violations}
+            fitPct={fitPct}
+            evaluationStatus={evaluation?.recommendation ?? null}
+            timezone={tz}
+          />
         </TabsContent>
       </Tabs>
 
@@ -1039,100 +1353,382 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
   );
 }
 
-// ── Face Detection Tab ───────────────────────────────────────────────────────
+// ── Resume & Portfolio Tab ──────────────────────────────────────────────────
 
-function FaceDetectionTab({ screenshots, timezone }: { screenshots: { file_path: string; captured_at: string | null; face_count?: number | null }[]; timezone: string }) {
-  const [subTab, setSubTab] = useState("single");
+function ResumePortfolioTab({
+  candidate,
+  job,
+  resumeUrl,
+  resumePath,
+  fitPct,
+  fitSummary,
+}: {
+  candidate: EvaluationData["candidate"];
+  job: EvaluationData["job"];
+  resumeUrl: string | null;
+  resumePath: string | null;
+  fitPct: number | null;
+  fitSummary: string | null;
+}) {
+  const resumeHref = resumeUrl
+    ? resumeUrl.startsWith("http")
+      ? resumeUrl
+      : `${API_STATIC}${resumeUrl.startsWith("/") ? "" : "/"}${resumeUrl}`
+    : resumePath
+    ? resumePath.startsWith("http")
+      ? resumePath
+      : `${API_STATIC}${resumePath.startsWith("/") ? "" : "/"}${resumePath}`
+    : null;
 
-  // Classify screenshots by face_count from Python model
-  const classified = useMemo(() => {
-    const single: typeof screenshots = [];
-    const multiple: typeof screenshots = [];
-    const none: typeof screenshots = [];
+  const fitTheme =
+    fitPct === null
+      ? { bar: "bg-gray-300", ring: "ring-gray-200", label: "Not scored", text: "text-gray-500", bg: "from-gray-50 to-white border-gray-200" }
+      : fitPct >= 70
+      ? { bar: "bg-emerald-500", ring: "ring-emerald-200", label: "Strong match", text: "text-emerald-600", bg: "from-emerald-50 to-white border-emerald-200" }
+      : fitPct >= 40
+      ? { bar: "bg-amber-500", ring: "ring-amber-200", label: "Partial match", text: "text-amber-600", bg: "from-amber-50 to-white border-amber-200" }
+      : { bar: "bg-rose-500", ring: "ring-rose-200", label: "Weak match", text: "text-rose-600", bg: "from-rose-50 to-white border-rose-200" };
 
-    for (const ss of screenshots) {
-      const fc = ss.face_count;
-      if (fc === null || fc === undefined || fc === 1) {
-        single.push(ss);
-      } else if (fc === 0) {
-        none.push(ss);
-      } else {
-        multiple.push(ss);
-      }
-    }
-    return { single, multiple, none };
-  }, [screenshots]);
+  return (
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      {/* Left: Resume Preview (spans 2 cols on desktop) */}
+      <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900/40 lg:col-span-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 bg-gradient-to-r from-indigo-50/50 to-white px-5 py-3 dark:border-white/10 dark:from-indigo-500/5 dark:to-transparent">
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-500 ring-1 ring-indigo-100 dark:bg-indigo-500/15 dark:text-indigo-300 dark:ring-indigo-500/20">
+              <FileText className="h-4 w-4" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">Resume Preview</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Candidate&apos;s submitted resume document</p>
+            </div>
+          </div>
+          {resumeHref && (
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" className="h-8 gap-1.5 rounded-lg" onClick={() => window.open(resumeHref, "_blank")}>
+                <ExternalLink className="h-3.5 w-3.5" /> Open in new tab
+              </Button>
+              <Button size="sm" className="h-8 gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600" asChild>
+                <a href={resumeHref} download>
+                  <Download className="h-3.5 w-3.5" /> Download
+                </a>
+              </Button>
+            </div>
+          )}
+        </div>
+        <div className="bg-gray-100 p-0 dark:bg-gray-950/40">
+          {resumeHref ? (
+            <iframe
+              src={resumeHref}
+              className="h-[720px] w-full rounded-b-2xl border-0"
+              title="Resume preview"
+            />
+          ) : (
+            <div className="py-16 text-center text-gray-400">
+              <FileText className="mx-auto mb-3 h-12 w-12 opacity-40" />
+              <p className="text-base font-medium">No resume uploaded</p>
+            </div>
+          )}
+        </div>
+      </div>
 
-  const formatTs = (captured_at: string | null) => {
-    if (!captured_at) return "";
-    return new Date(captured_at).toLocaleString("en-IN", {
+      {/* Right: Fit score + Candidate details */}
+      <div className="space-y-4">
+        {/* Overall Fit Score card */}
+        <div className={cn("overflow-hidden rounded-2xl border bg-gradient-to-br p-5", fitTheme.bg)}>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Overall Fit Score</p>
+          <p className={cn("mt-1 text-4xl font-bold leading-none", fitTheme.text)}>
+            {fitPct !== null ? `${fitPct}` : "—"}
+            <span className="ml-0.5 text-xl">%</span>
+          </p>
+          <p className={cn("mt-1 text-sm font-semibold", fitTheme.text)}>{fitTheme.label}</p>
+          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/60 ring-1 ring-gray-200/50">
+            <div className={cn("h-full rounded-full transition-all", fitTheme.bar)} style={{ width: `${fitPct ?? 0}%` }} />
+          </div>
+          {fitSummary && (
+            <p className="mt-3 text-xs leading-relaxed text-gray-700 dark:text-gray-200">
+              {fitSummary}
+            </p>
+          )}
+        </div>
+
+        {/* Candidate Details card */}
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-gray-900/40">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Candidate Details</p>
+          <dl className="mt-3 space-y-2.5 text-sm">
+            <DetailRow label="Applied for" value={job?.title ?? "—"} />
+            <DetailRow
+              label="Experience required"
+              value={
+                job?.experience_min != null && job?.experience_max != null
+                  ? `${job.experience_min}-${job.experience_max} years`
+                  : "—"
+              }
+            />
+            <DetailRow label="Location" value={candidate.location || "—"} />
+            <DetailRow label="Email" value={candidate.email} />
+            {candidate.phone && <DetailRow label="Phone" value={candidate.phone} />}
+            <DetailRow label="Stage" value={candidate.candidate_stage || "—"} />
+          </dl>
+          {resumeHref && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4 w-full gap-1.5 rounded-lg"
+              onClick={() => window.open(resumeHref, "_blank")}
+            >
+              <Eye className="h-3.5 w-3.5" /> View resume PDF
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <dt className="text-gray-500 dark:text-gray-400">{label}</dt>
+      <dd className="max-w-[60%] text-right font-semibold text-gray-900 dark:text-white">{value}</dd>
+    </div>
+  );
+}
+
+// ── Activity Tab (Timeline + Session Summary + Face Frames) ─────────────────
+
+function ActivityTab({
+  candidate,
+  job,
+  session,
+  screenshots,
+  violations,
+  fitPct,
+  evaluationStatus,
+  timezone,
+}: {
+  candidate: EvaluationData["candidate"];
+  job: EvaluationData["job"];
+  session: EvaluationData["session"];
+  screenshots: EvaluationData["screenshots"];
+  violations: EvaluationData["violations"];
+  fitPct: number | null;
+  evaluationStatus: string | null;
+  timezone: string;
+}) {
+  const formatTs = (iso: string | null) => {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleString("en-US", {
       timeZone: timezone,
-      month: "short", day: "numeric", year: "numeric",
-      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  // Build timeline events from the available data
+  const timeline: { icon: React.ReactNode; title: string; detail: string; timestamp: string | null }[] = [];
+
+  if (candidate.interview_date || session?.started_at) {
+    timeline.push({
+      icon: <User className="h-3.5 w-3.5" />,
+      title: "Application received",
+      detail: `Applied for ${job?.title ?? "role"}`,
+      timestamp: candidate.interview_date ?? session?.started_at ?? null,
+    });
+  }
+  if (candidate.interview_date) {
+    timeline.push({
+      icon: <Calendar className="h-3.5 w-3.5" />,
+      title: "Interview scheduled",
+      detail: "AI round scheduled with candidate",
+      timestamp: candidate.interview_date,
+    });
+  }
+  if (session?.started_at) {
+    timeline.push({
+      icon: <Video className="h-3.5 w-3.5" />,
+      title: "AI interview started",
+      detail: "Interview session began",
+      timestamp: session.started_at,
+    });
+  }
+  if (session?.completed_at) {
+    timeline.push({
+      icon: <CheckCircle className="h-3.5 w-3.5" />,
+      title: "AI interview completed",
+      detail: `Status: ${session.status}`,
+      timestamp: session.completed_at,
+    });
+  }
+  if (fitPct !== null) {
+    timeline.push({
+      icon: <FileText className="h-3.5 w-3.5" />,
+      title: "Resume screened",
+      detail: `${fitPct}% fit score calculated`,
+      timestamp: null,
+    });
+  }
+  if (evaluationStatus) {
+    timeline.push({
+      icon: <Star className="h-3.5 w-3.5" />,
+      title: "Evaluation generated",
+      detail: evaluationStatus,
+      timestamp: session?.completed_at ?? null,
+    });
+  }
+
+  const frameFormat = (iso: string | null) => {
+    if (!iso) return "";
+    return new Date(iso).toLocaleString("en-IN", {
+      timeZone: timezone,
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
       hour12: true,
     });
   };
 
-  const renderGrid = (items: typeof screenshots, emptyMsg: string) => {
-    if (items.length === 0) {
-      return (
-        <div className="py-16 text-center text-gray-400">
-          <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-40" />
-          <p className="text-base font-medium">{emptyMsg}</p>
-        </div>
-      );
-    }
-    return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        {items.map((ss, idx) => (
-          <div key={idx} className="relative bg-gray-100 rounded-lg border border-gray-200 overflow-hidden aspect-video">
-            <img
-              src={`${API_STATIC}${ss.file_path}`}
-              alt={`Frame ${idx + 1}`}
-              className="w-full h-full object-cover"
-              loading="lazy"
-            />
-            {ss.captured_at && (
-              <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] px-2 py-1 text-center">
-                {formatTs(ss.captured_at)}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    );
-  };
+  const singleFaceCount = screenshots.filter((s) => s.face_count === null || s.face_count === undefined || s.face_count === 1).length;
 
   return (
-    <Card className="border border-gray-200 shadow-sm">
-      <CardContent className="p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Face Detection Frames</h2>
+    <div className="space-y-5">
+      {/* Timeline + Session Summary row */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        {/* Activity Timeline */}
+        <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900/40 lg:col-span-2">
+          <div className="flex items-center justify-between gap-3 border-b border-gray-100 bg-gradient-to-r from-indigo-50/50 to-white px-5 py-3 dark:border-white/10 dark:from-indigo-500/5 dark:to-transparent">
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-500 ring-1 ring-indigo-100 dark:bg-indigo-500/15 dark:text-indigo-300 dark:ring-indigo-500/20">
+                <Clock className="h-4 w-4" />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-gray-900 dark:text-white">Activity Timeline</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">All events from application through evaluation</p>
+              </div>
+            </div>
+            <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300">
+              {timeline.length} events
+            </span>
+          </div>
+          <div className="p-5">
+            {timeline.length === 0 ? (
+              <div className="py-10 text-center text-sm text-gray-400">No activity recorded yet.</div>
+            ) : (
+              <ol className="relative space-y-5">
+                {timeline.map((evt, idx) => {
+                  const isLast = idx === timeline.length - 1;
+                  return (
+                    <li key={idx} className="relative flex gap-3">
+                      {/* Connector line — drawn from the center of this icon down to the next icon */}
+                      {!isLast && (
+                        <span
+                          aria-hidden
+                          className="absolute left-[17px] top-9 h-[calc(100%-12px)] w-px bg-emerald-400/70 dark:bg-emerald-500/50"
+                        />
+                      )}
+                      {/* Solid green icon node */}
+                      <span className="relative z-10 flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm ring-4 ring-emerald-50 dark:ring-emerald-500/10">
+                        {evt.icon}
+                      </span>
+                      <div className="min-w-0 flex-1 pt-1">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white">{evt.title}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{evt.detail}</p>
+                        {evt.timestamp && (
+                          <p className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-400">
+                            <Clock className="h-3 w-3" />
+                            {formatTs(evt.timestamp)}
+                          </p>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </div>
+        </div>
 
-        <Tabs value={subTab} onValueChange={setSubTab}>
-          <TabsList className="mb-4">
-            <TabsTrigger value="single" className="text-xs sm:text-sm">
-              Single Face Detected ({classified.single.length})
-            </TabsTrigger>
-            <TabsTrigger value="multiple" className="text-xs sm:text-sm">
-              Multiple Faces ({classified.multiple.length})
-            </TabsTrigger>
-            <TabsTrigger value="none" className="text-xs sm:text-sm">
-              No Face ({classified.none.length})
-            </TabsTrigger>
-          </TabsList>
+        {/* Session Summary */}
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-gray-900/40">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Session Summary</p>
+          <dl className="mt-3 space-y-2.5 text-sm">
+            <DetailRow label="Status" value={session?.status ?? "—"} />
+            <DetailRow
+              label="Violations"
+              value={violations.length > 0 ? String(violations.length) : "0"}
+            />
+            <DetailRow label="Frames captured" value={String(screenshots.length)} />
+            <DetailRow label="Started" value={formatTs(session?.started_at ?? null)} />
+            <DetailRow label="Completed" value={formatTs(session?.completed_at ?? null)} />
+          </dl>
+        </div>
+      </div>
 
-          <TabsContent value="single">
-            {renderGrid(classified.single, "No single-face frames available")}
-          </TabsContent>
-          <TabsContent value="multiple">
-            {renderGrid(classified.multiple, "No multiple face events detected")}
-          </TabsContent>
-          <TabsContent value="none">
-            {renderGrid(classified.none, "No missing face events detected")}
-          </TabsContent>
-        </Tabs>
-      </CardContent>
-    </Card>
+      {/* Face Detection Frames (Single Face only — simplified) */}
+      <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900/40">
+        <div className="flex items-center justify-between gap-3 border-b border-gray-100 bg-gradient-to-r from-indigo-50/50 to-white px-5 py-3 dark:border-white/10 dark:from-indigo-500/5 dark:to-transparent">
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-500 ring-1 ring-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-500/20">
+              <UserCheck className="h-4 w-4" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">Face Detection Frames</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Proctoring snapshots captured during the interview</p>
+            </div>
+          </div>
+          <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300">
+            {screenshots.length} total
+          </span>
+        </div>
+
+        <div className="p-5">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10">
+            <User className="h-3 w-3" />
+            Single Face
+            <span className="rounded-full bg-white px-1.5 text-[10px] font-bold text-gray-600 dark:bg-gray-900 dark:text-gray-300">
+              {singleFaceCount}
+            </span>
+          </div>
+
+          {screenshots.length === 0 ? (
+            <div className="py-16 text-center text-gray-400">
+              <ImageIcon className="mx-auto mb-3 h-12 w-12 opacity-40" />
+              <p className="text-base font-medium">No frames captured</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+              {screenshots.map((ss, idx) => (
+                <div
+                  key={idx}
+                  className="group relative aspect-video overflow-hidden rounded-xl border border-gray-200 bg-gray-100 transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-white/10 dark:bg-white/5"
+                >
+                  <img
+                    src={`${API_STATIC}${ss.file_path}`}
+                    alt={`Frame ${idx + 1}`}
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                  <span className="absolute left-2 top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                    {ss.face_count ?? 1} Face
+                  </span>
+                  {ss.captured_at && (
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1 text-center text-[10px] text-white">
+                      {frameFormat(ss.captured_at)}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1374,6 +1970,42 @@ function CodingTab({
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+// ── StatCard ────────────────────────────────────────────────────────────────
+
+function StatCard({
+  label,
+  value,
+  tagline,
+  icon,
+  iconWrap,
+  topBar,
+}: {
+  label: string;
+  value: string;
+  tagline: string;
+  icon: React.ReactNode;
+  iconWrap: string;
+  topBar: string;
+}) {
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-white/10 dark:bg-gray-900/40">
+      <div className={cn("absolute inset-x-0 top-0 h-1", topBar)} />
+      <div className="flex items-start justify-between">
+        <span className={cn("flex h-9 w-9 items-center justify-center rounded-xl ring-1", iconWrap)}>
+          {icon}
+        </span>
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+          {label}
+        </span>
+      </div>
+      <p className="mt-4 text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
+        {value}
+      </p>
+      <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{tagline}</p>
     </div>
   );
 }

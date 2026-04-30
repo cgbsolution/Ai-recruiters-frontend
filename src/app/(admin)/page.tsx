@@ -3,6 +3,8 @@ import React from "react";
 import { JobsDataCard } from "@/components/cards/JobsDataCard";
 import HiringFunnelCharts from "@/components/charts/HiringFunnelCharts";
 import LineStatisticsChart from "@/components/charts/LineStatisticsChart";
+import CandidateActivityChart from "@/components/charts/CandidateActivityChart";
+import CandidateDistributionChart from "@/components/charts/CandidateDistributionChart";
 import AiCreditUsageChart from "@/components/charts/AiCreditUsageChart";
 import AiUsageAnalytics from "@/components/charts/AiUsageAnalytics";
 import { JobsOpeningsCard } from "@/components/cards/JobOpeningsCard";
@@ -26,6 +28,15 @@ export default function Dashboard() {
 
         <div className="col-span-12 space-y-6 xl:col-span-6">
           <LineStatisticsChart />
+        </div>
+
+        {/* Secondary analytics row — gradient area + donut distribution */}
+        <div className="col-span-12 space-y-6 xl:col-span-6">
+          <CandidateActivityChart />
+        </div>
+
+        <div className="col-span-12 space-y-6 xl:col-span-6">
+          <CandidateDistributionChart />
         </div>
 
         {/* AI Usage Analytics & Credits — Super Admin only */}

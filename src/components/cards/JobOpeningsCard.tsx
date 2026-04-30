@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import {
   Select,
   SelectContent,
@@ -80,34 +80,38 @@ export const JobsOpeningsCard = () => {
   const [jobToDelete, setJobToDelete] = useState<Job | null>(null);
   const router = useRouter();
 
-  const inputRef = useRef<HTMLInputElement>(null);
+  const fetchJobs = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true;
+    try {
+      if (!silent) setLoading(true);
+      const data = await api<Job[]>("/jobs/");
+      setJobs(data);
+    } catch (error) {
+      console.error("Error fetching jobs:", error);
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const fetchJobs = async () => {
-      try {
-        setLoading(true);
-        const data = await api<Job[]>("/jobs/");
-        setJobs(data);
-      } catch (error) {
-        console.error("Error fetching jobs:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchJobs();
-  }, []);
+  }, [fetchJobs]);
 
-  // ctrl/cmd + k focus shortcut
+  // Real-time refresh: anywhere in the app dispatches
+  //   window.dispatchEvent(new CustomEvent("job:created", { detail: job }))
+  // (e.g. the AI Assistant or the Create Opening form) and this list
+  // silently refetches so the new row shows up without a page reload.
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === "k") {
-        event.preventDefault();
-        inputRef.current?.focus();
-      }
+    const handler = () => fetchJobs({ silent: true });
+    window.addEventListener("job:created", handler);
+    window.addEventListener("job:updated", handler);
+    window.addEventListener("job:deleted", handler);
+    return () => {
+      window.removeEventListener("job:created", handler);
+      window.removeEventListener("job:updated", handler);
+      window.removeEventListener("job:deleted", handler);
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [fetchJobs]);
 
   const statusColors: Record<string, string> = {
     Open: "bg-green-100 text-green-700",
@@ -201,6 +205,9 @@ export const JobsOpeningsCard = () => {
     try {
       await api(`/jobs/${jobToDelete.id}`, { method: "DELETE" });
       setJobs((prev) => prev.filter((job) => job.id !== jobToDelete.id));
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("job:deleted", { detail: { id: jobToDelete.id } }));
+      }
       setDeleteDialogOpen(false);
       setJobToDelete(null);
     } catch (error) {
@@ -227,12 +234,13 @@ export const JobsOpeningsCard = () => {
         </div>
 
         <div className="flex items-center gap-4">
-          <Input
-            ref={inputRef}
-            placeholder="Search jobs..."
+          <SearchInput
+            shortcut="/"
+            placeholder="Search jobs…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-11 w-[220px]"
+            onClear={() => setSearch("")}
+            wrapperClassName="w-[260px]"
           />
 
           <Select

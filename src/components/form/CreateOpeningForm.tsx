@@ -9,7 +9,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -38,13 +37,41 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { notifyError, notifySuccess, notifyInfo } from "@/lib/notify";
 import {
-  TrashIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  PlusIcon,
+  Trash2,
+  ChevronDown,
+  ChevronRight,
+  Plus,
   Info,
+  Sparkles,
+  FileText,
+  ListChecks,
+  SlidersHorizontal,
+  Building2,
+  MapPin,
+  Briefcase,
+  TrendingUp,
+  Users,
+  BadgeCheck,
+  Upload,
+  Wand2,
+  GripVertical,
+  Code2,
+  Smartphone,
+  UserCircle2,
+  ScanFace,
+  UserCog,
+  Video,
+  Camera,
+  UsersRound,
+  Target,
+  ClipboardCheck,
+  Check,
+  CheckCircle2,
+  ChevronLeft,
+  Lock,
 } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 // --- Config
 import { api, apiPost, apiUpload, ApiError } from "@/lib/api";
@@ -60,6 +87,12 @@ type SkillGroup = {
 interface CreateOpeningFormProps {
   jobId?: string;
 }
+
+const STEPS = [
+  { label: "Basic Info", icon: FileText },
+  { label: "Responsibilities", icon: ListChecks },
+  { label: "Interview Setup", icon: SlidersHorizontal },
+] as const;
 
 export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
   const searchParams = useSearchParams();
@@ -82,7 +115,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
   const [location, setLocation] = useState<string>("");
   const [jobType, setJobType] = useState<string>("Full-time");
   const [experienceRange, setExperienceRange] = useState<number[]>([0, 2]);
-  const [experienceLevel, setExperienceLevel] = useState<string>("Mid");
   const [openings, setOpenings] = useState<number>(1);
   const [empType, setEmpType] = useState<string>("Permanent");
   const [uploadJD, setUploadJD] = useState<File | null>(null);
@@ -188,12 +220,9 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       setExpandedGroups(new Set(mapped.map((g) => g.id)));
     }
 
-    // Special instructions are manual-only — don't auto-fill from AI
-
     const qCount = jd.coding_questions_count ?? 5;
     setMaxQuestions(qCount);
 
-    // ── Auto-generate interview questions from the AI JD ──────────────────
     try {
       const allSkills = (jd.skill_groups ?? []).flatMap((g) => g.skills).slice(0, 10);
       const data = await apiPost<any>("/ai/generate-questions", {
@@ -329,20 +358,19 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     });
 
   const addCustomQuestion = (q = "") =>
-    setCustomQuestions((p) => [...p, { 
-      text: q || `Question ${p.length + 1}`, 
-      category: "general", 
-      difficulty: "medium" 
+    setCustomQuestions((p) => [...p, {
+      text: q || `Question ${p.length + 1}`,
+      category: "general",
+      difficulty: "medium"
     }]);
-  
+
   const updateCustomQuestion = (i: number, v: string) =>
     setCustomQuestions((p) => p.map((q, idx) => (idx === i ? { ...q, text: v } : q)));
-  
+
   const deleteCustomQuestion = (i: number) =>
     setCustomQuestions((p) => p.filter((_, idx) => idx !== i));
 
   // ---------- Question Bank Functions ----------
-  // Fetch all questions from the API
   const fetchAllQuestions = async () => {
     try {
       const data = await api<any[]>("/questions/");
@@ -354,7 +382,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     }
   };
 
-  // Filter questions when category/difficulty changes
   useEffect(() => {
     if (selectedCategory !== "all" || selectedDifficulty !== "all") {
       const filtered = availableQuestions.filter((q: any) => {
@@ -370,7 +397,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     }
   }, [selectedCategory, selectedDifficulty, availableQuestions]);
 
-  // Toggle question selection
   const toggleQuestionSelection = (questionId: number) => {
     setSelectedQuestionIds((prev) => {
       const newSet = new Set(prev);
@@ -383,7 +409,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     });
   };
 
-  // Add random questions based on count
   const addRandomQuestions = () => {
     const available = filteredQuestions.filter(
       (q) => !selectedQuestionIds.has(q.id)
@@ -403,7 +428,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     notifySuccess(`Added ${randomQuestions.length} questions from bank`);
   };
 
-  // Add specific selected questions
   const addSelectedQuestions = () => {
     const selectedQuestions = availableQuestions.filter((q) =>
       selectedQuestionIds.has(q.id)
@@ -420,14 +444,12 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     notifySuccess(`Added ${selectedQuestions.length} selected questions`);
   };
 
-  // Initialize question bank data
   const openQuestionBank = () => {
     setShowQuestionBank(true);
     setSelectedQuestionIds(new Set());
     setSelectedCategory("all");
     setSelectedDifficulty("all");
     setQuestionsCount(5);
-    // Fetch latest data when opening
     fetchAllQuestions();
   };
 
@@ -450,7 +472,7 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
         group.skills.some((skill) => skill.trim().length > 0)
       ) ||
       specialInstructions.trim().length > 0) &&
-      manager.name.trim().length > 0; // Manager name is required
+      manager.name.trim().length > 0;
 
     return [s0, s1, s2];
   }, [
@@ -465,7 +487,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     specialInstructions,
   ]);
 
-  // Check specific required fields for better error messages
   const checkStepRequirements = (targetStep: number): boolean => {
     switch (targetStep) {
       case 0:
@@ -478,40 +499,38 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
           return false;
         }
         return true;
-      
+
       case 1:
         if (responsibilities.filter((r) => r.trim().length > 0).length === 0) {
           notifyError("At least one Job Responsibility is required");
           return false;
         }
         return true;
-      
+
       case 2:
         if (!manager.name.trim()) {
           notifyError("Assigned Manager Name is required");
           return false;
         }
-        if (skillGroups.length === 0 || !skillGroups.some(group => 
+        if (skillGroups.length === 0 || !skillGroups.some(group =>
           group.skills.some(skill => skill.trim().length > 0)
         )) {
           notifyError("At least one Skill to Test is required");
           return false;
         }
         return true;
-      
+
       default:
         return true;
     }
   };
 
   const tryGoToStep = (target: number) => {
-    // Allow going backward freely
     if (target <= step) {
       setStep(target);
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
-    // For forward navigation, validate all steps before the target
     for (let s = 0; s < target; s++) {
       if (!stepCompleted[s]) {
         checkStepRequirements(s);
@@ -526,7 +545,7 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     if (!checkStepRequirements(step)) {
       return;
     }
-    
+
     if (!stepCompleted[step]) {
       notifyError("Please fill required fields in this step before proceeding.");
       return;
@@ -574,6 +593,8 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
   };
 
   const progressPercent = Math.round(((step + 1) / 3) * 100);
+  const responsibilityCount = responsibilities.filter((r) => r.trim().length > 0).length;
+  const hasAtLeastOneSkill = skillGroups.some((g) => g.skills.some((s) => s.trim().length > 0));
 
   // Fetch job data for edit mode
   useEffect(() => {
@@ -583,7 +604,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
           setLoading(true);
           const jobData = await api<any>(`/jobs/${jobId}`);
 
-          // Populate form with existing data
           setTitle(jobData.title || "");
           setDepartment(jobData.department || "");
           setLocation(jobData.location || "");
@@ -591,7 +611,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
           setOpenings(jobData.openings || 1);
           setEmpType(jobData.emp_type || "Permanent");
 
-          // Set experience range
           if (
             jobData.experience_min !== undefined &&
             jobData.experience_max !== undefined
@@ -602,14 +621,12 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
             ]);
           }
 
-          // Set responsibilities
           if (jobData.responsibilities) {
             setResponsibilities(
               jobData.responsibilities.map((r: any) => r.description || "")
             );
           }
 
-          // Set interview settings
           if (jobData.interview_settings) {
             const settings = jobData.interview_settings;
             setInterviewSettings({
@@ -625,14 +642,12 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
             });
           }
 
-          // Set manager info
           setManager({
             name: jobData.manager_name || "",
             phone: jobData.manager_phone || "",
             email: jobData.manager_email || "",
           });
 
-          // Set question settings
           setQuestionType(
             jobData.interview_settings?.mode === "SCENARIO"
               ? "scenario"
@@ -649,7 +664,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
             jobData.evaluation_scoring || "Standard Evaluation"
           );
 
-          // Set custom questions
           if (jobData.questions) {
             setCustomQuestions(jobData.questions.map((q: any) => ({
               text: q.text || "",
@@ -662,7 +676,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
             mqVal === "only" ? "only" : mqVal === "ai_only" ? "ai_only" : "mix"
           );
 
-          // Set skill groups
           if (jobData.skills && jobData.skills.length > 0) {
             const groupedSkills: { [key: string]: SkillGroup } = {};
 
@@ -700,9 +713,8 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     }
   }, [isEditMode, jobId]);
 
-  // ---------- Submit (single payload to API_URL) ----------
+  // ---------- Submit ----------
   const handleSubmit = async () => {
-    // Final validation before submit
     if (!title.trim()) {
       notifyError("Please enter a job title.");
       setStep(0);
@@ -723,7 +735,7 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       setStep(2);
       return;
     }
-    if (skillGroups.length === 0 || !skillGroups.some(group => 
+    if (skillGroups.length === 0 || !skillGroups.some(group =>
       group.skills.some(skill => skill.trim().length > 0)
     )) {
       notifyError("Please add at least one skill to test.");
@@ -731,7 +743,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       return;
     }
 
-    // build interview_settings nested object (single source of truth)
     const interview_payload = {
       code_editor_required: interviewSettings.codeEditor,
       resume_based: interviewSettings.resumeBased,
@@ -750,7 +761,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       manual_interview: interviewSettings.manualInterview,
     };
 
-    // mapping skills
     const mappedSkills = skillGroups.flatMap((group) =>
       group.skills
         .filter((skill) => skill.trim().length > 0)
@@ -782,7 +792,7 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       manager_email: manager.email,
       evaluation_scoring: scoringLeniency,
       mix_of_questions: customQuestionsMode === "mix" ? "mix" : customQuestionsMode === "ai_only" ? "ai_only" : "only",
-      questions: customQuestions, // Now includes category and difficulty
+      questions: customQuestions,
       allow_to_contact: interviewSettings.allowCandidateContact,
       upload_jd: uploadJD ? uploadJD.name : "",
     };
@@ -797,6 +807,11 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
         body: JSON.stringify(payload),
       });
 
+      // Broadcast so dashboards & lists refresh in real-time
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(isEditMode ? "job:updated" : "job:created"));
+      }
+
       notifySuccess(`Job ${isEditMode ? "Updated" : "Created"} Successfully!`);
       router.push("/");
     } catch (err: unknown) {
@@ -805,7 +820,6 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     }
   };
 
-  // Update the page title based on mode
   const pageTitle = isEditMode
     ? `Edit ${title || "Job"}`
     : `Create ${
@@ -816,1082 +830,1089 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
   if (loading) {
     return (
       <div className="max-w-5xl mx-auto p-6">
+        <Skeleton className="h-24 w-full mb-6 rounded-2xl" />
         <Skeleton className="h-8 w-1/3 mb-4" />
         <Skeleton className="h-4 w-1/2 mb-8" />
         <div className="space-y-4">
-          <Skeleton className="h-64 w-full" />
-          <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-64 w-full rounded-2xl" />
+          <Skeleton className="h-64 w-full rounded-2xl" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
-      <h1 className="text-2xl font-semibold mb-4">{pageTitle}</h1>
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-10 pt-6">
+      {/* ===== Hero / Page Header ===== */}
+      <div className="relative overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-5 sm:p-6 dark:border-indigo-500/20 dark:from-indigo-500/10 dark:via-gray-900 dark:to-purple-500/10">
+        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-500/10" />
+        <div className="pointer-events-none absolute -bottom-20 -left-10 h-48 w-48 rounded-full bg-purple-200/40 blur-3xl dark:bg-purple-500/10" />
+        <div className="relative flex items-start gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-gray-200/80 dark:bg-gray-900 dark:ring-white/10">
+            <Sparkles className="h-5 w-5 text-indigo-500" />
+          </div>
+          <div className="flex-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-300">
+              {isEditMode ? "Edit Role" : "New Role"}
+            </p>
+            <h1 className="mt-0.5 text-xl font-bold text-gray-900 sm:text-2xl dark:text-white">
+              {isEditMode ? pageTitle : "Create a Job Opening"}
+            </h1>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+              Describe the role, responsibilities, and the interview plan. We&apos;ll build the screening flow around it.
+            </p>
+          </div>
+        </div>
+      </div>
 
-      {/* Progress indicator (4 steps) */}
-      <div className="mb-4">
-        <Tabs
-          value={String(step)}
-          onValueChange={(v) => {
-            const target = parseInt(v, 10);
-            tryGoToStep(target);
-          }}
-        >
-          <TabsList className="flex w-full gap-2">
-            <TabsTrigger value="0">Basic Info</TabsTrigger>
-            <TabsTrigger value="1">Responsibilities</TabsTrigger>
-            <TabsTrigger value="2">Interview Setup</TabsTrigger>
-          </TabsList>
-        </Tabs>
+      {/* ===== Section title + progress% ===== */}
+      <div className="mt-8 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+            {pageTitle}
+          </h2>
+          <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+            Step {step + 1} of 3 <span className="mx-1 text-gray-300">—</span> {STEPS[step].label}
+          </p>
+        </div>
+        <span className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">
+          {progressPercent}% complete
+        </span>
+      </div>
 
-        {/* Visual progress bar under tabs */}
-        <div className="w-full bg-slate-100 h-2 rounded-full mt-3">
+      {/* ===== Stepper ===== */}
+      <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-5 sm:p-6 dark:border-white/10 dark:bg-gray-900/40">
+        <ol className="flex items-start">
+          {STEPS.map((s, idx) => {
+            const Icon = s.icon;
+            const isActive = idx === step;
+            const isDone = idx < step;
+            const isLast = idx === STEPS.length - 1;
+            return (
+              <li
+                key={s.label}
+                className="relative flex flex-1 flex-col items-center text-center"
+              >
+                {/* Connector reaches from center of this circle to center of the next.
+                    Equal-width li's make `w-full` exactly one li-width — i.e. center-to-center. */}
+                {!isLast && (
+                  <div className="pointer-events-none absolute left-1/2 top-5 h-0.5 w-full -translate-y-1/2 overflow-hidden bg-gray-200 dark:bg-white/10">
+                    <div
+                      className={cn(
+                        "h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500",
+                        step > idx ? "w-full" : "w-0"
+                      )}
+                    />
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => tryGoToStep(idx)}
+                  className={cn(
+                    "relative z-10 flex h-10 w-10 items-center justify-center rounded-full border-2 bg-white transition-all",
+                    isActive && "border-indigo-500 bg-indigo-500 text-white shadow-sm ring-4 ring-indigo-100 dark:ring-indigo-500/20",
+                    isDone && "border-indigo-500 bg-indigo-500 text-white",
+                    !isActive && !isDone && "border-gray-200 text-gray-400 hover:border-indigo-300 hover:text-indigo-500 dark:border-white/10"
+                  )}
+                >
+                  {isDone ? <Check className="h-5 w-5" /> : <Icon className="h-4 w-4" />}
+                </button>
+                <span
+                  className={cn(
+                    "mt-2 whitespace-nowrap text-xs sm:text-sm font-medium",
+                    isActive ? "text-gray-900 dark:text-white" : "text-gray-500 dark:text-gray-400"
+                  )}
+                >
+                  {s.label}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+
+        {/* overall progress bar */}
+        <div className="mt-5 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-white/10">
           <div
-            className="h-2 rounded-full bg-[#465fff] transition-all"
+            className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500"
             style={{ width: `${progressPercent}%` }}
           />
         </div>
       </div>
 
-      {/* ---------- STEP 1 - BASIC INFO ---------- */}
+      {/* ===== STEP 1 - BASIC INFO ===== */}
       {step === 0 && (
-        <Card className="mt-6">
-          <CardContent className="space-y-6 p-6">
-            <div className="flex items-center justify-between">
-              <div className="flex gap-2 items-center">
-                {/* Upload JD Button with Dialog */}
-                <Dialog open={open} onOpenChange={(v) => { if (!uploadingJD) setOpen(v); }}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline">Upload Job Description ⬆️</Button>
-                  </DialogTrigger>
-
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Upload Job Description</DialogTitle>
-                    </DialogHeader>
-
-                    <div className="space-y-4">
-                      <Label htmlFor="jd-file">Select JD File</Label>
-                      <Input
-                        id="jd-file"
-                        type="file"
-                        accept=".pdf,.doc,.docx"
-                        disabled={uploadingJD}
-                        onChange={(e) =>
-                          setUploadJD(e.target.files ? e.target.files[0] : null)
-                        }
-                      />
-                      {uploadingJD && (
-                        <p className="text-sm text-blue-600">
-                          Scanning and extracting data from your file… This may take a few seconds.
-                        </p>
-                      )}
-                    </div>
-
-                    <DialogFooter>
-                      <Button onClick={handleUpload} disabled={!uploadJD || uploadingJD}>
-                        {uploadingJD ? "Parsing…" : "Upload"}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-
-                {/* Generate JD Button */}
-                <Button
-                  variant="outline"
-                  onClick={() => setAiJDModalOpen(true)}
-                >
-                  Generate JD ⚡
-                </Button>
+        <section className="mt-6 rounded-2xl border border-gray-200 bg-white p-5 sm:p-6 dark:border-white/10 dark:bg-gray-900/40">
+          {/* Start fast banner */}
+          <div className="flex flex-col gap-3 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-indigo-500/30 dark:bg-indigo-500/5">
+            <div className="flex items-start gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-indigo-100 dark:bg-gray-900 dark:ring-indigo-500/20">
+                <Sparkles className="h-4 w-4 text-indigo-500" />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-gray-900 dark:text-white">Start fast</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Upload a JD to auto-fill, or generate one from scratch with AI.
+                </p>
               </div>
             </div>
+            <div className="flex items-center gap-2">
+              <Dialog open={open} onOpenChange={(v) => { if (!uploadingJD) setOpen(v); }}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1.5">
+                    <Upload className="h-4 w-4" />
+                    Upload JD
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Upload Job Description</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <Label htmlFor="jd-file">Select JD File</Label>
+                    <Input
+                      id="jd-file"
+                      type="file"
+                      accept=".pdf,.doc,.docx"
+                      disabled={uploadingJD}
+                      onChange={(e) =>
+                        setUploadJD(e.target.files ? e.target.files[0] : null)
+                      }
+                    />
+                    {uploadingJD && (
+                      <p className="text-sm text-blue-600">
+                        Scanning and extracting data from your file… This may take a few seconds.
+                      </p>
+                    )}
+                  </div>
+                  <DialogFooter>
+                    <Button onClick={handleUpload} disabled={!uploadJD || uploadingJD}>
+                      {uploadingJD ? "Parsing…" : "Upload"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
 
-            {/* Title */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAiJDModalOpen(true)}
+                className="gap-1.5 border-indigo-200 text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700 dark:border-indigo-500/30 dark:text-indigo-300 dark:hover:bg-indigo-500/10"
+              >
+                <Wand2 className="h-4 w-4" />
+                Generate JD
+              </Button>
+            </div>
+          </div>
+
+          {/* Job Title */}
+          <div className="mt-6">
+            <Label className="flex items-center gap-2 text-sm font-medium text-indigo-600 dark:text-indigo-300">
+              <FileText className="h-3.5 w-3.5" />
+              Job Title <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              placeholder="e.g. Senior React Developer"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="mt-2"
+              required
+            />
+          </div>
+
+          {/* Role Details divider */}
+          <div className="my-6 flex items-center gap-3">
+            <span className="h-px flex-1 bg-gray-200 dark:bg-white/10" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+              Role Details
+            </span>
+            <span className="h-px flex-1 bg-gray-200 dark:bg-white/10" />
+          </div>
+
+          {/* Department / Location / Job Type */}
+          <div className="grid gap-4 sm:grid-cols-3">
             <div>
-              <Label className="block text-sm font-medium mb-2">
-                Job Title <span className="text-red-500">*</span>
+              <Label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+                <Building2 className="h-3.5 w-3.5 text-gray-400" />
+                Department
               </Label>
               <Input
-                placeholder="Enter Job Title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Engineering"
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+                <MapPin className="h-3.5 w-3.5 text-red-400" />
+                Location <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                placeholder="Remote or city"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                className="mt-2"
                 required
               />
             </div>
-
-            {/* Department & Location & Job Type */}
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label className="block text-sm font-medium mb-2">
-                  Department
-                </Label>
-                <Input
-                  placeholder="Department"
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <Label className="block text-sm font-medium mb-2">
-                  Location <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  placeholder="Location"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div>
-                <Label className="block text-sm font-medium mb-2">
-                  Job Type
-                </Label>
-                <Select value={jobType} onValueChange={setJobType}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select Job Type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Full-time">Full-time</SelectItem>
-                    <SelectItem value="Part-time">Part-time</SelectItem>
-                    <SelectItem value="Contract">Contract</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Experience */}
             <div>
-              <Label className="block text-sm font-medium mb-2">
-                Experience Level ({experienceRange[0]} - {experienceRange[1]}{" "}
-                Years)
+              <Label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+                <Briefcase className="h-3.5 w-3.5 text-indigo-400" />
+                Job Type
               </Label>
-              <div className="py-4">
-                <Slider
-                  value={experienceRange}
-                  onValueChange={(v: number[]) => setExperienceRange(v)}
-                  min={0}
-                  max={20}
-                  step={1}
-                >
-                  <SliderTrack>
-                    <SliderRange />
-                  </SliderTrack>
-                  <SliderThumb value={experienceRange[0]} />
-                  <SliderThumb value={experienceRange[1]} />
-                </Slider>
-                <div className="flex justify-between text-xs text-gray-500 mt-2">
-                  <span>0 yrs</span>
-                  <span>20 yrs</span>
-                </div>
-              </div>
+              <Select value={jobType} onValueChange={setJobType}>
+                <SelectTrigger className="mt-2 w-full">
+                  <SelectValue placeholder="Select Job Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Full-time">Full-time</SelectItem>
+                  <SelectItem value="Part-time">Part-time</SelectItem>
+                  <SelectItem value="Contract">Contract</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+          </div>
 
-            {/* Openings & Employment Type */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="block text-sm font-medium mb-2">
-                  Openings
-                </Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={openings}
-                  onChange={(e) => setOpenings(Number(e.target.value))}
-                />
-              </div>
-              <div>
-                <Label className="block text-sm font-medium mb-2">
-                  Employment Type
-                </Label>
-                <Select value={empType} onValueChange={setEmpType}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select Employment Type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Permanent">Permanent</SelectItem>
-                    <SelectItem value="Contract">Contract</SelectItem>
-                    <SelectItem value="Internship">Internship</SelectItem>
-                  </SelectContent>
-                </Select>
+          {/* Experience */}
+          <div className="mt-6 rounded-xl border border-gray-100 bg-gray-50/60 p-4 dark:border-white/10 dark:bg-white/5">
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+                <TrendingUp className="h-3.5 w-3.5 text-blue-400" />
+                Experience Level
+              </Label>
+              <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300">
+                {experienceRange[0]} – {experienceRange[1]} yrs
+              </span>
+            </div>
+            <div className="px-1 pt-5">
+              <Slider
+                value={experienceRange}
+                onValueChange={(v: number[]) => setExperienceRange(v)}
+                min={0}
+                max={20}
+                step={1}
+              >
+                <SliderTrack>
+                  <SliderRange />
+                </SliderTrack>
+                <SliderThumb value={experienceRange[0]} />
+                <SliderThumb value={experienceRange[1]} />
+              </Slider>
+              <div className="mt-2 flex justify-between text-[11px] text-gray-400">
+                <span>0 yrs</span>
+                <span>5</span>
+                <span>10</span>
+                <span>15</span>
+                <span>20 yrs</span>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+
+          {/* Openings / Employment Type */}
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+                <Users className="h-3.5 w-3.5 text-orange-400" />
+                Openings
+              </Label>
+              <Input
+                type="number"
+                min={1}
+                value={openings}
+                onChange={(e) => setOpenings(Number(e.target.value))}
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+                <BadgeCheck className="h-3.5 w-3.5 text-emerald-400" />
+                Employment Type
+              </Label>
+              <Select value={empType} onValueChange={setEmpType}>
+                <SelectTrigger className="mt-2 w-full">
+                  <SelectValue placeholder="Select Employment Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Permanent">Permanent</SelectItem>
+                  <SelectItem value="Contract">Contract</SelectItem>
+                  <SelectItem value="Internship">Internship</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </section>
       )}
 
-      {/* ---------- STEP 2 - RESPONSIBILITIES ---------- */}
+      {/* ===== STEP 2 - RESPONSIBILITIES ===== */}
       {step === 1 && (
-        <Card className="mt-6">
-          <CardContent className="space-y-6 p-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-medium">Job Responsibilities <span className="text-red-500">*</span></h2>
-              {responsibilities.filter((r) => r.trim().length > 0).length === 0 && (
-                <span className="text-sm text-red-500">At least one responsibility required</span>
-              )}
+        <section className="mt-6 rounded-2xl border border-gray-200 bg-white p-5 sm:p-6 dark:border-white/10 dark:bg-gray-900/40">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-500 ring-1 ring-purple-100 dark:bg-purple-500/15 dark:text-purple-300 dark:ring-purple-500/20">
+                <ListChecks className="h-5 w-5" />
+              </span>
+              <div>
+                <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                  Job Responsibilities <span className="text-red-500">*</span>
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  List the day-to-day duties and deliverables. Candidates will see these; be specific.
+                </p>
+              </div>
             </div>
-            <div className="space-y-3 mt-2">
-              {responsibilities.map((r, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-3 bg-slate-50 rounded-lg p-3 border"
-                >
-                  <Textarea
-                    value={r}
-                    onChange={(e) => changeResponsibility(i, e.target.value)}
-                    rows={2}
-                    placeholder="Enter job responsibility..."
-                  />
+            <span className={cn(
+              "rounded-full px-2.5 py-0.5 text-xs font-semibold",
+              responsibilityCount > 0
+                ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300"
+                : "bg-red-50 text-red-500 dark:bg-red-500/15 dark:text-red-300"
+            )}>
+              {responsibilityCount > 0 ? `${responsibilityCount} added` : "At least one required"}
+            </span>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {responsibilities.length === 0 && (
+              <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center text-sm text-gray-500 dark:border-white/10 dark:bg-white/5">
+                No responsibilities yet — add the first one below.
+              </div>
+            )}
+            {responsibilities.map((r, i) => (
+              <div
+                key={i}
+                className="group flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-3 transition-all hover:border-indigo-200 hover:shadow-sm dark:border-white/10 dark:bg-gray-900/60"
+              >
+                <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-purple-50 text-xs font-semibold text-purple-600 dark:bg-purple-500/15 dark:text-purple-300">
+                  {i + 1}
+                </span>
+                <Textarea
+                  value={r}
+                  onChange={(e) => changeResponsibility(i, e.target.value)}
+                  rows={1}
+                  placeholder="e.g. Design and implement scalable REST APIs using Node.js and Express..."
+                  className="min-h-[40px] resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0"
+                />
+                <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  <button
+                    type="button"
+                    aria-label="Drag to reorder"
+                    className="cursor-grab rounded p-1 text-gray-300 hover:text-gray-500"
+                  >
+                    <GripVertical className="h-4 w-4" />
+                  </button>
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={() => deleteResponsibility(i)}
+                    className="h-8 w-8"
                   >
-                    <TrashIcon className="w-4 h-4 text-red-500" />
+                    <Trash2 className="h-4 w-4 text-red-500" />
                   </Button>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
 
-            <Button
-              variant="primary"
+            <button
+              type="button"
               onClick={addResponsibility}
-              className="mt-3"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 bg-transparent px-4 py-3 text-sm font-medium text-gray-500 transition-colors hover:border-indigo-300 hover:bg-indigo-50/40 hover:text-indigo-600 dark:border-white/10 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/5 dark:hover:text-indigo-300"
             >
-              Add Responsibility
-            </Button>
-          </CardContent>
-        </Card>
+              <Plus className="h-4 w-4" />
+              Add another responsibility
+            </button>
+          </div>
+        </section>
       )}
 
-      {/* ---------- STEP 3 - INTERVIEW SETUP (+ Skills bottom) ---------- */}
+      {/* ===== STEP 3 - INTERVIEW SETUP ===== */}
       {step === 2 && (
-        <Card className="mt-6">
-          <CardContent className="">
-            <Card className="mt-6">
-              <CardContent className="space-y-6 p-6">
-                <h2 className="text-lg font-medium">Interview Setup</h2>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="codeEditor"
-                      checked={interviewSettings.codeEditor}
-                      disabled={!canUseCodeEditor}
-                      onCheckedChange={() => {
-                        if (!canUseCodeEditor) {
-                          notifyInfo("This feature is available only in the Premium Pro plan. Please contact your admin.");
-                          return;
-                        }
-                        toggleInterviewSetting("codeEditor");
-                      }}
-                    />
-                    <Label
-                      htmlFor="codeEditor"
-                      className={`flex items-center gap-1.5 ${!canUseCodeEditor ? "text-gray-400 cursor-pointer" : ""}`}
-                      onClick={() => {
-                        if (!canUseCodeEditor) notifyInfo("This feature is available only in the Premium Pro plan. Please contact your admin.");
-                      }}
+        <div className="mt-6 space-y-6">
+          {/* ---- Interview Setup card ---- */}
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-6 dark:border-white/10 dark:bg-gray-900/40">
+            <SectionHeader
+              iconBg="bg-indigo-50 text-indigo-500 ring-indigo-100 dark:bg-indigo-500/15 dark:text-indigo-300 dark:ring-indigo-500/20"
+              icon={<SlidersHorizontal className="h-5 w-5" />}
+              title="Interview Setup"
+              description="Pick which features to enable for this role. Toggle what the candidate will experience."
+            />
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <FeatureToggle
+                id="codeEditor"
+                icon={<Code2 className="h-4 w-4" />}
+                iconColor="bg-indigo-50 text-indigo-500 dark:bg-indigo-500/15 dark:text-indigo-300"
+                checked={interviewSettings.codeEditor}
+                onChange={() => {
+                  if (!canUseCodeEditor) {
+                    notifyInfo("This feature is available only in the Premium Pro plan. Please contact your admin.");
+                    return;
+                  }
+                  toggleInterviewSetting("codeEditor");
+                }}
+                disabled={!canUseCodeEditor}
+                title="Code Editor Required"
+                description="Include a live coding environment."
+                rightSlot={!canUseCodeEditor ? (
+                  <span className="flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600">
+                    <Lock className="h-3 w-3" /> Pro
+                  </span>
+                ) : null}
+              />
+              <FeatureToggle
+                id="allowFromMobile"
+                icon={<Smartphone className="h-4 w-4" />}
+                iconColor="bg-sky-50 text-sky-500 dark:bg-sky-500/15 dark:text-sky-300"
+                checked={interviewSettings.allowFromMobile}
+                onChange={() => toggleInterviewSetting("allowFromMobile")}
+                title="Allow from Mobile"
+                description="Candidates can take the interview on phone."
+              />
+              <FeatureToggle
+                id="enableVirtualAvatar"
+                icon={<UserCircle2 className="h-4 w-4" />}
+                iconColor="bg-violet-50 text-violet-500 dark:bg-violet-500/15 dark:text-violet-300"
+                checked={interviewSettings.enableVirtualAvatar}
+                onChange={() => toggleInterviewSetting("enableVirtualAvatar")}
+                title="Enable Virtual Avatar"
+                description="AI-driven avatar asks questions on camera."
+              />
+              <FeatureToggle
+                id="faceMatchRequired"
+                icon={<ScanFace className="h-4 w-4" />}
+                iconColor="bg-rose-50 text-rose-500 dark:bg-rose-500/15 dark:text-rose-300"
+                checked={interviewSettings.faceMatchRequired}
+                onChange={() => toggleInterviewSetting("faceMatchRequired")}
+                title="Face Match Required"
+                description="Verify identity against a reference photo."
+              />
+              <FeatureToggle
+                id="resumeBased"
+                icon={<FileText className="h-4 w-4" />}
+                iconColor="bg-blue-50 text-blue-500 dark:bg-blue-500/15 dark:text-blue-300"
+                checked={interviewSettings.resumeBased}
+                onChange={() => toggleInterviewSetting("resumeBased")}
+                title="Interview based on Resume"
+                description="Questions are generated from the candidate's resume."
+              />
+              <FeatureToggle
+                id="manualInterview"
+                icon={<UserCog className="h-4 w-4" />}
+                iconColor="bg-amber-50 text-amber-500 dark:bg-amber-500/15 dark:text-amber-300"
+                checked={interviewSettings.manualInterview}
+                onChange={() => toggleInterviewSetting("manualInterview")}
+                title="Manual Interview"
+                description="Let a recruiter conduct the interview instead of AI."
+              />
+            </div>
+
+            <div className="mt-6">
+              <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                <Video className="h-3.5 w-3.5" />
+                Web Cam Settings
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <FeatureToggle
+                  id="webCamRequired"
+                  icon={<Video className="h-4 w-4" />}
+                  iconColor="bg-indigo-50 text-indigo-500 dark:bg-indigo-500/15 dark:text-indigo-300"
+                  checked={interviewSettings.webCamRequired}
+                  onChange={() => toggleInterviewSetting("webCamRequired")}
+                  title="Web Cam Required"
+                  description="Camera must stay on during interview."
+                />
+                <FeatureToggle
+                  id="secondaryCamVerification"
+                  icon={<Camera className="h-4 w-4" />}
+                  iconColor="bg-teal-50 text-teal-500 dark:bg-teal-500/15 dark:text-teal-300"
+                  checked={interviewSettings.secondaryCamVerification}
+                  onChange={() => toggleInterviewSetting("secondaryCamVerification")}
+                  title="Secondary Camera"
+                  description="Use a phone as a proctoring camera."
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* ---- Assigned Manager ---- */}
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-6 dark:border-white/10 dark:bg-gray-900/40">
+            <SectionHeader
+              iconBg="bg-emerald-50 text-emerald-500 ring-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-500/20"
+              icon={<UsersRound className="h-5 w-5" />}
+              title={<>Assigned Manager <span className="text-red-500">*</span></>}
+              description="The hiring manager responsible for this opening."
+              rightSlot={!manager.name.trim() ? (
+                <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-500 dark:bg-red-500/15 dark:text-red-300">
+                  Name required
+                </span>
+              ) : null}
+            />
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-3">
+              <div>
+                <Label className="text-sm text-indigo-600 dark:text-indigo-300">Name <span className="text-red-500">*</span></Label>
+                <Input
+                  placeholder="e.g. Deepak Rawat"
+                  value={manager.name}
+                  onChange={(e) => setManager((m) => ({ ...m, name: e.target.value }))}
+                  className="mt-2"
+                  required
+                />
+              </div>
+              <div>
+                <Label className="text-sm text-indigo-600 dark:text-indigo-300">Phone Number</Label>
+                <Input
+                  placeholder="Phone Number"
+                  type="tel"
+                  value={manager.phone}
+                  onChange={(e) => setManager((m) => ({ ...m, phone: e.target.value }))}
+                  className="mt-2"
+                />
+              </div>
+              <div>
+                <Label className="text-sm text-indigo-600 dark:text-indigo-300">Email</Label>
+                <Input
+                  placeholder="name@company.com"
+                  type="email"
+                  value={manager.email}
+                  onChange={(e) => setManager((m) => ({ ...m, email: e.target.value }))}
+                  className="mt-2"
+                />
+              </div>
+            </div>
+
+            <label
+              htmlFor="allowCandidateContact"
+              className={cn(
+                "mt-5 flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors",
+                interviewSettings.allowCandidateContact
+                  ? "border-indigo-200 bg-indigo-50/50 dark:border-indigo-500/30 dark:bg-indigo-500/10"
+                  : "border-gray-200 bg-white hover:bg-gray-50 dark:border-white/10 dark:bg-gray-900/60 dark:hover:bg-white/5"
+              )}
+            >
+              <Checkbox
+                id="allowCandidateContact"
+                checked={interviewSettings.allowCandidateContact}
+                onCheckedChange={() => toggleInterviewSetting("allowCandidateContact")}
+                className="mt-0.5"
+              />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-900 dark:text-white">Allow candidate to contact you</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Show your contact details to candidates during the interview.
+                </p>
+              </div>
+            </label>
+          </section>
+
+          {/* ---- Additional Settings ---- */}
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-6 dark:border-white/10 dark:bg-gray-900/40">
+            <SectionHeader
+              iconBg="bg-amber-50 text-amber-500 ring-amber-100 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-500/20"
+              icon={<SlidersHorizontal className="h-5 w-5" />}
+              title="Additional Settings"
+              description="Fine-tune how the AI conducts the interview."
+            />
+
+            <div className="mt-5 grid gap-5 lg:grid-cols-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-200">Interview Mode</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-3.5 w-3.5 cursor-help text-gray-400" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-sm">
+                      {questionType === "traditional"
+                        ? "This mode presents standard, direct questions focused on a candidate's experience, technical knowledge, and problem-solving approach. These are typically used in structured interviews and assess how well candidates understand key concepts, tools, and past project situations. Ideal for evaluating fundamental competency, communication clarity, and practical awareness."
+                        : "This mode presents in-depth, real-world scenarios to evaluate how candidates approach complex, open-ended situations in practical settings. Each question is framed within a realistic context to simulate challenges one might face on the job. It is designed to assess critical thinking, structured problem-solving, and the ability to navigate ambiguity. Interviews in this mode typically take 15–20 minutes longer than the traditional format due to the depth and detail involved."}
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Tabs
+                  value={questionType}
+                  onValueChange={(val) => setQuestionType(val as "traditional" | "scenario")}
+                  className="mt-2 w-full"
+                >
+                  <TabsList className="flex rounded-full bg-gray-100 p-1 dark:bg-white/5">
+                    <TabsTrigger
+                      value="traditional"
+                      className="flex-1 rounded-full text-xs data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
-                      {!canUseCodeEditor && <span>🔒</span>}
-                      Code Editor Required
-                      {!canUseCodeEditor && (
-                        <span className="text-xs bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded font-medium">Premium Pro</span>
-                      )}
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="allowFromMobile"
-                      checked={interviewSettings.allowFromMobile}
-                      onCheckedChange={() =>
-                        toggleInterviewSetting("allowFromMobile")
-                      }
-                    />
-                    <Label htmlFor="allowFromMobile">
-                      Allow Interview From Mobile
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="enableVirtualAvatar"
-                      checked={interviewSettings.enableVirtualAvatar}
-                      onCheckedChange={() =>
-                        toggleInterviewSetting("enableVirtualAvatar")
-                      }
-                    />
-                    <Label htmlFor="enableVirtualAvatar">
-                      Enable Virtual Avatar
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="faceMatchRequired"
-                      checked={interviewSettings.faceMatchRequired}
-                      onCheckedChange={() =>
-                        toggleInterviewSetting("faceMatchRequired")
-                      }
-                    />
-                    <Label htmlFor="faceMatchRequired">
-                      Face Match Required
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="resumeBased"
-                      checked={interviewSettings.resumeBased}
-                      onCheckedChange={() =>
-                        toggleInterviewSetting("resumeBased")
-                      }
-                    />
-                    <Label htmlFor="resumeBased">
-                      Interview based on Resume
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="manualInterview"
-                      checked={interviewSettings.manualInterview}
-                      onCheckedChange={() =>
-                        toggleInterviewSetting("manualInterview")
-                      }
-                    />
-                    <Label htmlFor="manualInterview">Manual Interview</Label>
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="font-medium pb-4">Web Cam Settings</h3>
-                  <div className="flex gap-6 mt-2">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="webCamRequired"
-                        checked={interviewSettings.webCamRequired}
-                        onCheckedChange={() =>
-                          toggleInterviewSetting("webCamRequired")
-                        }
-                      />
-                      <Label htmlFor="webCamRequired">Web Cam Required</Label>
-                    </div>
-
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="secondaryCamVerification"
-                        checked={interviewSettings.secondaryCamVerification}
-                        onCheckedChange={() =>
-                          toggleInterviewSetting("secondaryCamVerification")
-                        }
-                      />
-                      <Label htmlFor="secondaryCamVerification">
-                        Secondary Camera Verification
-                      </Label>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="mt-6">
-              <CardContent className="space-y-6 p-6">
-                <div>
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium">Assigned Manager <span className="text-red-500">*</span></h3>
-                    {!manager.name.trim() && (
-                      <span className="text-sm text-red-500">Manager name is required</span>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-3 gap-3 mt-2">
-                    <Input
-                      placeholder="Name *"
-                      value={manager.name}
-                      onChange={(e) =>
-                        setManager((m) => ({ ...m, name: e.target.value }))
-                      }
-                      required
-                    />
-                    <Input
-                      placeholder="Phone Number"
-                      type="number"
-                      value={manager.phone}
-                      onChange={(e) =>
-                        setManager((m) => ({ ...m, phone: e.target.value }))
-                      }
-                    />
-                    <Input
-                      placeholder="Email ID"
-                      type="email"
-                      value={manager.email}
-                      onChange={(e) =>
-                        setManager((m) => ({ ...m, email: e.target.value }))
-                      }
-                    />
-                  </div>
-                  <div className="flex items-center space-x-2 mt-2">
-                    <Checkbox
-                      id="allowCandidateContact"
-                      checked={interviewSettings.allowCandidateContact}
-                      onCheckedChange={() =>
-                        toggleInterviewSetting("allowCandidateContact")
-                      }
-                    />
-                    <Label htmlFor="allowCandidateContact">
-                      Allow candidate to contact you
-                    </Label>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="mt-6">
-              <CardContent className="space-y-6 p-6">
-                <h3 className="font-medium">Additional Settings</h3>
-
-                <div className="mt-2 flex items-center gap-6">
-                  {/* Tabs for Question Type */}
-                  <div className="flex items-center gap-2">
-                    <Label className="text-sm">Interview Mode:</Label>
-                    <Tabs
-                      value={questionType}
-                      onValueChange={(val) =>
-                        setQuestionType(val as "traditional" | "scenario")
-                      }
-                      className="w-auto"
+                      Traditional
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="scenario"
+                      className="flex-1 rounded-full text-xs data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
-                      <TabsList className="bg-gray-100 rounded-full p-1 flex space-x-1">
-                        <TabsTrigger
-                          value="traditional"
-                          className="text-gray-500 hover:text-gray-900 data-[state=active]:bg-[#465fff] data-[state=active]:text-white rounded-full px-3 py-1"
-                        >
-                          Traditional
-                        </TabsTrigger>
+                      Scenario Based
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
 
-                        <TabsTrigger
-                          value="scenario"
-                          className="text-gray-500 hover:text-gray-900 data-[state=active]:bg-[#465fff] data-[state=active]:text-white rounded-full px-3 py-1"
-                        >
-                          Scenario Based
-                        </TabsTrigger>
-                      </TabsList>
-                    </Tabs>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="w-4 h-4 text-gray-400 cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
-                        {questionType === "traditional"
-                          ? "This mode presents standard, direct questions focused on a candidate's experience, technical knowledge, and problem-solving approach. These are typically used in structured interviews and assess how well candidates understand key concepts, tools, and past project situations. Ideal for evaluating fundamental competency, communication clarity, and practical awareness."
-                          : "This mode presents in-depth, real-world scenarios to evaluate how candidates approach complex, open-ended situations in practical settings. Each question is framed within a realistic context to simulate challenges one might face on the job. It is designed to assess critical thinking, structured problem-solving, and the ability to navigate ambiguity. Interviews in this mode typically take 15\u201320 minutes longer than the traditional format due to the depth and detail involved."}
-                      </TooltipContent>
-                    </Tooltip>
+              <div>
+                <Label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                  Max Number of Questions to Ask
+                </Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={maxQuestions}
+                  onChange={(e) => setMaxQuestions(Number(e.target.value))}
+                  className="mt-2"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-xl border border-gray-100 bg-gray-50/60 p-4 dark:border-white/10 dark:bg-white/5">
+              <div className="flex items-center justify-between">
+                <Label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+                  Auto Skip Timeout (mm:ss)
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-3.5 w-3.5 cursor-help text-gray-400" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-sm">
+                      Set the time the AI will wait for the candidate to answer before automatically skipping to the next question. If set to &quot;Off&quot;, the candidate can take unlimited time per question.
+                    </TooltipContent>
+                  </Tooltip>
+                </Label>
+                <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300">
+                  {autoSkipSeconds === 0 ? "Off" : formatMmSs(autoSkipSeconds)}
+                </span>
+              </div>
+              <div className="px-1 pt-5">
+                <Slider
+                  value={[autoSkipSeconds]}
+                  onValueChange={(v: number[]) => setAutoSkipSeconds(v[0])}
+                  min={0}
+                  max={90}
+                  step={15}
+                >
+                  <SliderTrack>
+                    <SliderRange />
+                  </SliderTrack>
+                  <SliderThumb value={autoSkipSeconds} />
+                </Slider>
+                <div className="mt-2 flex justify-between text-[11px] text-gray-400">
+                  {[0, 15, 30, 45, 60, 75, 90].map((v) => (
+                    <span key={v}>{v === 0 ? "Off" : formatMmSs(v)}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <div className="flex items-center gap-2">
+                <Label className="text-sm font-medium text-gray-700 dark:text-gray-200">Special Instructions</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-3.5 w-3.5 cursor-help text-gray-400" />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-md">
+                    Use this field to input any additional guidelines or focus areas for the AI when crafting questions. For example, you can specify the industry domain relevant to the job position, or highlight particular aspects of the job description that should be emphasized. This information helps tailor the AI&apos;s questioning to better align with the job&apos;s specific requirements and the candidate&apos;s background. It ensures a more targeted and relevant assessment by directing the AI to consider these special instructions alongside the skills and experience levels mentioned in the candidate&apos;s form.
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <Textarea
+                placeholder={"e.g.\n• Focus on React and Node.js practical knowledge\n• Ask about experience with microservices architecture\n• Evaluate problem-solving under time pressure"}
+                value={specialInstructions}
+                onChange={(e) => setSpecialInstructions(e.target.value)}
+                rows={4}
+                className="mt-2"
+              />
+            </div>
+          </section>
+
+          {/* ---- Evaluation Scoring ---- */}
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-6 dark:border-white/10 dark:bg-gray-900/40">
+            <SectionHeader
+              iconBg="bg-rose-50 text-rose-500 ring-rose-100 dark:bg-rose-500/15 dark:text-rose-300 dark:ring-rose-500/20"
+              icon={<Target className="h-5 w-5" />}
+              title="Evaluation Scoring"
+              description="How strict should the AI be when scoring candidate answers?"
+            />
+
+            <div className="mt-5 space-y-4">
+              <div>
+                <Label htmlFor="scoringLeniency" className="text-sm text-indigo-600 dark:text-indigo-300">
+                  Scoring Leniency
+                </Label>
+                <Select value={scoringLeniency} onValueChange={setScoringLeniency}>
+                  <SelectTrigger id="scoringLeniency" className="mt-2 w-full sm:w-64">
+                    <SelectValue placeholder="Select Scoring Leniency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Standard Evaluation">Standard Evaluation</SelectItem>
+                    <SelectItem value="Lenient">Lenient</SelectItem>
+                    <SelectItem value="Strict">Strict</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <RadioGroup
+                value={scoringCustomInstructions ? "custom" : "default"}
+                onValueChange={(value) => setScoringCustomInstructions(value === "custom")}
+                className="flex flex-wrap gap-2"
+              >
+                <OptionPill id="scoring-default" value="default" label="Default" />
+                <OptionPill id="scoring-custom" value="custom" label="Add Custom Instructions" />
+              </RadioGroup>
+
+              {scoringCustomInstructions && (
+                <Textarea
+                  placeholder="Custom scoring instructions"
+                  value={scoringCustomText}
+                  onChange={(e) => setScoringCustomText(e.target.value)}
+                />
+              )}
+            </div>
+          </section>
+
+          {/* ---- Custom Questions ---- */}
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-6 dark:border-white/10 dark:bg-gray-900/40">
+            <SectionHeader
+              iconBg="bg-purple-50 text-purple-500 ring-purple-100 dark:bg-purple-500/15 dark:text-purple-300 dark:ring-purple-500/20"
+              icon={<ClipboardCheck className="h-5 w-5" />}
+              title="Custom Questions"
+              description="Add your own questions or pull from the question bank."
+            />
+
+            <RadioGroup
+              value={customQuestionsMode}
+              onValueChange={(value: "mix" | "only" | "ai_only") => setCustomQuestionsMode(value)}
+              className="mt-5 flex flex-wrap gap-2"
+            >
+              <OptionPill id="questions-ai-only" value="ai_only" label="Only AI questions" />
+              <OptionPill id="questions-mix" value="mix" label="Mix of these & AI" />
+              <OptionPill id="questions-only" value="only" label="Only these questions" />
+            </RadioGroup>
+
+            {customQuestionsMode !== "ai_only" && (
+              <div className="mt-5 space-y-3">
+                {customQuestions.map((q, i) => (
+                  <div key={i} className="group flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-2 pl-3 hover:border-indigo-200 dark:border-white/10 dark:bg-gray-900/60">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-purple-50 text-[10px] font-semibold text-purple-600 dark:bg-purple-500/15 dark:text-purple-300">
+                      {i + 1}
+                    </span>
+                    <Input
+                      value={q.text}
+                      onChange={(e) => updateCustomQuestion(i, e.target.value)}
+                      placeholder={`Question ${i + 1}`}
+                      className="border-0 bg-transparent shadow-none focus-visible:ring-0"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => deleteCustomQuestion(i)}
+                      className="h-8 w-8 opacity-0 transition-opacity group-hover:opacity-100"
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
                   </div>
+                ))}
 
-                  {/* Number Input for Max Questions */}
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button variant="primary" size="sm" onClick={() => addCustomQuestion()} className="gap-1.5">
+                    <Plus className="h-4 w-4" />
+                    Add Question
+                  </Button>
+                  <Button variant="primary" size="sm" onClick={openQuestionBank} className="gap-1.5">
+                    <Plus className="h-4 w-4" />
+                    Add from Q Bank
+                  </Button>
+                  <Button variant="primary" size="sm" onClick={openQuestionBank} className="gap-1.5">
+                    <ListChecks className="h-4 w-4" />
+                    Select from Q Bank
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {customQuestionsMode === "ai_only" && (
+              <p className="mt-4 rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-2.5 text-sm text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
+                AI will generate all questions dynamically during the interview based on the job title, skills, and experience requirements configured above.
+              </p>
+            )}
+
+            {showQuestionBank && (
+              <div className="mt-6 rounded-xl border border-gray-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/5">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold">Questions Bank</h4>
+                  <Button variant="ghost" size="sm" onClick={() => setShowQuestionBank(false)}>
+                    ×
+                  </Button>
+                </div>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
-                    <Label className="text-sm block">
-                      Max Number of Questions to Ask
-                    </Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={30}
-                      value={maxQuestions}
-                      onChange={(e) => setMaxQuestions(Number(e.target.value))}
-                      className="mt-1 w-50"
-                    />
-                  </div>
-                </div>
-                <div className="mt-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Label className="text-sm font-medium">
-                      Auto Skip Timeout (mm:ss): {formatMmSs(autoSkipSeconds)}
-                    </Label>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="w-4 h-4 text-gray-400 cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
-                        Set the time the AI will wait for the candidate to answer before automatically skipping to the next question. If set to &quot;Off&quot;, the candidate can take unlimited time per question.
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                  <Slider
-                    value={[autoSkipSeconds]}
-                    onValueChange={(v: number[]) => setAutoSkipSeconds(v[0])}
-                    min={0}
-                    max={90}
-                    step={15}
-                  >
-                    <SliderTrack>
-                      <SliderRange />
-                    </SliderTrack>
-                    <SliderThumb value={autoSkipSeconds} />
-                  </Slider>
-                  <div className="flex justify-between text-xs text-gray-500 mt-2">
-                    {[0, 15, 30, 45, 60, 75, 90].map((v) => (
-                      <span key={v}>{v === 0 ? "Off" : formatMmSs(v)}</span>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="mt-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Label className="text-sm font-medium">
-                      Special Instructions
-                    </Label>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="w-4 h-4 text-gray-400 cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-sm text-xs leading-relaxed">
-                        Use this field to input any additional guidelines or focus areas for the AI when crafting questions. For example, you can specify the industry domain relevant to the job position, or highlight particular aspects of the job description that should be emphasized. This information helps tailor the AI&apos;s questioning to better align with the job&apos;s specific requirements and the candidate&apos;s background. It ensures a more targeted and relevant assessment by directing the AI to consider these special instructions alongside the skills and experience levels mentioned in the candidate&apos;s form.
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                  <Textarea
-                    placeholder={"e.g.\n\u2022 Focus on React and Node.js practical knowledge\n\u2022 Ask about experience with microservices architecture\n\u2022 Evaluate problem-solving under time pressure"}
-                    value={specialInstructions}
-                    onChange={(e) => setSpecialInstructions(e.target.value)}
-                    rows={4}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="mt-6">
-              <CardContent className="space-y-6 p-6">
-                <div className="mt-4">
-                  <h4 className="font-medium">Evaluation Scoring Settings</h4>
-
-                  {/* Scoring Leniency */}
-                  <div className="mt-2">
-                    <Label htmlFor="scoringLeniency" className="block text-sm">
-                      Scoring Leniency
-                    </Label>
-                    <Select
-                      value={scoringLeniency}
-                      onValueChange={setScoringLeniency}
-                    >
-                      <SelectTrigger id="scoringLeniency" className="mt-1 w-52">
-                        <SelectValue placeholder="Select Scoring Leniency" />
+                    <Label htmlFor="category" className="text-xs font-medium">Category</Label>
+                    <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                      <SelectTrigger className="mt-1 w-full">
+                        <SelectValue placeholder="Select category" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Standard Evaluation">
-                          Standard Evaluation
-                        </SelectItem>
-                        <SelectItem value="Lenient">Lenient</SelectItem>
-                        <SelectItem value="Strict">Strict</SelectItem>
+                        <SelectItem value="all">All Categories</SelectItem>
+                        {extractedQuestionCategories.map((category: string) => (
+                          <SelectItem key={category} value={category}>{category}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
 
-                  {/* Radio Group for Default / Custom Instructions */}
-                  <div className="mt-2">
-                    <RadioGroup
-                      value={scoringCustomInstructions ? "custom" : "default"}
-                      onValueChange={(value) =>
-                        setScoringCustomInstructions(value === "custom")
-                      }
-                      className="flex gap-4"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="default" id="scoring-default" />
-                        <Label htmlFor="scoring-default">Default</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="custom" id="scoring-custom" />
-                        <Label htmlFor="scoring-custom">
-                          Add Custom Instructions
-                        </Label>
-                      </div>
-                    </RadioGroup>
+                  <div>
+                    <Label htmlFor="difficulty" className="text-xs font-medium">Difficulty</Label>
+                    <Select value={selectedDifficulty} onValueChange={setSelectedDifficulty}>
+                      <SelectTrigger className="mt-1 w-full">
+                        <SelectValue placeholder="Select difficulty" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Difficulties</SelectItem>
+                        {extractedDifficultyOptions.map((diff: string) => (
+                          <SelectItem key={diff} value={diff}>
+                            {diff.charAt(0).toUpperCase() + diff.slice(1)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
-                  {/* Custom Instructions Textarea */}
-                  {scoringCustomInstructions && (
-                    <div className="mt-2">
-                      <Textarea
-                        placeholder="Custom scoring instructions"
-                        value={scoringCustomText}
-                        onChange={(e) => setScoringCustomText(e.target.value)}
-                      />
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="mt-6">
-              <CardContent className="space-y-6 p-6">
-                <div className="mt-4">
-                  <h4 className="font-medium">Custom Questions</h4>
-
-                  <div className="mt-2">
-                    <RadioGroup
-                      value={customQuestionsMode}
-                      onValueChange={(value: "mix" | "only" | "ai_only") =>
-                        setCustomQuestionsMode(value)
-                      }
-                      className="flex flex-wrap gap-4"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="ai_only" id="questions-ai-only" />
-                        <Label htmlFor="questions-ai-only">
-                          Only AI questions
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="mix" id="questions-mix" />
-                        <Label htmlFor="questions-mix">
-                          Mix of these questions and AI questions
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="only" id="questions-only" />
-                        <Label htmlFor="questions-only">
-                          Only these questions
-                        </Label>
-                      </div>
-                    </RadioGroup>
+                  <div>
+                    <Label htmlFor="count" className="text-xs font-medium">Number of Questions</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="50"
+                      value={questionsCount}
+                      onChange={(e) => setQuestionsCount(parseInt(e.target.value) || 1)}
+                      className="mt-1"
+                    />
                   </div>
 
-                  {/* Custom Questions List — hidden when AI-only mode */}
-                  {customQuestionsMode !== "ai_only" && <div className="mt-3 space-y-2">
-                    {customQuestions.map((q, i) => (
-                      <div key={i} className="flex gap-2">
-                        <Input
-                          value={q.text}
-                          onChange={(e) =>
-                            updateCustomQuestion(i, e.target.value)
-                          }
-                          placeholder={`Question ${i + 1}`}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => deleteCustomQuestion(i)}
-                        >
-                          <TrashIcon className="w-4 h-4 text-red-500" />
-                        </Button>
-                      </div>
-                    ))}
-
-                    {/* Action Buttons */}
-                    <div className="flex gap-2 mt-2">
-                      <Button
-                        variant="primary"
-                        onClick={() => addCustomQuestion()}
-                      >
-                        Add Question
-                      </Button>
-                      <Button variant="primary" onClick={openQuestionBank}>
-                        Add Question from Q Bank
-                      </Button>
-                      <Button variant="primary" onClick={openQuestionBank}>
-                        Select specific Question from Q Bank
-                      </Button>
-                    </div>
-                  </div>}
-
-                  {/* AI-only mode hint */}
-                  {customQuestionsMode === "ai_only" && (
-                    <p className="mt-3 text-sm text-gray-500 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
-                      AI will generate all questions dynamically during the interview based on the job title, skills, and experience requirements you&apos;ve configured above.
-                    </p>
-                  )}
-
-                  {/* Question Bank Section - Displayed when active */}
-                  {showQuestionBank && (
-                    <div className="mt-6 p-4 border rounded-lg bg-slate-50">
-                      <div className="flex justify-between items-center mb-4">
-                        <h4 className="font-medium">Questions Bank</h4>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setShowQuestionBank(false)}
-                        >
-                          ×
-                        </Button>
-                      </div>
-
-                      {/* Filters */}
-                      <div className="grid grid-cols-4 gap-4 mb-4">
-                        <div>
-                          <Label
-                            htmlFor="category"
-                            className="text-sm font-medium"
-                          >
-                            Category
-                          </Label>
-                          <Select
-                            value={selectedCategory}
-                            onValueChange={setSelectedCategory}
-                          >
-                            <SelectTrigger className="w-full mt-1">
-                              <SelectValue placeholder="Select category" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="all">
-                                All Categories
-                              </SelectItem>
-                              {extractedQuestionCategories.map(
-                                (category: string) => (
-                                  <SelectItem key={category} value={category}>
-                                    {category}
-                                  </SelectItem>
-                                )
-                              )}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div>
-                          <Label
-                            htmlFor="difficulty"
-                            className="text-sm font-medium"
-                          >
-                            Difficulty
-                          </Label>
-                          <Select
-                            value={selectedDifficulty}
-                            onValueChange={setSelectedDifficulty}
-                          >
-                            <SelectTrigger className="w-full mt-1">
-                              <SelectValue placeholder="Select difficulty" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="all">
-                                All Difficulties
-                              </SelectItem>
-                              {extractedDifficultyOptions.map(
-                                (diff: string) => (
-                                  <SelectItem key={diff} value={diff}>
-                                    {diff.charAt(0).toUpperCase() +
-                                      diff.slice(1)}
-                                  </SelectItem>
-                                )
-                              )}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div>
-                          <Label
-                            htmlFor="count"
-                            className="text-sm font-medium"
-                          >
-                            Number of Questions
-                          </Label>
-                          <Input
-                            type="number"
-                            min="1"
-                            max="50"
-                            value={questionsCount}
-                            onChange={(e) =>
-                              setQuestionsCount(parseInt(e.target.value) || 1)
-                            }
-                            className="mt-1"
-                          />
-                        </div>
-
-                        <div className="flex items-end gap-2">
-                          <Button
-                            variant="primary"
-                            onClick={addRandomQuestions}
-                            disabled={filteredQuestions.length === 0}
-                          >
-                            Add {questionsCount} Questions
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => {
-                              setShowQuestionBank(false);
-                              setSelectedQuestionIds(new Set());
-                            }}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Selected Questions Display */}
-                      {selectedQuestionIds.size > 0 && (
-                        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm font-medium">
-                              {selectedQuestionIds.size} questions selected
-                            </span>
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              onClick={addSelectedQuestions}
-                            >
-                              Add Selected Questions
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Questions List */}
-                      <div className="border rounded-lg bg-white">
-                        <div className="p-3 bg-gray-50 border-b">
-                          <h5 className="font-medium">
-                            Available Questions ({filteredQuestions.length})
-                          </h5>
-                        </div>
-                        <div className="max-h-60 overflow-y-auto">
-                          {filteredQuestions.length === 0 ? (
-                            <div className="p-4 text-center text-gray-500">
-                              No questions found matching your criteria
-                            </div>
-                          ) : (
-                            filteredQuestions.map((question) => (
-                              <div
-                                key={question.id}
-                                className={`p-3 border-b cursor-pointer hover:bg-gray-50 ${
-                                  selectedQuestionIds.has(question.id)
-                                    ? "bg-blue-50 border-blue-200"
-                                    : ""
-                                }`}
-                                onClick={() =>
-                                  toggleQuestionSelection(question.id)
-                                }
-                              >
-                                <div className="flex items-start gap-3">
-                                  <Checkbox
-                                    checked={selectedQuestionIds.has(
-                                      question.id
-                                    )}
-                                    onCheckedChange={() =>
-                                      toggleQuestionSelection(question.id)
-                                    }
-                                    className="mt-1"
-                                  />
-                                  <div className="flex-1">
-                                    <p className="text-sm">{question.text}</p>
-                                    <div className="flex gap-2 mt-1">
-                                      {question.category && (
-                                        <span className="text-xs px-2 py-1 bg-gray-100 rounded">
-                                          {question.category}
-                                        </span>
-                                      )}
-                                      {question.difficulty && (
-                                        <span
-                                          className={`text-xs px-2 py-1 rounded ${
-                                            question.difficulty === "advanced"
-                                              ? "bg-red-100 text-red-800"
-                                              : question.difficulty ===
-                                                "intermediate"
-                                              ? "bg-yellow-100 text-yellow-800"
-                                              : "bg-green-100 text-green-800"
-                                          }`}
-                                        >
-                                          {question.difficulty}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      // Add single question immediately
-                                      setCustomQuestions((prev) => [
-                                        ...prev,
-                                        {
-                                          text: question.text,
-                                          category: question.category || "general",
-                                          difficulty: question.difficulty || "medium"
-                                        }
-                                      ]);
-                                      notifySuccess(
-                                        "Question added to custom questions"
-                                      );
-                                    }}
-                                  >
-                                    Add
-                                  </Button>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="mt-6">
-              <CardContent className="space-y-6 p-6">
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-medium">Skills to Test <span className="text-red-500">*</span></h3>
-                    {(skillGroups.length === 0 || !skillGroups.some(group => 
-                      group.skills.some(skill => skill.trim().length > 0)
-                    )) && (
-                      <span className="text-sm text-red-500">At least one skill required</span>
-                    )}
+                  <div className="flex items-end gap-2">
+                    <Button variant="primary" size="sm" onClick={addRandomQuestions} disabled={filteredQuestions.length === 0}>
+                      Add {questionsCount}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => { setShowQuestionBank(false); setSelectedQuestionIds(new Set()); }}>
+                      Cancel
+                    </Button>
                   </div>
-                  <Button variant="primary" onClick={addSkillGroup}>
-                    <PlusIcon className="w-4 h-4 mr-2" />
-                    Add Skill Group
-                  </Button>
                 </div>
 
-                <div className="space-y-4">
-                  {skillGroups.map((group) => (
-                    <div key={group.id} className="border rounded-lg p-4">
-                      {/* Skill Group Header */}
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2 flex-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => toggleGroupExpansion(group.id)}
-                            className="h-6 w-6"
-                          >
-                            {expandedGroups.has(group.id) ? (
-                              <ChevronDownIcon className="w-4 h-4" />
-                            ) : (
-                              <ChevronRightIcon className="w-4 h-4" />
-                            )}
-                          </Button>
-                          <Input
-                            value={group.name}
-                            onChange={(e) =>
-                              updateSkillGroupName(group.id, e.target.value)
-                            }
-                            placeholder="Skill Group Name"
-                            className="font-medium"
-                          />
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => deleteSkillGroup(group.id)}
-                        >
-                          <TrashIcon className="w-4 h-4 text-red-500" />
-                        </Button>
-                      </div>
-
-                      {/* Skill Group Content (Collapsible) */}
-                      {expandedGroups.has(group.id) && (
-                        <div className="space-y-4 pl-8">
-                          {/* Skills List */}
-                          <div className="space-y-2">
-                            {group.skills.map((skill, skillIndex) => (
-                              <div
-                                key={skillIndex}
-                                className="flex gap-2 items-center"
-                              >
-                                <Input
-                                  value={skill}
-                                  onChange={(e) =>
-                                    updateSkillInGroup(
-                                      group.id,
-                                      skillIndex,
-                                      e.target.value
-                                    )
-                                  }
-                                  placeholder="Skill e.g. Wireframing"
-                                />
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() =>
-                                    deleteSkillFromGroup(group.id, skillIndex)
-                                  }
-                                >
-                                  <TrashIcon className="w-4 h-4 text-red-500" />
-                                </Button>
-                              </div>
-                            ))}
-                            <Button
-                              variant="primary"
-                              onClick={() => addSkillToGroup(group.id)}
-                            >
-                              Add Skill
-                            </Button>
-                          </div>
-
-                          {/* Criteria Selection */}
-                          <div>
-                            <h4 className="font-medium text-sm mb-2">
-                              Criteria for this group
-                            </h4>
-                            <RadioGroup
-                              value={group.skill_criteria}
-                              onValueChange={(
-                                value: "All Mandatory" | "At Least One" | "None"
-                              ) => updateSkillGroupCriteria(group.id, value)}
-                              className="flex flex-col gap-2"
-                            >
-                              <div className="flex items-center space-x-2">
-                                <RadioGroupItem
-                                  value="All Mandatory"
-                                  id={`${group.id}-all`}
-                                />
-                                <Label htmlFor={`${group.id}-all`}>
-                                  All skills mandatory
-                                </Label>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <RadioGroupItem
-                                  value="At Least One"
-                                  id={`${group.id}-one`}
-                                />
-                                <Label htmlFor={`${group.id}-one`}>
-                                  At least one mandatory
-                                </Label>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <RadioGroupItem
-                                  value="None"
-                                  id={`${group.id}-none`}
-                                />
-                                <Label htmlFor={`${group.id}-none`}>
-                                  None mandatory
-                                </Label>
-                              </div>
-                            </RadioGroup>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {skillGroups.length === 0 && (
-                  <div className="text-center text-gray-500 py-8">
-                    No skill groups added yet. Click "Add Skill Group" to get
-                    started.
+                {selectedQuestionIds.size > 0 && (
+                  <div className="mt-4 flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50/60 p-3 dark:border-blue-500/30 dark:bg-blue-500/10">
+                    <span className="text-sm font-medium">{selectedQuestionIds.size} questions selected</span>
+                    <Button variant="primary" size="sm" onClick={addSelectedQuestions}>Add Selected</Button>
                   </div>
                 )}
-              </CardContent>
-            </Card>
-          </CardContent>
-        </Card>
+
+                <div className="mt-3 rounded-lg border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900/60">
+                  <div className="border-b bg-gray-50 p-3 dark:border-white/10 dark:bg-white/5">
+                    <h5 className="text-sm font-medium">Available Questions ({filteredQuestions.length})</h5>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto">
+                    {filteredQuestions.length === 0 ? (
+                      <div className="p-4 text-center text-sm text-gray-500">
+                        No questions found matching your criteria
+                      </div>
+                    ) : (
+                      filteredQuestions.map((question) => (
+                        <div
+                          key={question.id}
+                          className={cn(
+                            "cursor-pointer border-b p-3 transition-colors hover:bg-gray-50 dark:border-white/10 dark:hover:bg-white/5",
+                            selectedQuestionIds.has(question.id) && "bg-blue-50/60 dark:bg-blue-500/10"
+                          )}
+                          onClick={() => toggleQuestionSelection(question.id)}
+                        >
+                          <div className="flex items-start gap-3">
+                            <Checkbox
+                              checked={selectedQuestionIds.has(question.id)}
+                              onCheckedChange={() => toggleQuestionSelection(question.id)}
+                              className="mt-1"
+                            />
+                            <div className="flex-1">
+                              <p className="text-sm">{question.text}</p>
+                              <div className="mt-1 flex gap-2">
+                                {question.category && (
+                                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600 dark:bg-white/10 dark:text-gray-300">
+                                    {question.category}
+                                  </span>
+                                )}
+                                {question.difficulty && (
+                                  <span className={cn(
+                                    "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                                    question.difficulty === "advanced" && "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+                                    question.difficulty === "intermediate" && "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300",
+                                    question.difficulty !== "advanced" && question.difficulty !== "intermediate" && "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300"
+                                  )}>
+                                    {question.difficulty}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCustomQuestions((prev) => [
+                                  ...prev,
+                                  {
+                                    text: question.text,
+                                    category: question.category || "general",
+                                    difficulty: question.difficulty || "medium"
+                                  }
+                                ]);
+                                notifySuccess("Question added to custom questions");
+                              }}
+                            >
+                              Add
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* ---- Skills to Test ---- */}
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-6 dark:border-white/10 dark:bg-gray-900/40">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <SectionHeader
+                iconBg="bg-emerald-50 text-emerald-500 ring-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-500/20"
+                icon={<Target className="h-5 w-5" />}
+                title={<>Skills to Test <span className="text-red-500">*</span></>}
+                description="Group skills and mark which ones are mandatory for this role."
+                rightSlot={!hasAtLeastOneSkill ? (
+                  <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-500 dark:bg-red-500/15 dark:text-red-300">
+                    At least one required
+                  </span>
+                ) : null}
+              />
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <Button variant="primary" size="sm" onClick={addSkillGroup} className="gap-1.5">
+                <Plus className="h-4 w-4" />
+                Add Skill Group
+              </Button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              {skillGroups.map((group) => (
+                <div key={group.id} className="rounded-xl border border-gray-200 bg-white p-4 dark:border-white/10 dark:bg-gray-900/60">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleGroupExpansion(group.id)}
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/10"
+                    >
+                      {expandedGroups.has(group.id) ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </button>
+                    <Input
+                      value={group.name}
+                      onChange={(e) => updateSkillGroupName(group.id, e.target.value)}
+                      placeholder="Skill Group Name"
+                      className="font-medium"
+                    />
+                    <Button variant="ghost" size="icon" onClick={() => deleteSkillGroup(group.id)}>
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                  </div>
+
+                  {expandedGroups.has(group.id) && (
+                    <div className="mt-4 space-y-4 pl-9">
+                      <div className="space-y-2">
+                        {group.skills.map((skill, skillIndex) => (
+                          <div key={skillIndex} className="flex items-center gap-2">
+                            <Input
+                              value={skill}
+                              onChange={(e) => updateSkillInGroup(group.id, skillIndex, e.target.value)}
+                              placeholder="Skill e.g. Wireframing"
+                            />
+                            <Button variant="ghost" size="icon" onClick={() => deleteSkillFromGroup(group.id, skillIndex)}>
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          </div>
+                        ))}
+                        <Button variant="primary" size="sm" onClick={() => addSkillToGroup(group.id)} className="gap-1.5">
+                          <Plus className="h-4 w-4" />
+                          Add Skill
+                        </Button>
+                      </div>
+
+                      <div>
+                        <p className="mb-2 text-sm font-medium">Criteria for this group</p>
+                        <RadioGroup
+                          value={group.skill_criteria}
+                          onValueChange={(value: "All Mandatory" | "At Least One" | "None") => updateSkillGroupCriteria(group.id, value)}
+                          className="flex flex-col gap-2"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="All Mandatory" id={`${group.id}-all`} />
+                            <Label htmlFor={`${group.id}-all`}>All skills mandatory</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="At Least One" id={`${group.id}-one`} />
+                            <Label htmlFor={`${group.id}-one`}>At least one mandatory</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="None" id={`${group.id}-none`} />
+                            <Label htmlFor={`${group.id}-none`}>None mandatory</Label>
+                          </div>
+                        </RadioGroup>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {skillGroups.length === 0 && (
+                <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 p-6 text-center text-sm text-gray-500 dark:border-white/10 dark:bg-white/5">
+                  No skill groups yet. Click &quot;Add Skill Group&quot; to get started.
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
       )}
 
-      {/* Bottom Navigation */}
-      <div className="flex justify-between mt-6">
-        <Button variant="outline" onClick={handleBack} disabled={step === 0}>
-          Back
-        </Button>
+      {/* ===== Sticky bottom nav (stays within the content column) ===== */}
+      <div className="sticky bottom-4 z-40 mt-8">
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white/95 p-2 pl-3 shadow-[0_8px_30px_rgba(15,23,42,0.08)] backdrop-blur dark:border-white/10 dark:bg-gray-900/95">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleBack}
+            disabled={step === 0}
+            className="gap-1.5"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Back
+          </Button>
 
-        <div className="flex gap-2">
+          <span className="hidden text-xs text-gray-500 sm:block dark:text-gray-400">
+            Step <span className="font-semibold text-gray-900 dark:text-white">{step + 1}</span> of 3
+          </span>
+
           {step === 2 ? (
-            <Button variant="primary" onClick={handleSubmit}>
+            <Button variant="primary" size="sm" onClick={handleSubmit} className="gap-1.5">
+              <Check className="h-4 w-4" />
               {isEditMode ? "Update Job" : "Save & Done"}
             </Button>
           ) : (
-            <Button variant="primary" onClick={handleNext}>
+            <Button variant="primary" size="sm" onClick={handleNext} className="gap-1.5">
               Next
+              <ChevronRight className="h-4 w-4" />
             </Button>
           )}
         </div>
@@ -1904,5 +1925,104 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
         onJDGenerated={handleJDGenerated}
       />
     </div>
+  );
+}
+
+/* =========================================================
+   Local presentational helpers
+   ========================================================= */
+function SectionHeader({
+  icon,
+  iconBg,
+  title,
+  description,
+  rightSlot,
+}: {
+  icon: React.ReactNode;
+  iconBg: string;
+  title: React.ReactNode;
+  description?: React.ReactNode;
+  rightSlot?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start gap-3">
+        <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1", iconBg)}>
+          {icon}
+        </span>
+        <div>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">{title}</h3>
+          {description && (
+            <p className="text-sm text-gray-500 dark:text-gray-400">{description}</p>
+          )}
+        </div>
+      </div>
+      {rightSlot}
+    </div>
+  );
+}
+
+function FeatureToggle({
+  id,
+  icon,
+  iconColor,
+  title,
+  description,
+  checked,
+  onChange,
+  disabled,
+  rightSlot,
+}: {
+  id: string;
+  icon: React.ReactNode;
+  iconColor: string;
+  title: string;
+  description: string;
+  checked: boolean;
+  onChange: () => void;
+  disabled?: boolean;
+  rightSlot?: React.ReactNode;
+}) {
+  return (
+    <label
+      htmlFor={id}
+      className={cn(
+        "flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-all",
+        checked
+          ? "border-indigo-300 bg-indigo-50/60 shadow-sm dark:border-indigo-500/40 dark:bg-indigo-500/10"
+          : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-white/10 dark:bg-gray-900/60 dark:hover:bg-white/5",
+        disabled && "cursor-not-allowed opacity-60"
+      )}
+    >
+      <Checkbox
+        id={id}
+        checked={checked}
+        onCheckedChange={onChange}
+        disabled={disabled}
+        className="mt-0.5"
+      />
+      <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", iconColor)}>
+        {icon}
+      </span>
+      <div className="flex-1">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-semibold text-gray-900 dark:text-white">{title}</p>
+          {rightSlot}
+        </div>
+        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{description}</p>
+      </div>
+    </label>
+  );
+}
+
+function OptionPill({ id, value, label }: { id: string; value: string; label: string }) {
+  return (
+    <label
+      htmlFor={id}
+      className="flex cursor-pointer items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm transition-colors hover:border-indigo-200 hover:bg-indigo-50/40 has-[[data-state=checked]]:border-indigo-300 has-[[data-state=checked]]:bg-indigo-50/60 has-[[data-state=checked]]:text-indigo-700 dark:border-white/10 dark:bg-gray-900/60 dark:hover:bg-white/5 dark:has-[[data-state=checked]]:border-indigo-500/40 dark:has-[[data-state=checked]]:bg-indigo-500/10 dark:has-[[data-state=checked]]:text-indigo-300"
+    >
+      <RadioGroupItem value={value} id={id} />
+      <span>{label}</span>
+    </label>
   );
 }

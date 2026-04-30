@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -274,10 +275,13 @@ export default function OrganizationsView() {
 
       {/* Search */}
       <div className="max-w-md">
-        <Input
+        <SearchInput
+          size="sm"
+          shortcut="/"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name or domain..."
+          onClear={() => setSearch("")}
+          placeholder="Search by name or domain…"
         />
       </div>
 

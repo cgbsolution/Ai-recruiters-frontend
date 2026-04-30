@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
@@ -28,7 +29,6 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import {
-  ArrowLeft,
   CalendarDays,
   Check,
   ChevronDown,
@@ -46,11 +46,20 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Search,
   Trash2,
   Upload,
   Users,
   X,
+  Briefcase,
+  Bot,
+  UserSquare2,
+  Trophy,
+  UserX,
+  List as ListIcon,
+  LayoutGrid,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -58,7 +67,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { notifySuccess, notifyError } from "@/lib/notify";
-import FitScoreBadge from "./FitScoreBadge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import FitScoreBadge, { FitScoreTooltipContent } from "./FitScoreBadge";
 import AddCandidateModal from "./AddCandidateModal";
 import UploadResumesModal from "./UploadResumesModal";
 import ScheduleInterviewModal from "./ScheduleInterviewModal";
@@ -221,6 +231,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
   const [showCompleted, setShowCompleted] = useState(false);
 
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [pageIndex, setPageIndex] = useState(0);
   const [scheduleCandidate, setScheduleCandidate] = useState<Candidate | null>(null);
@@ -591,123 +602,256 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
       (s) => s !== currentStage,
     );
 
+  // ── Scheduled (in-flight) count for header meta ──────────────────────────
+  const scheduledCount = useMemo(
+    () => candidates.filter((c) => c.interview_status === "Scheduled").length,
+    [candidates],
+  );
+
+  // ── Stat cards config ────────────────────────────────────────────────────
+  const STAT_CARDS: {
+    stage: string;
+    label: string;
+    icon: React.ReactNode;
+    topBar: string;
+    iconWrap: string;
+  }[] = [
+    {
+      stage: "Candidates",
+      label: "Total Candidates",
+      icon: <Users className="h-4 w-4" />,
+      topBar: "bg-gradient-to-r from-indigo-400 to-indigo-500",
+      iconWrap: "bg-indigo-50 text-indigo-500 ring-indigo-100 dark:bg-indigo-500/15 dark:text-indigo-300 dark:ring-indigo-500/20",
+    },
+    {
+      stage: "AI Round",
+      label: "AI Round",
+      icon: <Bot className="h-4 w-4" />,
+      topBar: "bg-gradient-to-r from-sky-400 to-cyan-500",
+      iconWrap: "bg-sky-50 text-sky-500 ring-sky-100 dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-500/20",
+    },
+    {
+      stage: "Panel Round",
+      label: "Panel Round",
+      icon: <UserSquare2 className="h-4 w-4" />,
+      topBar: "bg-gradient-to-r from-amber-400 to-orange-500",
+      iconWrap: "bg-amber-50 text-amber-500 ring-amber-100 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-500/20",
+    },
+    {
+      stage: "Offer-Made",
+      label: "Offer Made",
+      icon: <Trophy className="h-4 w-4" />,
+      topBar: "bg-gradient-to-r from-emerald-400 to-green-500",
+      iconWrap: "bg-emerald-50 text-emerald-500 ring-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-500/20",
+    },
+    {
+      stage: "Rejected",
+      label: "Rejected",
+      icon: <UserX className="h-4 w-4" />,
+      topBar: "bg-gradient-to-r from-rose-400 to-red-500",
+      iconWrap: "bg-rose-50 text-rose-500 ring-rose-100 dark:bg-rose-500/15 dark:text-rose-300 dark:ring-rose-500/20",
+    },
+  ];
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-4 min-w-0">
+    <div className="flex flex-col gap-5 min-w-0">
 
-      {/* ── Job Header ───────────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-bold text-gray-800">
-            {job?.title || "Loading…"}
-          </h1>
+      {/* ===== Modern Job Header (gradient hero) ===== */}
+      <div className="relative overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-5 sm:p-6 dark:border-indigo-500/20 dark:from-indigo-500/10 dark:via-gray-900 dark:to-purple-500/10">
+        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-500/10" />
+        <div className="pointer-events-none absolute -bottom-20 -left-10 h-48 w-48 rounded-full bg-purple-200/40 blur-3xl dark:bg-purple-500/10" />
 
-          {interviewUrl && (
-            <div className="flex items-center gap-2 mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 max-w-full sm:max-w-xl overflow-hidden">
-              <Link className="w-4 h-4 text-blue-500 shrink-0" />
-              <span className="text-sm text-blue-700 truncate flex-1 font-mono">
-                {interviewUrl}
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-600 shadow-sm ring-1 ring-indigo-100 dark:bg-gray-900/80 dark:text-indigo-300 dark:ring-indigo-500/20">
+              <Briefcase className="h-3 w-3" />
+              Job Opening
+            </span>
+
+            <h1 className="mt-2 truncate text-xl font-bold text-gray-900 sm:text-2xl dark:text-white">
+              {job?.title || "Loading…"}
+            </h1>
+
+            {/* Meta row */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-600 dark:text-gray-300">
+              {job?.location && (
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-indigo-400" />
+                  {job.location}
+                </span>
+              )}
+              {job?.job_type && (
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-sky-400" />
+                  {job.job_type}
+                </span>
+              )}
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                {candidates.length} {candidates.length === 1 ? "candidate" : "candidates"}
               </span>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={copyLink}
-                title={urlCopied ? "Copied!" : "Copy link"}
-                className="shrink-0 h-7 w-7 hover:bg-blue-100"
-              >
-                {urlCopied ? (
-                  <Check className="w-4 h-4 text-green-600" />
-                ) : (
-                  <Copy className="w-4 h-4 text-blue-500" />
-                )}
-              </Button>
-              <a
-                href={interviewUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Open interview link"
-                className="shrink-0 p-1 rounded hover:bg-blue-100 transition-colors"
-              >
-                <ExternalLink className="w-4 h-4 text-blue-500" />
-              </a>
+              {scheduledCount > 0 && (
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
+                  {scheduledCount} scheduled
+                </span>
+              )}
             </div>
-          )}
-        </div>
 
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          <Button size="sm" onClick={async () => { if (await checkCandidateQuota()) setShowAddModal(true); }} className="gap-1">
-            <Plus className="w-4 h-4" /> Add Candidate
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1 bg-yellow-500 hover:bg-yellow-600 text-white border-yellow-500"
-            onClick={async () => { if (await checkCandidateQuota()) setShowUploadModal(true); }}
-          >
-            <Upload className="w-4 h-4" /> Upload Resumes
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1 bg-purple-600 hover:bg-purple-700 text-white border-purple-600"
-            onClick={async () => { if (await checkCandidateQuota()) setShowMatchModal(true); }}
-          >
-            <Database className="w-4 h-4" /> Match From Database
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <MoreVertical className="w-5 h-5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setShowJdModal(true)}>
-                <Eye className="w-4 h-4 mr-2" /> View Job Description
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => {
-                  window.open(`${API_BASE}/jobs/${jobId}/download-jd`, "_blank");
-                }}
-              >
-                <Download className="w-4 h-4 mr-2" /> Download JD (Word)
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleExportCandidates}>
-                <FileText className="w-4 h-4 mr-2" /> Export Candidates (Excel)
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
+            {interviewUrl && (
+              <div className="mt-3 flex max-w-full items-center gap-2 overflow-hidden rounded-xl border border-gray-200/80 bg-white/80 px-3 py-1.5 shadow-sm backdrop-blur sm:max-w-md dark:border-white/10 dark:bg-gray-900/60">
+                <Link className="h-3.5 w-3.5 shrink-0 text-indigo-500" />
+                <span className="flex-1 truncate text-xs text-gray-600 dark:text-gray-300">
+                  {interviewUrl}
+                </span>
+                <button
+                  type="button"
+                  onClick={copyLink}
+                  title={urlCopied ? "Copied!" : "Copy link"}
+                  className="shrink-0 rounded p-1 text-gray-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300"
+                >
+                  {urlCopied ? (
+                    <Check className="h-3.5 w-3.5 text-green-600" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </button>
+                <a
+                  href={interviewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Open interview link"
+                  className="shrink-0 rounded p-1 text-gray-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
+            )}
+          </div>
 
-      {/* ── Stage Tabs ────────────────────────────────────────────────────── */}
-      <div className="border-b border-gray-200 overflow-x-auto -mx-1 px-1">
-        <div className="flex items-center gap-0 min-w-max">
-          {STAGES.map((stage) => (
+          {/* Action buttons */}
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             <Button
-              key={stage}
-              variant="ghost"
               size="sm"
-              onClick={() => handleTabChange(stage)}
-              className={`rounded-none px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap
-                ${activeTab === stage
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"}`}
+              onClick={async () => { if (await checkCandidateQuota()) setShowAddModal(true); }}
+              className="gap-1.5 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-sm hover:from-indigo-600 hover:to-indigo-700"
             >
-              {stage === "Candidates" ? "CANDIDATES" : stage.toUpperCase()}
-              <span className="ml-1 text-xs text-gray-400">
-                ({tabCounts[stage] ?? 0})
-              </span>
+              <Plus className="h-4 w-4" /> Add Candidate
             </Button>
-          ))}
+            <Button
+              size="sm"
+              className="gap-1.5 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-sm hover:from-amber-500 hover:to-orange-600"
+              onClick={async () => { if (await checkCandidateQuota()) setShowUploadModal(true); }}
+            >
+              <Upload className="h-4 w-4" /> Upload Resumes
+            </Button>
+            <Button
+              size="sm"
+              className="gap-1.5 rounded-xl bg-gradient-to-r from-fuchsia-500 to-purple-600 text-white shadow-sm hover:from-fuchsia-600 hover:to-purple-700"
+              onClick={async () => { if (await checkCandidateQuota()) setShowMatchModal(true); }}
+            >
+              <Database className="h-4 w-4" /> Match From Database
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-xl bg-white/80 backdrop-blur hover:bg-white dark:bg-gray-900/60 dark:hover:bg-gray-900">
+                  <MoreVertical className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setShowJdModal(true)}>
+                  <Eye className="mr-2 h-4 w-4" /> View Job Description
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    window.open(`${API_BASE}/jobs/${jobId}/download-jd`, "_blank");
+                  }}
+                >
+                  <Download className="mr-2 h-4 w-4" /> Download JD (Word)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportCandidates}>
+                  <FileText className="mr-2 h-4 w-4" /> Export Candidates (Excel)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
 
-      {/* ── Filters Row ───────────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div className="flex items-center gap-4 flex-wrap">
-          {/* "Show All" — only on Candidates tab */}
+      {/* ===== Stage Stat Cards ===== */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {STAT_CARDS.map((c) => {
+          const isActive = activeTab === c.stage;
+          return (
+            <button
+              key={c.stage}
+              type="button"
+              onClick={() => handleTabChange(c.stage)}
+              className={cn(
+                "group relative overflow-hidden rounded-2xl border bg-white p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md dark:bg-gray-900/40",
+                isActive
+                  ? "border-indigo-300 shadow-sm ring-1 ring-indigo-200 dark:border-indigo-500/40 dark:ring-indigo-500/20"
+                  : "border-gray-200 dark:border-white/10"
+              )}
+            >
+              <div className={cn("absolute inset-x-0 top-0 h-1", c.topBar)} />
+              <div className="flex items-start justify-between">
+                <span className={cn("flex h-9 w-9 items-center justify-center rounded-xl ring-1", c.iconWrap)}>
+                  {c.icon}
+                </span>
+                {isActive && (
+                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300">
+                    Active
+                  </span>
+                )}
+              </div>
+              <p className="mt-4 text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
+                {tabCounts[c.stage] ?? 0}
+              </p>
+              <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{c.label}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ===== Pill Tabs ===== */}
+      <div className="flex flex-wrap items-center gap-2 overflow-x-auto">
+        {STAGES.map((stage) => {
+          const isActive = activeTab === stage;
+          return (
+            <button
+              key={stage}
+              type="button"
+              onClick={() => handleTabChange(stage)}
+              className={cn(
+                "group inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-all whitespace-nowrap",
+                isActive
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "bg-white text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50 hover:text-gray-900 dark:bg-gray-900/40 dark:text-gray-300 dark:ring-white/10 dark:hover:bg-white/5"
+              )}
+            >
+              <span>{stage === "Offer-Made" ? "Offer Made" : stage}</span>
+              <span
+                className={cn(
+                  "inline-flex min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums",
+                  isActive
+                    ? "bg-white/20 text-white"
+                    : "bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300"
+                )}
+              >
+                {tabCounts[stage] ?? 0}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ===== Filters Bar ===== */}
+      <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-white/10 dark:bg-gray-900/40">
+        <div className="flex flex-wrap items-center gap-2">
           {isCandidatesTab && (
-            <label className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
+            <label className="flex cursor-pointer select-none items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm transition-colors hover:border-indigo-200 has-[[data-state=checked]]:border-indigo-300 has-[[data-state=checked]]:bg-indigo-50/60 has-[[data-state=checked]]:text-indigo-700 dark:border-white/10 dark:bg-gray-900/40 dark:has-[[data-state=checked]]:border-indigo-500/40 dark:has-[[data-state=checked]]:bg-indigo-500/10 dark:has-[[data-state=checked]]:text-indigo-300">
               <Checkbox
                 checked={showAll}
                 onCheckedChange={(v) => { setShowAll(v as boolean); setPageIndex(0); }}
@@ -715,8 +859,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
               Show All
             </label>
           )}
-          {/* "Show Completed Interviews" — on ALL tabs */}
-          <label className="flex items-center gap-1.5 text-sm cursor-pointer select-none">
+          <label className="flex cursor-pointer select-none items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm transition-colors hover:border-indigo-200 has-[[data-state=checked]]:border-indigo-300 has-[[data-state=checked]]:bg-indigo-50/60 has-[[data-state=checked]]:text-indigo-700 dark:border-white/10 dark:bg-gray-900/40 dark:has-[[data-state=checked]]:border-indigo-500/40 dark:has-[[data-state=checked]]:bg-indigo-500/10 dark:has-[[data-state=checked]]:text-indigo-300">
             <Checkbox
               checked={showCompleted}
               onCheckedChange={(v) => { setShowCompleted(v as boolean); setPageIndex(0); }}
@@ -724,16 +867,55 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
             Show Completed Interviews
           </label>
         </div>
+
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1">
-            <Filter className="w-4 h-4" /> FILTERS
+          {/* View mode toggle (List / Grid) */}
+          <div className="inline-flex items-center rounded-xl border border-gray-200 bg-gray-50 p-0.5 dark:border-white/10 dark:bg-white/5">
+            <button
+              type="button"
+              onClick={() => setViewMode("list")}
+              title="List view"
+              aria-pressed={viewMode === "list"}
+              className={cn(
+                "inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-all",
+                viewMode === "list"
+                  ? "bg-white text-gray-900 shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:text-white dark:ring-white/10"
+                  : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              )}
+            >
+              <ListIcon className="h-3.5 w-3.5" />
+              List
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("grid")}
+              title="Grid view"
+              aria-pressed={viewMode === "grid"}
+              className={cn(
+                "inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-all",
+                viewMode === "grid"
+                  ? "bg-white text-gray-900 shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:text-white dark:ring-white/10"
+                  : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              )}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              Grid
+            </button>
+          </div>
+
+          <Button variant="outline" size="sm" className="gap-1.5 rounded-xl">
+            <Filter className="h-4 w-4" /> Filters
           </Button>
-          <Input
-            placeholder="Search…"
+          <SearchInput
+            size="sm"
+            shortcut="/"
+            placeholder="Search candidates…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-8 w-full sm:w-44"
+            onClear={() => setSearch("")}
+            wrapperClassName="w-full sm:w-64"
           />
+
         </div>
       </div>
 
@@ -755,7 +937,8 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
         </div>
       )}
 
-      {/* ── Table ─────────────────────────────────────────────────────────── */}
+      {/* ── List View (table) ───────────────────────────────────────────── */}
+      {viewMode === "list" && (
       <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
         <div className="overflow-x-auto w-full glass-scrollbar">
           <Table className="min-w-max">
@@ -1192,6 +1375,83 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
           </Pagination>
         </div>
       </div>
+      )}
+
+      {/* ── Grid View ─────────────────────────────────────────────────── */}
+      {viewMode === "grid" && (
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 dark:border-white/10 dark:bg-gray-900/40">
+          {loading ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-72 w-full rounded-2xl" />
+              ))}
+            </div>
+          ) : pagedCandidates.length === 0 ? (
+            <div className="py-16 text-center text-gray-500">
+              <Users className="mx-auto mb-2 h-10 w-10 text-gray-300" />
+              {showCompleted
+                ? "No completed interviews found."
+                : "No candidates found. Add candidates or upload resumes."}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {pagedCandidates.map((c) => (
+                  <CandidateGridCard
+                    key={c.id}
+                    candidate={c}
+                    interviewUrl={interviewUrl}
+                    onSchedule={() => setScheduleCandidate(c)}
+                    onCancelSchedule={() => setCancelTarget(c.id)}
+                    onRemove={() => setRemoveTarget(c.id)}
+                    onOpenMailHistory={() => openEmailHistory(c.id, c.name)}
+                    onViewReport={() => router.push(`/evaluation/${c.id}`)}
+                    onRecomputeFit={
+                      c.job_id !== null ? () => handleRecomputeFit(c.id) : undefined
+                    }
+                    recomputing={recomputingIds.has(c.id)}
+                    showFitPercentage={canSeeFitPercent}
+                    onPromote={(stage) => handlePromote(c.id, stage)}
+                    promoteOptions={getPromoteOptions(c.candidate_stage)}
+                  />
+                ))}
+              </div>
+
+              {/* Pagination for grid view */}
+              <div className="mt-4 flex flex-col items-center justify-between gap-2 border-t border-gray-100 pt-4 sm:flex-row dark:border-white/10">
+                <p className="text-sm text-gray-500">
+                  {totalRows === 0
+                    ? "No results"
+                    : `Showing ${firstRow}–${lastRow} of ${totalRows} candidate${totalRows !== 1 ? "s" : ""}`}
+                </p>
+                <Pagination className="w-auto mx-0">
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        onClick={safePage > 0 ? () => setPageIndex(safePage - 1) : undefined}
+                        aria-disabled={safePage === 0}
+                        className={safePage === 0 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                      />
+                    </PaginationItem>
+                    <PaginationItem>
+                      <span className="flex h-9 min-w-[72px] items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium tabular-nums">
+                        {safePage + 1} / {totalPages}
+                      </span>
+                    </PaginationItem>
+                    <PaginationItem>
+                      <PaginationNext
+                        onClick={safePage < totalPages - 1 ? () => setPageIndex(safePage + 1) : undefined}
+                        aria-disabled={safePage >= totalPages - 1}
+                        className={safePage >= totalPages - 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* ── Modals ────────────────────────────────────────────────────────── */}
       <AddCandidateModal
@@ -1397,3 +1657,459 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
     </div>
   );
 }
+
+/* =============================================================================
+   CandidateGridCard — modern grid-view tile
+   ========================================================================== */
+
+interface CandidateGridCardProps {
+  candidate: Candidate;
+  interviewUrl: string | null;
+  onSchedule: () => void;
+  onCancelSchedule: () => void;
+  onRemove: () => void;
+  onOpenMailHistory: () => void;
+  onViewReport: () => void;
+  onRecomputeFit?: () => void;
+  recomputing?: boolean;
+  showFitPercentage?: boolean;
+  onPromote: (stage: string) => void;
+  promoteOptions: string[];
+}
+
+const AVATAR_PALETTE = [
+  "from-indigo-500 to-blue-500",
+  "from-orange-500 to-amber-500",
+  "from-emerald-500 to-teal-500",
+  "from-pink-500 to-rose-500",
+  "from-purple-500 to-fuchsia-500",
+  "from-sky-500 to-cyan-500",
+];
+
+function fitPercentAndLevel(c: Candidate): {
+  pct: number | null;
+  level: "high" | "medium" | "low" | null;
+} {
+  let parsedPct: number | null = null;
+  if (c.fit_score_reasoning) {
+    try {
+      const r = JSON.parse(c.fit_score_reasoning);
+      const raw = r?.fit_percentage ?? r?.percentage;
+      if (typeof raw === "number" && raw > 0) parsedPct = raw;
+    } catch {}
+  }
+  if (parsedPct === null && c.fit_score_details) {
+    try {
+      const d = JSON.parse(c.fit_score_details);
+      const raw = d?.fit_percentage ?? d?.percentage;
+      if (typeof raw === "number" && raw > 0) parsedPct = raw;
+    } catch {}
+  }
+  if (parsedPct === null && c.resume_fit_score && c.resume_fit_score.endsWith("%")) {
+    const n = parseInt(c.resume_fit_score.replace("%", ""), 10);
+    if (!Number.isNaN(n)) parsedPct = n;
+  }
+
+  let level: "high" | "medium" | "low" | null = null;
+  if (parsedPct !== null) {
+    if (parsedPct >= 70) level = "high";
+    else if (parsedPct >= 40) level = "medium";
+    else level = "low";
+  } else if (c.resume_fit_score === "high" || c.resume_fit_score === "medium" || c.resume_fit_score === "low") {
+    level = c.resume_fit_score;
+  }
+
+  return { pct: parsedPct, level };
+}
+
+function CandidateGridCard({
+  candidate: c,
+  interviewUrl,
+  onSchedule,
+  onCancelSchedule,
+  onRemove,
+  onOpenMailHistory,
+  onViewReport,
+  onRecomputeFit,
+  recomputing,
+  showFitPercentage,
+  onPromote,
+  promoteOptions,
+}: CandidateGridCardProps) {
+  const initials = c.name
+    .split(" ")
+    .map((p) => p[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase() || "?";
+
+  // Deterministic avatar color by id
+  const avatarGradient = AVATAR_PALETTE[c.id % AVATAR_PALETTE.length];
+
+  const { pct: fitPct, level: fitLevel } = fitPercentAndLevel(c);
+
+  // Fit level color mapping
+  const fitTheme = (() => {
+    switch (fitLevel) {
+      case "high":
+        return {
+          bar: "bg-gradient-to-r from-emerald-400 to-green-500",
+          ring: "text-emerald-500",
+          text: "text-emerald-600 dark:text-emerald-300",
+          label: "High fit — strong match",
+          sub: "Recommended",
+        };
+      case "medium":
+        return {
+          bar: "bg-gradient-to-r from-amber-400 to-orange-500",
+          ring: "text-amber-500",
+          text: "text-amber-600 dark:text-amber-300",
+          label: "Medium fit — partial match",
+          sub: "Review required",
+        };
+      case "low":
+        return {
+          bar: "bg-gradient-to-r from-rose-400 to-red-500",
+          ring: "text-rose-500",
+          text: "text-rose-600 dark:text-rose-300",
+          label: "Low fit — weak match",
+          sub: "Not recommended",
+        };
+      default:
+        return {
+          bar: "bg-gradient-to-r from-gray-300 to-gray-400",
+          ring: "text-gray-400",
+          text: "text-gray-500",
+          label: "Fit score pending",
+          sub: "Run AI analysis",
+        };
+    }
+  })();
+
+  const isScheduled = c.interview_status === "Scheduled";
+  const isTerminal = TERMINAL_STATUSES.has(c.interview_status);
+  const canSchedule =
+    !isTerminal &&
+    (isScheduled ||
+      SCHEDULE_ALLOWED_STATUSES.has(c.interview_status) ||
+      !c.interview_status);
+
+  const scheduleLabel = isScheduled
+    ? formatSchedule(c.interview_date, c.interview_timezone)
+    : null;
+
+  const statusClass =
+    STATUS_COLORS[c.interview_status] || "bg-gray-100 text-gray-600";
+
+  const resumeHref = c.resume_path
+    ? c.resume_path.startsWith("http")
+      ? c.resume_path
+      : `${API_BASE.replace(/\/api$/, "")}${c.resume_path.startsWith("/") ? "" : "/"}${c.resume_path}`
+    : null;
+
+  return (
+    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-white/10 dark:bg-gray-900/60">
+      {/* Top accent strip */}
+      <div className={cn("h-1.5 w-full", fitTheme.bar)} />
+
+      <div className="flex flex-col gap-3 p-4">
+        {/* Header row: avatar · name/email · kebab */}
+        <div className="flex items-start gap-3">
+          <div
+            className={cn(
+              "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-sm font-semibold text-white shadow-sm",
+              avatarGradient
+            )}
+          >
+            {initials}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">
+              {c.name}
+            </p>
+            <a
+              href={`mailto:${c.email}`}
+              className="mt-0.5 flex items-center gap-1 truncate text-xs text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-300"
+            >
+              <Mail className="h-3 w-3 shrink-0" />
+              <span className="truncate">{c.email}</span>
+            </a>
+          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/10 dark:hover:text-gray-200"
+              >
+                <MoreVertical className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onViewReport}>
+                <Eye className="mr-2 h-4 w-4" /> View Report
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onOpenMailHistory}>
+                <Mail className="mr-2 h-4 w-4" /> Email History
+              </DropdownMenuItem>
+              {onRecomputeFit && (
+                <DropdownMenuItem
+                  onClick={onRecomputeFit}
+                  disabled={recomputing}
+                >
+                  <RefreshCw className={cn("mr-2 h-4 w-4", recomputing && "animate-spin")} />
+                  {recomputing ? "Refreshing…" : "Refresh Fit Score"}
+                </DropdownMenuItem>
+              )}
+              {isScheduled && interviewUrl && (
+                <DropdownMenuItem
+                  onClick={() => {
+                    const candidateLink = `${interviewUrl}?candidate=${encodeURIComponent(c.email)}`;
+                    navigator.clipboard.writeText(candidateLink);
+                    notifySuccess("Interview link copied!");
+                  }}
+                >
+                  <Link className="mr-2 h-4 w-4" /> Copy Candidate Link
+                </DropdownMenuItem>
+              )}
+              {promoteOptions.length > 0 && (
+                <>
+                  <DropdownMenuItem disabled className="text-xs text-gray-400">
+                    — Move to —
+                  </DropdownMenuItem>
+                  {promoteOptions.map((stage) => (
+                    <DropdownMenuItem key={stage} onClick={() => onPromote(stage)}>
+                      <ChevronRight className="mr-2 h-4 w-4" /> {stage}
+                    </DropdownMenuItem>
+                  ))}
+                </>
+              )}
+              {isScheduled && (
+                <DropdownMenuItem onClick={onCancelSchedule}>
+                  <X className="mr-2 h-4 w-4" /> Cancel Interview
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={onRemove} className="text-red-600 focus:text-red-600">
+                <Trash2 className="mr-2 h-4 w-4" /> Remove
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {/* Fit score inset card — hover shows detailed tooltip */}
+        <Tooltip delayDuration={150}>
+          <TooltipTrigger asChild>
+            <div className="flex cursor-help items-center gap-3 rounded-xl bg-gray-50 p-3 transition-colors hover:bg-gray-100 dark:bg-white/5 dark:hover:bg-white/10">
+              <FitScoreRing
+                pct={fitPct}
+                level={fitLevel}
+                className={fitTheme.ring}
+                showPct={showFitPercentage !== false}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                  Fit Score
+                </p>
+                <p className={cn("truncate text-sm font-semibold", fitTheme.text)}>
+                  {fitTheme.label}
+                </p>
+                <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                  {fitTheme.sub}
+                </p>
+              </div>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent
+            side="right"
+            align="center"
+            sideOffset={12}
+            collisionPadding={16}
+            className="p-0 border-0 rounded-lg shadow-2xl backdrop-blur-xl bg-gray-900/90 ring-1 ring-white/10 overflow-hidden [&>span:last-child]:hidden"
+          >
+            <FitScoreTooltipContent
+              fitLevel={c.resume_fit_score}
+              reasoning={c.fit_score_reasoning}
+              details={c.fit_score_details}
+              showPercentage={showFitPercentage !== false}
+            />
+          </TooltipContent>
+        </Tooltip>
+
+        {/* Status pill */}
+        <div>
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium",
+              statusClass
+            )}
+          >
+            <span
+              className={cn(
+                "h-1.5 w-1.5 rounded-full",
+                isScheduled
+                  ? "bg-blue-500"
+                  : c.interview_status === "Completed"
+                  ? "bg-green-500"
+                  : c.interview_status === "New" || !c.interview_status
+                  ? "bg-pink-500"
+                  : "bg-gray-400"
+              )}
+            />
+            {c.interview_status || "New"}
+          </span>
+        </div>
+
+        {/* Date row — always shown. Shows scheduled/interviewed/not-scheduled. */}
+        <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+          <CalendarDays className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
+          <span className="truncate">
+            {(() => {
+              if (scheduleLabel) return scheduleLabel;
+              const formatted = c.interview_date
+                ? formatSchedule(c.interview_date, c.interview_timezone)?.replace(/^Scheduled:\s*/, "")
+                : null;
+              if (isTerminal && formatted) return `Interviewed: ${formatted}`;
+              if (isTerminal) return "Interview completed";
+              if (formatted) return formatted;
+              return "Not scheduled yet";
+            })()}
+          </span>
+        </div>
+
+        {/* Action buttons */}
+        <div className="mt-1 grid grid-cols-2 gap-2">
+          {isTerminal ? (
+            <>
+              <Button
+                size="sm"
+                onClick={onViewReport}
+                className="h-9 gap-1.5 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-sm hover:from-indigo-600 hover:to-indigo-700"
+              >
+                <Eye className="h-4 w-4" />
+                View Report
+              </Button>
+              {resumeHref ? (
+                <a href={resumeHref} target="_blank" rel="noreferrer" className="contents">
+                  <Button size="sm" variant="outline" className="h-9 gap-1.5 rounded-xl">
+                    <FileText className="h-4 w-4" />
+                    Resume
+                  </Button>
+                </a>
+              ) : (
+                <Button size="sm" variant="outline" disabled className="h-9 gap-1.5 rounded-xl">
+                  <FileText className="h-4 w-4" />
+                  Resume
+                </Button>
+              )}
+            </>
+          ) : canSchedule ? (
+            <>
+              <Button
+                size="sm"
+                onClick={onSchedule}
+                className="h-9 gap-1.5 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-sm hover:from-indigo-600 hover:to-indigo-700"
+              >
+                <CalendarDays className="h-4 w-4" />
+                {isScheduled ? "Reschedule" : "Schedule"}
+              </Button>
+              {resumeHref ? (
+                <a href={resumeHref} target="_blank" rel="noreferrer" className="contents">
+                  <Button size="sm" variant="outline" className="h-9 gap-1.5 rounded-xl">
+                    <FileText className="h-4 w-4" />
+                    Resume
+                  </Button>
+                </a>
+              ) : (
+                <Button size="sm" variant="outline" disabled className="h-9 gap-1.5 rounded-xl">
+                  <FileText className="h-4 w-4" />
+                  Resume
+                </Button>
+              )}
+            </>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                onClick={onViewReport}
+                className="h-9 gap-1.5 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-sm hover:from-indigo-600 hover:to-indigo-700"
+              >
+                <Eye className="h-4 w-4" />
+                View Report
+              </Button>
+              {resumeHref ? (
+                <a href={resumeHref} target="_blank" rel="noreferrer" className="contents">
+                  <Button size="sm" variant="outline" className="h-9 gap-1.5 rounded-xl">
+                    <FileText className="h-4 w-4" />
+                    Resume
+                  </Button>
+                </a>
+              ) : (
+                <Button size="sm" variant="outline" disabled className="h-9 gap-1.5 rounded-xl">
+                  <FileText className="h-4 w-4" />
+                  Resume
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+/* Circular ring for fit score */
+function FitScoreRing({
+  pct,
+  level,
+  className,
+  showPct,
+}: {
+  pct: number | null;
+  level: "high" | "medium" | "low" | null;
+  className?: string;
+  showPct?: boolean;
+}) {
+  const size = 56;
+  const stroke = 5;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const value = pct !== null ? Math.max(0, Math.min(100, pct)) : 0;
+  const dashOffset = circumference - (value / 100) * circumference;
+
+  const display = pct !== null ? `${Math.round(pct)}%` : (level ? level[0].toUpperCase() : "—");
+
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={stroke}
+          className="text-gray-200 dark:text-white/10"
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={pct === null ? circumference : dashOffset}
+          className={cn("transition-all duration-500", className)}
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className={cn("text-sm font-bold text-gray-800 dark:text-white", !showPct && pct !== null && "opacity-0")}>
+          {showPct === false && pct !== null ? (level ? level[0].toUpperCase() : "—") : display}
+        </span>
+      </div>
+    </div>
+  );
+}
+
