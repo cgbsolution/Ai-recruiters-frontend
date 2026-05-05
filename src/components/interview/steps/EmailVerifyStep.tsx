@@ -27,6 +27,7 @@ interface Props {
   }, candidateName?: string) => void;
   onShowApply: (email: string, name?: string) => void;
   onBack?: () => void;
+  initialEmail?: string;
 }
 
 export default function EmailVerifyStep({
@@ -34,8 +35,9 @@ export default function EmailVerifyStep({
   onAccessGranted,
   onShowApply,
   onBack,
+  initialEmail,
 }: Props) {
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail ?? "");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 

@@ -492,6 +492,10 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     case "VERIFY_EMAIL":
       return (
         <EmailVerifyStep
+          // Prefill from the ?candidate= URL param so a candidate following
+          // the link emailed by the recruiter doesn't have to retype their
+          // address (and so that submit just works once they hit it).
+          initialEmail={candidateEmail}
           onVerify={handleVerifyAccess}
           onAccessGranted={handleAccessGranted}
           onShowApply={handleShowApply}
