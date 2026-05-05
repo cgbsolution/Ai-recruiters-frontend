@@ -378,11 +378,26 @@ export default function InterviewRoom({
       setPhase("SPEAKING");
       speak(aiMsgs[latestIdx].content);
 
-      // Check if this AI message includes a coding question (only if code editor is enabled)
+      // Coding-question handoff (only when the editor feature is enabled).
+      // Three cases:
+      //   1. No coding question in the new AI message → clear any prior one and
+      //      close the editor. Without this, a stale question + button lingers
+      //      after the AI moves on.
+      //   2. New coding question, editor was closed → store the question so the
+      //      "Open Code Editor" button appears (first coding turn flow).
+      //   3. New coding question, editor already open → swap the question in
+      //      place. This is the multi-coding-question case: candidate just
+      //      submitted, AI returns the next problem, editor stays open.
       const latestAiMsg = aiMsgs[latestIdx];
-      if (latestAiMsg.codingQuestion && jobConfig.code_editor_required) {
-        setActiveCodingQuestion(latestAiMsg.codingQuestion);
-        setShowCodeEditor(false); // Don't auto-open — candidate clicks the button
+      if (jobConfig.code_editor_required) {
+        if (latestAiMsg.codingQuestion) {
+          setActiveCodingQuestion(latestAiMsg.codingQuestion);
+          // Leave showCodeEditor as-is: false on first coding turn (button
+          // shown), true on subsequent turns (seamless swap in editor).
+        } else {
+          setActiveCodingQuestion(null);
+          setShowCodeEditor(false);
+        }
       }
     }
   }, [messages, speak, stop, cancelSilenceAnim]);
@@ -762,9 +777,11 @@ export default function InterviewRoom({
   /* ── Code submission handler ── */
   const handleCodeSubmit = useCallback(
     async (code: string, language: string, testResult: { passed: number; total: number }) => {
-      setActiveCodingQuestion(null);
-      setShowCodeEditor(false);
-      // Submit code + get AI response
+      // Don't tear the editor down here — let the next AI message decide.
+      // If another coding question follows, the effect above swaps it in place
+      // (so the candidate doesn't see the same "click the button" prompt
+      // again). If no coding question follows, the same effect closes the
+      // editor so the chat panel comes back.
       const codeContext =
         `[CODE SUBMISSION] Language: ${language} | ` +
         `Tests: ${testResult.passed}/${testResult.total} passed\n` +
@@ -1134,6 +1151,11 @@ export default function InterviewRoom({
         {showCodeEditor && activeCodingQuestion ? (
           <div className="flex-1 flex flex-col min-w-0">
             <CodeEditor
+              // Force remount when the question changes so internal state
+              // (code, language, timer, test results) resets between coding
+              // questions. Title alone could collide if the AI reuses one;
+              // pair with description for uniqueness.
+              key={`${activeCodingQuestion.title}::${activeCodingQuestion.description?.slice(0, 40) ?? ""}`}
               question={activeCodingQuestion}
               sessionId={sessionId}
               onSubmit={handleCodeSubmit}
