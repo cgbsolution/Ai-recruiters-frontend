@@ -43,9 +43,17 @@ export default function WarningStep({ onConfirm }: Props) {
           ))}
         </div>
 
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-6 text-center">
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-4 text-center">
           <p className="text-gray-600 text-sm">
             After <span className="text-red-500 font-semibold">5 violations</span>, your interview will be automatically terminated.
+          </p>
+        </div>
+
+        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-6 flex items-start gap-3">
+          <Eye className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+          <p className="text-blue-900 text-xs leading-relaxed">
+            Members of the hiring team may watch this interview live for evaluation purposes.
+            They can only watch — they cannot interrupt, speak, or record.
           </p>
         </div>
 

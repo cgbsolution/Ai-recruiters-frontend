@@ -6,6 +6,7 @@ import { useGlobalModal } from "@/context/ModalContext";
 import { Button } from "@/components/ui/button";
 import { Plus, Sparkles } from "lucide-react";
 import { AIAssistantButton } from "@/components/ai-assistant/AIAssistantButton";
+import { TryDemoButton } from "@/components/product-tour/TryDemoButton";
 
 function getGreeting(): { greeting: string; emoji: string; subtitle: string } {
   const h = new Date().getHours();
@@ -48,7 +49,10 @@ export default function DashboardHeader() {
   }, []);
 
   return (
-    <section className="relative mb-6 overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/70 via-white to-purple-50/70 p-5 sm:p-6 dark:border-indigo-500/20 dark:from-indigo-500/10 dark:via-gray-900 dark:to-purple-500/10">
+    <section
+      data-tour="dashboard-header"
+      className="relative mb-6 overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/70 via-white to-purple-50/70 p-5 sm:p-6 dark:border-indigo-500/20 dark:from-indigo-500/10 dark:via-gray-900 dark:to-purple-500/10"
+    >
       {/* Decorative glow blobs */}
       <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-indigo-200/40 blur-3xl dark:bg-indigo-500/10" />
       <div className="pointer-events-none absolute -bottom-20 -left-10 h-48 w-48 rounded-full bg-purple-200/40 blur-3xl dark:bg-purple-500/10" />
@@ -97,11 +101,16 @@ export default function DashboardHeader() {
           </div>
         </div>
 
-        {/* Right: CTAs — AI Assistant + Create Opening */}
+        {/* Right: CTAs — Try Demo + AI Assistant + Create Opening */}
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <AIAssistantButton />
+          <TryDemoButton />
+
+          <div data-tour="ai-assistant-btn">
+            <AIAssistantButton />
+          </div>
 
           <Button
+            data-tour="create-opening-cta"
             onClick={openModal}
             className="group relative h-11 shrink-0 overflow-hidden rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 px-5 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-500/25 hover:from-indigo-600 hover:to-purple-600 active:translate-y-0"
           >

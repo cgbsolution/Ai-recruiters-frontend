@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 export default function QuestionBank() {
   return (
     <>
-      <div>
+      <div data-tour="question-bank-page">
         {/* <PageBreadcrumb pageTitle="Dashboard" /> */}
              <div className="col-span-12 space-y-6 xl:col-span-12">
       <QuestionsBank />

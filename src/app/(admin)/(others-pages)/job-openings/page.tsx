@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function JobOpenings() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour="job-openings-page">
       <JobsDataCard />
       <JobsOpeningsCard />
     </div>

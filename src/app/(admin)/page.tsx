@@ -20,9 +20,11 @@ export default function Dashboard() {
   return (
     <>
       <DashboardHeader />
-      <JobsDataCard />
+      <div data-tour="jobs-data-card">
+        <JobsDataCard />
+      </div>
       <div className="grid grid-cols-12 gap-4 md:gap-6">
-        <div className="col-span-12 space-y-6 xl:col-span-6">
+        <div className="col-span-12 space-y-6 xl:col-span-6" data-tour="hiring-funnel">
           <HiringFunnelCharts />
         </div>
 
@@ -41,7 +43,7 @@ export default function Dashboard() {
 
         {/* AI Usage Analytics & Credits — Super Admin only */}
         <SuperAdminOnly>
-          <div className="col-span-12 space-y-6">
+          <div className="col-span-12 space-y-6" data-tour="ai-usage">
             <AiUsageAnalytics />
           </div>
 

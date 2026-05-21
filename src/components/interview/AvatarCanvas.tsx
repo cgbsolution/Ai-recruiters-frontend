@@ -282,7 +282,7 @@ export default function AvatarCanvas({ isSpeaking, isThinking }: Props) {
       {!loaded && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#eef0f8]">
           <div className="flex flex-col items-center gap-3">
-            <div className="w-10 h-10 border-3 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+            <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
             <span className="text-xs text-gray-400">Loading avatar...</span>
           </div>
         </div>

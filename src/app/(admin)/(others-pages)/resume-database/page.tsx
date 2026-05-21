@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function ResumeDatabasePage() {
   return (
-    <div className="p-4 md:p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6" data-tour="resume-database-page">
       <ResumeDatabaseView />
     </div>
   );

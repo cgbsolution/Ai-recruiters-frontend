@@ -37,6 +37,8 @@ type NavItem = {
   path: string;
   /** Which roles can see this item. Undefined = everyone who is logged in. */
   roles?: UserRole[];
+  /** Optional data-tour anchor for the product tour to target this nav item. */
+  tourKey?: string;
 };
 
 const AppSidebar: React.FC = () => {
@@ -52,14 +54,14 @@ const AppSidebar: React.FC = () => {
   const navItems: NavItem[] = useMemo(
     () =>
       [
-        { icon: LayoutDashboard, name: "Dashboard", path: "/" },
-        { icon: Briefcase, name: "Job Openings", path: "/job-openings" },
-        { icon: Users, name: "Candidates", path: "/candidates" },
-        { icon: ListChecks, name: "Question Bank", path: "/question-bank" },
-        { icon: Database, name: "Resume Database", path: "/resume-database", roles: ["super_admin", "admin"] },
-        { icon: Building2, name: "Organizations", path: "/organizations", roles: ["super_admin"] },
-        { icon: Shield, name: "Access Control", path: "/access-control", roles: ["super_admin", "admin"] },
-        { icon: FolderOpen, name: "File Manager", path: "/file-manager", roles: ["super_admin"] },
+        { icon: LayoutDashboard, name: "Dashboard", path: "/", tourKey: "nav-dashboard" },
+        { icon: Briefcase, name: "Job Openings", path: "/job-openings", tourKey: "nav-job-openings" },
+        { icon: Users, name: "Candidates", path: "/candidates", tourKey: "nav-candidates" },
+        { icon: ListChecks, name: "Question Bank", path: "/question-bank", tourKey: "nav-question-bank" },
+        { icon: Database, name: "Resume Database", path: "/resume-database", roles: ["super_admin", "admin"], tourKey: "nav-resume-database" },
+        { icon: Building2, name: "Organizations", path: "/organizations", roles: ["super_admin"], tourKey: "nav-organizations" },
+        { icon: Shield, name: "Access Control", path: "/access-control", roles: ["super_admin", "admin"], tourKey: "nav-access-control" },
+        { icon: FolderOpen, name: "File Manager", path: "/file-manager", roles: ["super_admin"], tourKey: "nav-file-manager" },
       ].filter((item) => !item.roles || (user ? item.roles.includes(user.role) : false)) as NavItem[],
     [user],
   );
@@ -86,6 +88,7 @@ const AppSidebar: React.FC = () => {
 
   return (
     <aside
+      data-tour="sidebar"
       onMouseEnter={() => !isExpanded && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       className={cn(
@@ -133,6 +136,7 @@ const AppSidebar: React.FC = () => {
                   onClick={handleLinkClick}
                   aria-current={active ? "page" : undefined}
                   title={!open ? item.name : undefined}
+                  data-tour={item.tourKey}
                   className={cn(
                     "group relative flex items-center rounded-xl transition-all duration-150 ease-out",
                     open ? "gap-3 px-3 py-2.5" : "h-10 w-10 mx-auto justify-center",
@@ -187,7 +191,7 @@ const AppSidebar: React.FC = () => {
       </nav>
 
       {/* ── Create Opening CTA (sits above the user profile) ──────────────── */}
-      <div className={cn("px-3 pb-2", open ? "" : "flex justify-center")}>
+      <div className={cn("px-3 pb-2", open ? "" : "flex justify-center")} data-tour="create-opening-cta-sidebar">
         <Button
           onClick={openModal}
           title={!open ? "Create Opening" : undefined}
@@ -204,7 +208,7 @@ const AppSidebar: React.FC = () => {
 
       {/* ── User profile footer with menu ─────────────────────────────────── */}
       {user && (
-        <div className={cn("border-t border-gray-200/80 p-3 dark:border-white/10", !open && "flex justify-center")}>
+        <div className={cn("border-t border-gray-200/80 p-3 dark:border-white/10", !open && "flex justify-center")} data-tour="user-profile-card">
           {open ? (
             <div className="flex items-center gap-3 rounded-xl bg-gray-50 p-2.5 dark:bg-white/5">
               {/* Avatar w/ online dot */}

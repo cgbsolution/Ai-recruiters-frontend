@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 };
 export default function page() {
   return (
-    <div>
+    <div data-tour="calendar-page">
       <PageBreadcrumb pageTitle="Calendar" />
       <Calendar />
     </div>

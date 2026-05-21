@@ -7,8 +7,10 @@ import { ThemeProvider } from "@/components/ui/context/ThemeContext";
 import { AuthProvider } from "@/context/AuthContext";
 import { ModalProvider } from "@/context/ModalContext";
 import { AIAssistantProvider } from "@/context/AIAssistantContext";
+import { ProductTourProvider } from "@/context/ProductTourContext";
 import { GlobalCreateOpeningModal } from "@/components/modals/GlobalCreateOpeningModal";
 import { AIAssistantDrawer } from "@/components/ai-assistant/AIAssistantDrawer";
+import { ProductTour } from "@/components/product-tour/ProductTour";
 import { Toaster } from "sonner";
 
 
@@ -34,10 +36,13 @@ export default function RootLayout({
             <SidebarProvider>
               <ModalProvider>
                 <AIAssistantProvider>
-                  {children}
-                  <Toaster richColors closeButton position="top-right" />
-                  <GlobalCreateOpeningModal />
-                  <AIAssistantDrawer />
+                  <ProductTourProvider>
+                    {children}
+                    <Toaster richColors closeButton position="top-right" />
+                    <GlobalCreateOpeningModal />
+                    <AIAssistantDrawer />
+                    <ProductTour />
+                  </ProductTourProvider>
                 </AIAssistantProvider>
               </ModalProvider>
             </SidebarProvider>

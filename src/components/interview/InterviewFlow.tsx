@@ -644,6 +644,7 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
       return session.sessionId ? (
         <InterviewRoom
           sessionId={session.sessionId}
+          interviewToken={token}
           jobConfig={jobConfig}
           messages={session.messages}
           questionStates={session.questionStates}

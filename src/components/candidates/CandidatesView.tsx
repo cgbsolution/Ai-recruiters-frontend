@@ -73,6 +73,7 @@ import AddCandidateModal from "./AddCandidateModal";
 import UploadResumesModal from "./UploadResumesModal";
 import ScheduleInterviewModal from "./ScheduleInterviewModal";
 import MatchCandidatesModal from "./MatchCandidatesModal";
+import ObserverLinkButton from "./ObserverLinkButton";
 import { api, apiPost, ApiError, API_BASE } from "@/lib/api";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
@@ -1233,6 +1234,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                                   <Link className="w-3 h-3" /> Share Link
                                 </Button>
                               )}
+                              <ObserverLinkButton candidateId={c.id} candidateName={c.name} />
                             </>
                           ) : SCHEDULE_ALLOWED_STATUSES.has(c.interview_status) || !c.interview_status ? (
                             <Button

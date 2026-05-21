@@ -17,6 +17,7 @@ import VoiceVisualizer, { type VoiceMode } from "./VoiceVisualizer";
 import TranscriptPanel from "./TranscriptPanel";
 import ViolationModal from "./ViolationModal";
 import { useDeepgramSTT } from "@/hooks/interview/useDeepgramSTT";
+import { useFrameStreamer } from "@/hooks/interview/useFrameStreamer";
 import { playStartRecording, playStopRecording, playSendResponse, playDelete, playEndCall } from "@/lib/sounds";
 import { useGoogleTTS } from "@/hooks/interview/useGoogleTTS";
 import { useViolationDetection } from "@/hooks/interview/useViolationDetection";
@@ -34,6 +35,7 @@ type InterviewPhase = "IDLE" | "SPEAKING" | "LISTENING" | "PROCESSING";
 
 interface Props {
   sessionId: number;
+  interviewToken?: string;
   jobConfig: JobConfig;
   messages: Message[];
   questionStates: QuestionState[];
@@ -121,6 +123,7 @@ function isSkipCommand(text: string): boolean {
 
 export default function InterviewRoom({
   sessionId,
+  interviewToken,
   jobConfig,
   messages,
   questionStates,
@@ -196,6 +199,18 @@ export default function InterviewRoom({
   const { violationCount, lastViolation, shouldTerminate, disable: disableViolations, lastFaceCountRef } = useViolationDetection(sessionId, true, webcamStream, jobConfig.face_match);
   useScreenCapture(sessionId, webcamStream, !isInterviewComplete, lastFaceCountRef);
   const secondaryCam = useSecondaryCamMonitor(sessionId, !!jobConfig.secondary_cam);
+  // Live observer stream — broadcasts low-fps JPEG frames of the candidate's
+  // webcam to anyone holding a valid observer link. Goes through the backend
+  // (no NAT traversal, works on any network). Read-only, send-only, fail-soft.
+  useFrameStreamer({
+    sessionId,
+    interviewToken: interviewToken ?? null,
+    webcamStream,
+    enabled: !isInterviewComplete,
+    fps: 4,
+    maxWidth: 480,
+    quality: 0.6,
+  });
 
   /* ── Keep transcriptRef in sync on every render ── */
   // transcript from Deepgram hook already includes interim, so don't add interimTranscript again
