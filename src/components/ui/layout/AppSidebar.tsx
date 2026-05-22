@@ -23,6 +23,7 @@ import {
   Building2,
   Shield,
   FolderOpen,
+  Code2,
   LogOut,
   Plus,
   MoreVertical,
@@ -62,6 +63,7 @@ const AppSidebar: React.FC = () => {
         { icon: Building2, name: "Organizations", path: "/organizations", roles: ["super_admin"], tourKey: "nav-organizations" },
         { icon: Shield, name: "Access Control", path: "/access-control", roles: ["super_admin", "admin"], tourKey: "nav-access-control" },
         { icon: FolderOpen, name: "File Manager", path: "/file-manager", roles: ["super_admin"], tourKey: "nav-file-manager" },
+        { icon: Code2, name: "Code Sandbox Test", path: "/code-test", roles: ["super_admin"], tourKey: "nav-code-test" },
       ].filter((item) => !item.roles || (user ? item.roles.includes(user.role) : false)) as NavItem[],
     [user],
   );
