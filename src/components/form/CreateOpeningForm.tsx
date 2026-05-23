@@ -145,6 +145,13 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
     "traditional"
   );
   const [maxQuestions, setMaxQuestions] = useState<number>(10);
+  // Coding-specific knobs. Visible only when Code Editor Required is ON.
+  const [maxCodingQuestions, setMaxCodingQuestions] = useState<number>(0);
+  const [manualCodingQuestions, setManualCodingQuestions] = useState<boolean>(false);
+  // Recruiter-authored coding prompts. Indexed 0..maxCodingQuestions-1 when
+  // manualCodingQuestions is ON. Persisted as JobQuestion rows with
+  // category="coding".
+  const [manualCodingPrompts, setManualCodingPrompts] = useState<string[]>([]);
   const [autoSkipSeconds, setAutoSkipSeconds] = useState<number>(0);
   const [specialInstructions, setSpecialInstructions] = useState<string>("");
   const [scoringLeniency, setScoringLeniency] = useState<string>(
@@ -356,6 +363,32 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       if (key === "manualInterview" && newVal) updates.enableVirtualAvatar = false;
       return { ...s, ...updates };
     });
+
+  // Keep the manual coding prompt list length aligned with maxCodingQuestions
+  // whenever the count changes or the toggle is flipped on. Truncates if the
+  // count goes down (preserves existing prompts at lower indices), pads with
+  // empty strings if the count goes up.
+  useEffect(() => {
+    if (!interviewSettings.codeEditor || !manualCodingQuestions) {
+      return;
+    }
+    setManualCodingPrompts((prev) => {
+      const target = Math.max(0, maxCodingQuestions || 0);
+      if (prev.length === target) return prev;
+      if (prev.length > target) return prev.slice(0, target);
+      return [...prev, ...Array(target - prev.length).fill("")];
+    });
+  }, [maxCodingQuestions, manualCodingQuestions, interviewSettings.codeEditor]);
+
+  // When the recruiter turns off Code Editor Required, reset the coding-side
+  // state so we don't accidentally persist stale values on submit.
+  useEffect(() => {
+    if (!interviewSettings.codeEditor) {
+      setMaxCodingQuestions(0);
+      setManualCodingQuestions(false);
+      setManualCodingPrompts([]);
+    }
+  }, [interviewSettings.codeEditor]);
 
   const addCustomQuestion = (q = "") =>
     setCustomQuestions((p) => [...p, {
@@ -654,6 +687,12 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
               : "traditional"
           );
           setMaxQuestions(jobData.interview_settings?.max_questions || 10);
+          setMaxCodingQuestions(
+            jobData.interview_settings?.max_coding_questions ?? 0,
+          );
+          setManualCodingQuestions(
+            Boolean(jobData.interview_settings?.manual_coding_questions),
+          );
           setAutoSkipSeconds(
             jobData.interview_settings?.auto_skip_timeout || 0
           );
@@ -665,11 +704,22 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
           );
 
           if (jobData.questions) {
-            setCustomQuestions(jobData.questions.map((q: any) => ({
-              text: q.text || "",
-              category: q.category || "general",
-              difficulty: q.difficulty || "medium"
-            })));
+            // Split coding-category questions out — they belong to the
+            // manual coding prompts panel, not the regular Custom Questions list.
+            const codingQs = jobData.questions
+              .filter((q: any) => (q.category || "").toLowerCase() === "coding")
+              .map((q: any) => q.text || "");
+            const verbalQs = jobData.questions
+              .filter((q: any) => (q.category || "").toLowerCase() !== "coding")
+              .map((q: any) => ({
+                text: q.text || "",
+                category: q.category || "general",
+                difficulty: q.difficulty || "medium",
+              }));
+            setCustomQuestions(verbalQs);
+            if (codingQs.length > 0) {
+              setManualCodingPrompts(codingQs);
+            }
           }
           const mqVal = (jobData.mix_of_questions || "").toLowerCase();
           setCustomQuestionsMode(
@@ -753,6 +803,8 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       secondary_cam: interviewSettings.secondaryCamVerification,
       mode: questionType === "traditional" ? "TRADITIONAL" : "SCENARIO",
       max_questions: maxQuestions,
+      max_coding_questions: interviewSettings.codeEditor ? Math.max(0, maxCodingQuestions || 0) : 0,
+      manual_coding_questions: interviewSettings.codeEditor && manualCodingQuestions,
       auto_skip_timeout: autoSkipSeconds,
       special_instructions: specialInstructions || "",
       scoring: scoringCustomInstructions
@@ -792,7 +844,17 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       manager_email: manager.email,
       evaluation_scoring: scoringLeniency,
       mix_of_questions: customQuestionsMode === "mix" ? "mix" : customQuestionsMode === "ai_only" ? "ai_only" : "only",
-      questions: customQuestions,
+      // Verbal custom questions + (when manual coding is ON) recruiter-authored
+      // coding prompts. Coding prompts use category="coding" so the backend
+      // can route them to the coding round instead of asking them verbally.
+      questions: [
+        ...customQuestions,
+        ...((interviewSettings.codeEditor && manualCodingQuestions)
+          ? manualCodingPrompts
+              .map((t, i) => ({ text: (t || "").trim(), category: "coding", difficulty: "medium" }))
+              .filter((q) => q.text.length > 0)
+          : []),
+      ],
       allow_to_contact: interviewSettings.allowCandidateContact,
       upload_jd: uploadJD ? uploadJD.name : "",
     };
@@ -1451,8 +1513,20 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
               </div>
 
               <div>
-                <Label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                  Max Number of Questions to Ask
+                <Label className="text-sm font-medium text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                  {interviewSettings.codeEditor
+                    ? "Max Number of Verbal Questions"
+                    : "Max Number of Questions to Ask"}
+                  {interviewSettings.codeEditor && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="h-3.5 w-3.5 cursor-help text-gray-400" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-sm">
+                        Number of verbal / theory questions the AI will ask before the coding round.
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
                 </Label>
                 <Input
                   type="number"
@@ -1464,6 +1538,51 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
                 />
               </div>
             </div>
+
+            {interviewSettings.codeEditor && (
+              <div className="mt-5 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 dark:border-indigo-500/30 dark:bg-indigo-500/5">
+                <div className="flex items-center gap-2 mb-3">
+                  <Code2 className="h-4 w-4 text-indigo-600 dark:text-indigo-300" />
+                  <Label className="text-sm font-semibold text-indigo-700 dark:text-indigo-200">
+                    Coding Round
+                  </Label>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label className="text-sm font-medium text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                      Number of Coding Questions
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3.5 w-3.5 cursor-help text-gray-400" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-sm">
+                          The AI will ask EXACTLY this many coding questions, placed after the verbal round. Set 0 to skip the coding round even though the editor is enabled.
+                        </TooltipContent>
+                      </Tooltip>
+                    </Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={10}
+                      value={maxCodingQuestions}
+                      onChange={(e) => setMaxCodingQuestions(Math.max(0, Number(e.target.value) || 0))}
+                      className="mt-2"
+                    />
+                  </div>
+                  <div className="flex flex-col">
+                    <Label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      Total Interview Length
+                    </Label>
+                    <div className="mt-2 flex h-10 items-center rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 dark:border-white/10 dark:bg-gray-900/60 dark:text-gray-200">
+                      {maxQuestions + (maxCodingQuestions || 0)} turns
+                      <span className="ml-1.5 text-xs text-gray-400">
+                        ({maxQuestions} verbal + {maxCodingQuestions || 0} coding)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="mt-6 rounded-xl border border-gray-100 bg-gray-50/60 p-4 dark:border-white/10 dark:bg-white/5">
               <div className="flex items-center justify-between">
@@ -1577,6 +1696,25 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
               icon={<ClipboardCheck className="h-5 w-5" />}
               title="Custom Questions"
               description="Add your own questions or pull from the question bank."
+              rightSlot={interviewSettings.codeEditor ? (
+                <label
+                  htmlFor="manualCodingQuestionsToggle"
+                  className={cn(
+                    "flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
+                    manualCodingQuestions
+                      ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-500/40 dark:bg-indigo-500/10 dark:text-indigo-200"
+                      : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:bg-gray-900/60 dark:text-gray-200"
+                  )}
+                >
+                  <Checkbox
+                    id="manualCodingQuestionsToggle"
+                    checked={manualCodingQuestions}
+                    onCheckedChange={(v) => setManualCodingQuestions(Boolean(v))}
+                  />
+                  <Code2 className="h-3.5 w-3.5" />
+                  Manual Coding Questions
+                </label>
+              ) : null}
             />
 
             <RadioGroup
@@ -1588,6 +1726,56 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
               <OptionPill id="questions-mix" value="mix" label="Mix of these & AI" />
               <OptionPill id="questions-only" value="only" label="Only these questions" />
             </RadioGroup>
+
+            {interviewSettings.codeEditor && manualCodingQuestions && (
+              <div className="mt-5 rounded-xl border border-indigo-200 bg-indigo-50/40 p-4 dark:border-indigo-500/30 dark:bg-indigo-500/5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Code2 className="h-4 w-4 text-indigo-600 dark:text-indigo-300" />
+                    <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-200">
+                      Coding question prompts ({manualCodingPrompts.length})
+                    </p>
+                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-3.5 w-3.5 cursor-help text-indigo-500/70" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-sm">
+                      Write each coding problem as a plain-English prompt. The AI expands each one into a runnable problem with test cases at interview time. Number of prompts is fixed by the &quot;Number of Coding Questions&quot; field above.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                {manualCodingPrompts.length === 0 ? (
+                  <p className="text-xs text-indigo-600/80 dark:text-indigo-200/80">
+                    Set &quot;Number of Coding Questions&quot; above to add prompts here.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {manualCodingPrompts.map((prompt, i) => (
+                      <div
+                        key={i}
+                        className="flex items-start gap-2 rounded-md border border-indigo-100 bg-white p-2 dark:border-indigo-500/30 dark:bg-gray-900/60"
+                      >
+                        <span className="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-indigo-100 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+                          {i + 1}
+                        </span>
+                        <Textarea
+                          value={prompt}
+                          onChange={(e) =>
+                            setManualCodingPrompts((prev) =>
+                              prev.map((p, idx) => (idx === i ? e.target.value : p))
+                            )
+                          }
+                          placeholder={`Coding question ${i + 1} — e.g. "Find the longest substring without repeating characters."`}
+                          rows={2}
+                          className="flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0 resize-none"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {customQuestionsMode !== "ai_only" && (
               <div className="mt-5 space-y-3">
