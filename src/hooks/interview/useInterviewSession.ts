@@ -38,7 +38,8 @@ export interface JobConfig {
   experience_level?: string;
   experience_min: number;
   experience_max: number;
-  max_questions: number;
+  max_questions: number;              // verbal-only
+  max_coding_questions?: number;      // coding turns appended after verbal
   mode: string;
   virtual_avatar: boolean;
   webcam_required: boolean;

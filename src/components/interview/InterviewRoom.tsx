@@ -962,15 +962,20 @@ export default function InterviewRoom({
 
         {/* Right: Controls */}
         <div className="flex items-center gap-3">
-          {/* Question progress */}
-          <div className="flex items-center gap-1.5 text-xs text-gray-500">
-            <span className="font-semibold text-blue-600">
-              {Math.min(Math.max(currentQuestionIndex, completedQuestionCount), jobConfig.max_questions)}
-            </span>
-            <span>/</span>
-            <span>{jobConfig.max_questions}</span>
-            <span className="text-[10px] uppercase tracking-wide ml-0.5">Questions</span>
-          </div>
+          {/* Question progress — total = verbal + coding turns */}
+          {(() => {
+            const totalTurns = jobConfig.max_questions + (jobConfig.max_coding_questions ?? 0);
+            return (
+              <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                <span className="font-semibold text-blue-600">
+                  {Math.min(Math.max(currentQuestionIndex, completedQuestionCount), totalTurns)}
+                </span>
+                <span>/</span>
+                <span>{totalTurns}</span>
+                <span className="text-[10px] uppercase tracking-wide ml-0.5">Questions</span>
+              </div>
+            );
+          })()}
 
           {/* Per-question countdown timer */}
           {autoSkipTimeout > 0 && questionTimeLeft > 0 && currentQuestionIndex > 0 && (
