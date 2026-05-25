@@ -293,6 +293,20 @@ export default function FitScoreBadge({
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-gray-400 text-xs font-medium border border-gray-200">
         <span className="w-2 h-2 rounded-full bg-gray-300" />
         N/A
+        {onRecompute && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRecompute();
+            }}
+            disabled={recomputing}
+            title={recomputing ? "Computing fit score…" : "Compute fit score"}
+            className="ml-1 flex h-4 w-4 items-center justify-center rounded-full text-gray-500 hover:bg-gray-200 hover:text-gray-700 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3 w-3 ${recomputing ? "animate-spin" : ""}`} />
+          </button>
+        )}
       </span>
     );
   }

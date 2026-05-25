@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -74,7 +74,7 @@ import UploadResumesModal from "./UploadResumesModal";
 import ScheduleInterviewModal from "./ScheduleInterviewModal";
 import MatchCandidatesModal from "./MatchCandidatesModal";
 import ObserverLinkButton from "./ObserverLinkButton";
-import { api, apiPost, ApiError, API_BASE } from "@/lib/api";
+import { api, apiPost, apiUpload, ApiError, API_BASE } from "@/lib/api";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type ResumeFitScore = string | null;
@@ -275,6 +275,9 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
   }, [jobId]);
   const [recomputingIds, setRecomputingIds] = useState<Set<number>>(new Set());
   const [refreshingAll, setRefreshingAll] = useState(false);
+  const [uploadingResumeIds, setUploadingResumeIds] = useState<Set<number>>(new Set());
+  const resumeUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const resumeUploadCandidateRef = useRef<number | null>(null);
   const [interviewUrl, setInterviewUrl] = useState<string | null>(null);
   const [urlCopied, setUrlCopied] = useState(false);
   const [showJdModal, setShowJdModal] = useState(false);
@@ -515,6 +518,60 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
     [],
   );
 
+  const triggerResumeUpload = useCallback((candidateId: number) => {
+    resumeUploadCandidateRef.current = candidateId;
+    if (resumeUploadInputRef.current) {
+      resumeUploadInputRef.current.value = "";
+      resumeUploadInputRef.current.click();
+    }
+  }, []);
+
+  const handleResumeUploadFile = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0] ?? null;
+      const candidateId = resumeUploadCandidateRef.current;
+      event.target.value = "";
+      resumeUploadCandidateRef.current = null;
+      if (!file || candidateId === null) return;
+
+      const allowedTypes = [
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ];
+      if (!allowedTypes.includes(file.type)) {
+        notifyError("Unsupported file type. Only PDF, DOC and DOCX are accepted.");
+        return;
+      }
+
+      setUploadingResumeIds((prev) => new Set([...prev, candidateId]));
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const updated = await apiUpload<Candidate>(
+          `/candidates/${candidateId}/replace-resume`,
+          formData,
+          { timeout: 300_000 },
+        );
+        setCandidates((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+        notifySuccess("Resume uploaded successfully.");
+      } catch (err: any) {
+        notifyError(
+          err instanceof ApiError
+            ? err.detail
+            : err?.message || "Failed to upload resume",
+        );
+      } finally {
+        setUploadingResumeIds((prev) => {
+          const next = new Set(prev);
+          next.delete(candidateId);
+          return next;
+        });
+      }
+    },
+    [],
+  );
+
   const handleRefreshAllFitScores = useCallback(async () => {
     if (!jobId) return;
     const toRefresh = candidates.filter((c) => c.job_id !== null);
@@ -657,6 +714,14 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-5 min-w-0">
+      {/* Hidden single-resume upload input (per-candidate replace-resume) */}
+      <input
+        ref={resumeUploadInputRef}
+        type="file"
+        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        className="hidden"
+        onChange={handleResumeUploadFile}
+      />
 
       {/* ===== Modern Job Header (gradient hero) ===== */}
       <div className="relative overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-5 sm:p-6 dark:border-indigo-500/20 dark:from-indigo-500/10 dark:via-gray-900 dark:to-purple-500/10">
@@ -1201,8 +1266,19 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                             </Button>
                           </a>
                         ) : (
-                          <Button variant="ghost" size="icon" disabled title="No Resume">
-                            <FileText className="w-5 h-5 text-gray-300" />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => triggerResumeUpload(c.id)}
+                            disabled={uploadingResumeIds.has(c.id)}
+                            title={uploadingResumeIds.has(c.id) ? "Uploading…" : "Upload resume"}
+                            className="text-amber-500 hover:text-amber-600"
+                          >
+                            {uploadingResumeIds.has(c.id) ? (
+                              <RefreshCw className="w-5 h-5 animate-spin" />
+                            ) : (
+                              <Upload className="w-5 h-5" />
+                            )}
                           </Button>
                         )}
                       </TableCell>
@@ -1415,6 +1491,8 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                     showFitPercentage={canSeeFitPercent}
                     onPromote={(stage) => handlePromote(c.id, stage)}
                     promoteOptions={getPromoteOptions(c.candidate_stage)}
+                    onUploadResume={() => triggerResumeUpload(c.id)}
+                    uploadingResume={uploadingResumeIds.has(c.id)}
                   />
                 ))}
               </div>
@@ -1677,6 +1755,8 @@ interface CandidateGridCardProps {
   showFitPercentage?: boolean;
   onPromote: (stage: string) => void;
   promoteOptions: string[];
+  onUploadResume?: () => void;
+  uploadingResume?: boolean;
 }
 
 const AVATAR_PALETTE = [
@@ -1737,6 +1817,8 @@ function CandidateGridCard({
   showFitPercentage,
   onPromote,
   promoteOptions,
+  onUploadResume,
+  uploadingResume,
 }: CandidateGridCardProps) {
   const initials = c.name
     .split(" ")
@@ -1809,6 +1891,40 @@ function CandidateGridCard({
       ? c.resume_path
       : `${API_BASE.replace(/\/api$/, "")}${c.resume_path.startsWith("/") ? "" : "/"}${c.resume_path}`
     : null;
+
+  const resumeButton = resumeHref ? (
+    <a href={resumeHref} target="_blank" rel="noreferrer" className="contents">
+      <Button size="sm" variant="outline" className="h-9 gap-1.5 rounded-xl">
+        <FileText className="h-4 w-4" />
+        Resume
+      </Button>
+    </a>
+  ) : onUploadResume ? (
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={onUploadResume}
+      disabled={uploadingResume}
+      className="h-9 gap-1.5 rounded-xl border-amber-300 text-amber-600 hover:bg-amber-50"
+    >
+      {uploadingResume ? (
+        <>
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          Uploading…
+        </>
+      ) : (
+        <>
+          <Upload className="h-4 w-4" />
+          Upload Resume
+        </>
+      )}
+    </Button>
+  ) : (
+    <Button size="sm" variant="outline" disabled className="h-9 gap-1.5 rounded-xl">
+      <FileText className="h-4 w-4" />
+      Resume
+    </Button>
+  );
 
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-white/10 dark:bg-gray-900/60">
@@ -1990,19 +2106,7 @@ function CandidateGridCard({
                 <Eye className="h-4 w-4" />
                 View Report
               </Button>
-              {resumeHref ? (
-                <a href={resumeHref} target="_blank" rel="noreferrer" className="contents">
-                  <Button size="sm" variant="outline" className="h-9 gap-1.5 rounded-xl">
-                    <FileText className="h-4 w-4" />
-                    Resume
-                  </Button>
-                </a>
-              ) : (
-                <Button size="sm" variant="outline" disabled className="h-9 gap-1.5 rounded-xl">
-                  <FileText className="h-4 w-4" />
-                  Resume
-                </Button>
-              )}
+              {resumeButton}
             </>
           ) : canSchedule ? (
             <>
@@ -2014,19 +2118,7 @@ function CandidateGridCard({
                 <CalendarDays className="h-4 w-4" />
                 {isScheduled ? "Reschedule" : "Schedule"}
               </Button>
-              {resumeHref ? (
-                <a href={resumeHref} target="_blank" rel="noreferrer" className="contents">
-                  <Button size="sm" variant="outline" className="h-9 gap-1.5 rounded-xl">
-                    <FileText className="h-4 w-4" />
-                    Resume
-                  </Button>
-                </a>
-              ) : (
-                <Button size="sm" variant="outline" disabled className="h-9 gap-1.5 rounded-xl">
-                  <FileText className="h-4 w-4" />
-                  Resume
-                </Button>
-              )}
+              {resumeButton}
             </>
           ) : (
             <>
@@ -2038,19 +2130,7 @@ function CandidateGridCard({
                 <Eye className="h-4 w-4" />
                 View Report
               </Button>
-              {resumeHref ? (
-                <a href={resumeHref} target="_blank" rel="noreferrer" className="contents">
-                  <Button size="sm" variant="outline" className="h-9 gap-1.5 rounded-xl">
-                    <FileText className="h-4 w-4" />
-                    Resume
-                  </Button>
-                </a>
-              ) : (
-                <Button size="sm" variant="outline" disabled className="h-9 gap-1.5 rounded-xl">
-                  <FileText className="h-4 w-4" />
-                  Resume
-                </Button>
-              )}
+              {resumeButton}
             </>
           )}
         </div>
