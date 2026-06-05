@@ -564,6 +564,18 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
       ? "Fair performance"
       : "Weak performance";
 
+  // When evaluation generation FAILS, the backend stores a placeholder row whose
+  // summary explains the failure — so `evaluation` is truthy even though no real
+  // report exists. Detect that so we (a) don't render the error as a "summary"
+  // and (b) still show the Re-generate button (which was gated on `!evaluation`,
+  // so it never appeared in the failed state).
+  const evalFailed =
+    !!evaluation &&
+    (!evaluation.summary ||
+      /could not be generated|last error|unrepairable json|evaluation failed|jsondecodeerror/i.test(
+        evaluation.summary || "",
+      ));
+
   const cleanCheating = cheatingScore != null ? Math.round((100 - cheatingScore) / 10) : null;
   const cheatingTagline =
     cleanCheating === null
@@ -992,7 +1004,7 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
                   </div>
                 </div>
 
-                {evaluation?.summary && (
+                {evaluation?.summary && !evalFailed && (
                   <div className="mt-5 space-y-4">
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Interview Summary</p>
@@ -1045,24 +1057,26 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
                   </div>
                 )}
 
-                {!evaluation && (
+                {(!evaluation || evalFailed) && (
                   <div className="space-y-4 py-6 text-center">
                     <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 ring-1 ring-amber-100">
                       <TrendingUp className="h-6 w-6 text-amber-500" />
                     </div>
                     <div>
                       <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                        {session?.status === "completed" || session?.status === "terminated"
+                        {evalFailed
+                          ? "Evaluation couldn't be generated"
+                          : session?.status === "completed" || session?.status === "terminated"
                           ? "Evaluation report was not generated"
                           : "Evaluation will appear after the interview is completed."}
                       </p>
-                      {(session?.status === "completed" || session?.status === "terminated") && (
+                      {(evalFailed || session?.status === "completed" || session?.status === "terminated") && (
                         <p className="mt-1 text-xs text-gray-400">
-                          Click below to regenerate it. This may take 1–3 minutes.
+                          Click below to {evalFailed ? "re-generate" : "generate"} it. This may take 1–3 minutes.
                         </p>
                       )}
                     </div>
-                    {session?.id && (session?.status === "completed" || session?.status === "terminated") && (
+                    {session?.id && (evalFailed || session?.status === "completed" || session?.status === "terminated") && (
                       <Button onClick={generateEvaluation} disabled={generatingEval} className="gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600">
                         {generatingEval ? (
                           <>
@@ -1072,7 +1086,7 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
                         ) : (
                           <>
                             <TrendingUp className="h-4 w-4" />
-                            Generate Evaluation Report
+                            {evalFailed ? "Re-generate Report" : "Generate Evaluation Report"}
                           </>
                         )}
                       </Button>
