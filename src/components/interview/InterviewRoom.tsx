@@ -10,7 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { PhoneOff, Mic, MicOff, GripVertical, SkipForward, Monitor, Square, Send, Trash2, Pencil, Check, X } from "lucide-react";
+import { PhoneOff, Mic, MicOff, GripVertical, SkipForward, Monitor, Square, Send, Trash2, Pencil, Check, X, AlertTriangle } from "lucide-react";
 import dynamic from "next/dynamic";
 import AvatarScene from "./AvatarScene";
 import VoiceVisualizer, { type VoiceMode } from "./VoiceVisualizer";
@@ -204,7 +204,7 @@ export default function InterviewRoom({
   });
 
   /* ── Hooks ── */
-  const { transcript, interimTranscript, isListening, isSupported, lastFinalAt, micStream, start, stop, reset, getSnapshot } = useDeepgramSTT(interviewLanguage);
+  const { transcript, interimTranscript, isListening, isSupported, lastFinalAt, micStream, error: sttError, start, stop, reset, getSnapshot } = useDeepgramSTT(interviewLanguage);
   const { speak, cancel, isSpeaking, isLipSyncing, audioElement } = useGoogleTTS(interviewLanguage);
   const { violationCount, lastViolation, shouldTerminate, disable: disableViolations, lastFaceCountRef, reportViolation } = useViolationDetection(sessionId, true, webcamStream, jobConfig.face_match);
   useScreenCapture(sessionId, webcamStream, !isInterviewComplete, lastFaceCountRef);
@@ -1161,6 +1161,16 @@ export default function InterviewRoom({
           </Button>
         </div>
       </div>
+
+      {/* ── Speech-to-text failure banner ── */}
+      {sttError && (
+        <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs flex items-center gap-2 shrink-0">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>
+            {sttError} Your speaking may not be transcribed — please tell your recruiter if this persists.
+          </span>
+        </div>
+      )}
 
       {/* ── State Tabs ── */}
       <div className="px-4 py-2 border-b border-gray-100 shrink-0 flex items-center gap-1.5 overflow-x-auto">

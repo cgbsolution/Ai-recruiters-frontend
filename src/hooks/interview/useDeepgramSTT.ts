@@ -13,6 +13,9 @@ interface DeepgramSTTHook {
    *  it in a MediaStreamAudioSourceNode for real-time amplitude data. Null
    *  when the mic is not active. */
   micStream: MediaStream | null;
+  /** Non-null when speech-to-text is failing (key/quota/connection) so the UI
+   *  can tell the candidate instead of leaving them silently un-transcribed. */
+  error: string | null;
   start: () => void;
   stop: () => string;
   reset: () => void;
@@ -36,6 +39,7 @@ export function useDeepgramSTT(language: string = "en"): DeepgramSTTHook {
   const [isListening, setIsListening] = useState(false);
   const [lastFinalAt, setLastFinalAt] = useState(0);
   const [micStream, setMicStream] = useState<MediaStream | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -78,6 +82,7 @@ export function useDeepgramSTT(language: string = "en"): DeepgramSTTHook {
     setTranscript("");
     setInterimTranscript("");
     setLastFinalAt(0);
+    setError(null);
     activeRef.current = true;
 
     // Get microphone FIRST — start recording immediately to not lose any words
@@ -147,6 +152,8 @@ export function useDeepgramSTT(language: string = "en"): DeepgramSTTHook {
         if (reconnectAttempts < MAX_RECONNECTS) {
           reconnectAttempts += 1;
           setTimeout(() => { if (activeRef.current) void connect(); }, 500 * reconnectAttempts);
+        } else {
+          setError("Transcription service unavailable (could not authorize). Please check your connection or contact support.");
         }
         return;
       }
@@ -166,6 +173,7 @@ export function useDeepgramSTT(language: string = "en"): DeepgramSTTHook {
 
       ws.onopen = () => {
         reconnectAttempts = 0;
+        setError(null);
         setIsListening(true);
         // Flush audio buffered while (re)connecting so no words are lost.
         while (audioBuffer.length > 0) {
@@ -215,7 +223,8 @@ export function useDeepgramSTT(language: string = "en"): DeepgramSTTHook {
           console.warn(`[Deepgram] Closed unexpectedly (code ${e.code}) — reconnecting (${reconnectAttempts}/${MAX_RECONNECTS})`);
           setTimeout(() => { if (activeRef.current) void connect(); }, Math.min(2000, 300 * reconnectAttempts));
         } else {
-          console.error("[Deepgram] Reconnect attempts exhausted — STT stopped");
+          console.error(`[Deepgram] Reconnect attempts exhausted — STT stopped (last close code ${e.code})`);
+          setError("Transcription stopped (the speech service kept disconnecting). This is often an API quota/credit issue — please contact support.");
           setIsListening(false);
         }
       };
@@ -258,5 +267,5 @@ export function useDeepgramSTT(language: string = "en"): DeepgramSTTHook {
     return () => { activeRef.current = false; cleanup(); };
   }, [cleanup]);
 
-  return { transcript, interimTranscript, isListening, isSupported, lastFinalAt, micStream, start, stop, reset, getSnapshot };
+  return { transcript, interimTranscript, isListening, isSupported, lastFinalAt, micStream, error, start, stop, reset, getSnapshot };
 }
