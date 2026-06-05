@@ -20,6 +20,26 @@ interface SpeechSynthesisHook {
 }
 
 /**
+ * Strip markdown / code-formatting characters so the voice doesn't read them
+ * aloud. The model formats terms like `useState` or **bold**; without this, TTS
+ * literally pronounces the backticks, tildes, asterisks, etc. Only the SPOKEN
+ * text is cleaned — the on-screen transcript keeps the original formatting.
+ */
+function cleanForSpeech(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, " ")        // fenced code blocks → drop
+    .replace(/`/g, "")                        // inline code backticks: `useState` → useState
+    .replace(/~~/g, "")                       // strikethrough
+    .replace(/(\*\*|\*|__|_)/g, "")           // bold / italic markers
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")       // markdown headings
+    .replace(/^\s{0,3}>\s?/gm, "")            // blockquotes
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")  // links [text](url) → text
+    .replace(/[*_~#`]/g, "")                  // any stray markdown chars left
+    .replace(/\s{2,}/g, " ")                  // collapse whitespace
+    .trim();
+}
+
+/**
  * Google Cloud Text-to-Speech via backend.
  * Backend calls Google TTS API and returns base64 MP3.
  * Voice: en-IN-Wavenet-A (Indian female).
@@ -89,7 +109,9 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
       setIsSpeaking(true);
 
       try {
-        const audioB64 = await fetchTTS(text);
+        // Speak the cleaned text (no markdown/code symbols); the displayed
+        // transcript still shows the original formatting.
+        const audioB64 = await fetchTTS(cleanForSpeech(text));
         if (!speakingRef.current) return;
 
         const audio = new Audio(`data:audio/mp3;base64,${audioB64}`);

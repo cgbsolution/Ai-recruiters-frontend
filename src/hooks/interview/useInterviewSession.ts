@@ -7,6 +7,7 @@ import {
   deleteRecording as deleteStoredRecording,
   assembleBlob as assembleStoredRecording,
 } from "@/lib/recordingStorage";
+import { reportClientEvent } from "@/lib/clientTelemetry";
 
 export interface CodingQuestion {
   title: string;
@@ -433,18 +434,21 @@ export function useInterviewSession(): InterviewSessionHook {
       setIsAiThinking(true);
 
       try {
-        // Retry up to 2 times on failure (3 total attempts)
+        // One retry (2 attempts). The backend now self-bounds each turn to ~35s
+        // and returns a bridge question instead of hanging, so the first attempt
+        // almost always succeeds; a second covers a transient network blip.
+        // (Previously 3×45s = up to ~135s before the candidate saw any response.)
         let data: any;
         let lastErr: any;
-        for (let attempt = 0; attempt < 3; attempt++) {
+        for (let attempt = 0; attempt < 2; attempt++) {
           try {
             data = await apiPost<any>(`/interview/sessions/${sessionId}/message`, { content: text }, { timeout: 45_000 });
             lastErr = null;
             break;
           } catch (retryErr) {
             lastErr = retryErr;
-            if (attempt < 2) {
-              await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+            if (attempt < 1) {
+              await new Promise((r) => setTimeout(r, 2000));
             }
           }
         }
@@ -603,6 +607,11 @@ export function useInterviewSession(): InterviewSessionHook {
       // zero bytes but that's a silent data loss. Surface it.
       if (!blob || blob.size === 0) {
         console.error(`[uploadRecording] Blob is empty for session ${sid}. Refusing to upload.`);
+        reportClientEvent({
+          type: "recording_empty",
+          message: `Recorder produced a 0-byte blob for session ${sid}`,
+          context: { sessionId: sid, recordingId },
+        });
         return false;
       }
 
@@ -653,6 +662,18 @@ export function useInterviewSession(): InterviewSessionHook {
             console.error(
               `[uploadRecording] Attempt ${attempt + 1} FAILED for session ${sid}: ${errMsg}`,
             );
+            // Beacon the actual failure reason (HTTP 413/timeout/network/etc.)
+            // so the cause of a missing recording is visible server-side.
+            reportClientEvent({
+              type: "recording_upload_attempt_failed",
+              message: `session ${sid} attempt ${attempt + 1}/${MAX_ATTEMPTS}: ${errMsg}`,
+              context: {
+                sessionId: sid,
+                recordingId,
+                attempt: attempt + 1,
+                status: err instanceof ApiError ? err.status : undefined,
+              },
+            });
             if (attempt < MAX_ATTEMPTS - 1) {
               // Exponential backoff capped at 60s: 3s, 6s, 12s, 24s, 48s.
               const delay = Math.min(3000 * Math.pow(2, attempt), 60_000);

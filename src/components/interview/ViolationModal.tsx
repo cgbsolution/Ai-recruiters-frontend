@@ -36,6 +36,10 @@ const MESSAGES: Record<ViolationType, { title: string; desc: string }> = {
     title: "Multiple Faces Detected",
     desc: "More than one person is visible. Only the candidate should be in frame.",
   },
+  screen_share_stopped: {
+    title: "Screen Sharing Stopped",
+    desc: "You stopped sharing your screen. This is recorded — please resume sharing your entire screen to continue.",
+  },
 };
 
 export default function ViolationModal({ violationType, violationCount, threshold, onDismiss }: Props) {

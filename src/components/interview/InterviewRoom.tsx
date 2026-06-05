@@ -26,6 +26,10 @@ import { useSecondaryCamMonitor } from "@/hooks/interview/useSecondaryCamMonitor
 import SecondCamReconnectModal from "./SecondCamReconnectModal";
 import type { Message, JobConfig, QuestionState, CodingQuestion } from "@/hooks/interview/useInterviewSession";
 import { API_BASE } from "@/lib/api";
+import ErrorBoundary from "@/components/ErrorBoundary";
+import { useMemoryWatchdog } from "@/hooks/interview/useMemoryWatchdog";
+import { useGlobalErrorGuard } from "@/hooks/useGlobalErrorGuard";
+import { reportClientEvent } from "@/lib/clientTelemetry";
 
 const CodeEditor = dynamic(() => import("./CodeEditor"), { ssr: false });
 
@@ -71,6 +75,12 @@ const POST_SPEECH_DELAY_MS = 1200;
 
 /** If PROCESSING phase lasts longer than this, force-recover */
 const PROCESSING_TIMEOUT_MS = 45000;
+
+/** Hard ceiling for the SPEAKING phase. TTS questions are short (well under a
+ *  minute); if we're still "speaking" after this, the audio almost certainly
+ *  hung (silent decode / blocked autoplay) and onended never fired — recover
+ *  instead of freezing on "Nira speaking". Generous so it never cuts real speech. */
+const SPEAKING_TIMEOUT_MS = 90000;
 
 /** Minimum characters of FINAL transcript required before auto-submit */
 const MIN_SUBMIT_LENGTH = 3;
@@ -196,21 +206,51 @@ export default function InterviewRoom({
   /* ── Hooks ── */
   const { transcript, interimTranscript, isListening, isSupported, lastFinalAt, micStream, start, stop, reset, getSnapshot } = useDeepgramSTT(interviewLanguage);
   const { speak, cancel, isSpeaking, isLipSyncing, audioElement } = useGoogleTTS(interviewLanguage);
-  const { violationCount, lastViolation, shouldTerminate, disable: disableViolations, lastFaceCountRef } = useViolationDetection(sessionId, true, webcamStream, jobConfig.face_match);
+  const { violationCount, lastViolation, shouldTerminate, disable: disableViolations, lastFaceCountRef, reportViolation } = useViolationDetection(sessionId, true, webcamStream, jobConfig.face_match);
   useScreenCapture(sessionId, webcamStream, !isInterviewComplete, lastFaceCountRef);
   const secondaryCam = useSecondaryCamMonitor(sessionId, !!jobConfig.secondary_cam);
+
+  // Catch async errors React's ErrorBoundary can't see, and flag abnormal
+  // teardown (the fingerprint of a tab crash) for telemetry.
+  useGlobalErrorGuard({ duringInterview: true });
+
+  // Watch the JS heap so we can shed load BEFORE Chrome force-kills the tab.
+  const { pressure } = useMemoryWatchdog();
+
   // Live observer stream — broadcasts low-fps JPEG frames of the candidate's
   // webcam to anyone holding a valid observer link. Goes through the backend
   // (no NAT traversal, works on any network). Read-only, send-only, fail-soft.
+  //
+  // This feed is the most expendable continuous workload, so it's the first to
+  // be shed under memory pressure: throttle fps/quality when elevated, and stop
+  // it entirely when critical. The interview itself is never degraded.
   useFrameStreamer({
     sessionId,
     interviewToken: interviewToken ?? null,
     webcamStream,
-    enabled: !isInterviewComplete,
-    fps: 4,
-    maxWidth: 480,
-    quality: 0.6,
+    enabled: !isInterviewComplete && pressure !== "critical",
+    fps: pressure === "elevated" ? 2 : 4,
+    maxWidth: pressure === "elevated" ? 360 : 480,
+    quality: pressure === "elevated" ? 0.45 : 0.6,
   });
+
+  // Record once when we begin shedding load, so a "near-miss" is visible in
+  // telemetry even if the tab ultimately survives.
+  const shedReportedRef = useRef(false);
+  useEffect(() => {
+    if (pressure === "normal") {
+      shedReportedRef.current = false;
+      return;
+    }
+    if (!shedReportedRef.current) {
+      shedReportedRef.current = true;
+      reportClientEvent({
+        type: "load_shed",
+        message: `observer stream throttled (pressure=${pressure})`,
+        context: { pressure },
+      });
+    }
+  }, [pressure]);
 
   /* ── Keep transcriptRef in sync on every render ── */
   // transcript from Deepgram hook already includes interim, so don't add interimTranscript again
@@ -464,6 +504,34 @@ export default function InterviewRoom({
   }, [phase, isSpeaking, isThinking, isInterviewComplete, showCodeEditor, reset, onComplete]);
 
   /* ═══════════════════════════════════════════════════════════════ */
+  /*  EFFECT 2b: SPEAKING hard-ceiling safety net                   */
+  /*  If TTS audio hangs (onplaying/onended never fire), isSpeaking  */
+  /*  stays true forever and Effect 2 never arms its timer — so the  */
+  /*  UI sits on "Nira speaking". Recover after a generous ceiling.  */
+  /* ═══════════════════════════════════════════════════════════════ */
+  useEffect(() => {
+    if (phase !== "SPEAKING") return;
+    const ceiling = setTimeout(() => {
+      if (phaseRef.current !== "SPEAKING") return;
+      console.warn("[InterviewRoom] SPEAKING exceeded ceiling — TTS likely hung; recovering");
+      cancel(); // stop any stuck audio
+      if (isInterviewComplete) {
+        if (!isAutoCompletingRef.current) {
+          isAutoCompletingRef.current = true;
+          onComplete();
+        }
+      } else if (showCodeEditor) {
+        setPhase("IDLE");
+      } else {
+        setPhase("LISTENING");
+        reset();
+        setVoiceState("idle");
+      }
+    }, SPEAKING_TIMEOUT_MS);
+    return () => clearTimeout(ceiling);
+  }, [phase, cancel, reset, isInterviewComplete, showCodeEditor, onComplete]);
+
+  /* ═══════════════════════════════════════════════════════════════ */
   /*  EFFECT 3: Silence detection — ChatGPT voice mode style        */
   /*  ONLY triggers on FINAL transcript, never on interim.          */
   /*  Waits for confirmed silence after user finishes speaking.     */
@@ -639,7 +707,12 @@ export default function InterviewRoom({
   /* ═══════════════════════════════════════════════════════════════ */
 
   useEffect(() => {
-    if (phase !== "PROCESSING" && !isThinking) return;
+    // Guard ONLY on phase. Previously this also depended on `isThinking`, which
+    // sendMessage clears in its finally regardless of outcome — that tore down
+    // and recreated this interval mid-wait, so the 45s deadline could reset or
+    // never fire, leaving the UI stuck on "processing". A single stable interval
+    // owned purely by the PROCESSING phase is the reliable safety net.
+    if (phase !== "PROCESSING") return;
 
     const checkStuck = setInterval(() => {
       if (phaseRef.current === "PROCESSING" && processingStartRef.current) {
@@ -654,10 +727,10 @@ export default function InterviewRoom({
           setVoiceState("idle");
         }
       }
-    }, 5000);
+    }, 1000);
 
     return () => clearInterval(checkStuck);
-  }, [phase, isThinking, reset]);
+  }, [phase, reset]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  EFFECT: Per-question auto-skip countdown timer                */
@@ -756,7 +829,11 @@ export default function InterviewRoom({
   /* ═══════════════════════════════════════════════════════════════ */
 
   useEffect(() => {
-    if (lastViolation) setShowViolationModal(true);
+    // Screen-share stop has its own dedicated "Share Screen Again" modal, so
+    // don't also pop the generic violation modal for it (avoid stacking two).
+    if (lastViolation && lastViolation !== "screen_share_stopped") {
+      setShowViolationModal(true);
+    }
   }, [lastViolation, violationCount]);
 
   /* ═══════════════════════════════════════════════════════════════ */
@@ -773,11 +850,19 @@ export default function InterviewRoom({
         stop();
         cancel();
         setShowScreenShareModal(true);
+        // Record stopping screen share as a proctoring violation: it counts
+        // toward the cheating score the recruiter sees and the auto-terminate
+        // threshold. We can't prevent the candidate from stopping (the browser
+        // controls that bar), but it is never a free action.
+        void reportViolation(
+          "screen_share_stopped",
+          "Candidate stopped screen sharing during the interview",
+        );
       }
     };
     videoTrack.addEventListener("ended", handleEnded);
     return () => videoTrack.removeEventListener("ended", handleEnded);
-  }, [screenStream, stop, cancel]);
+  }, [screenStream, stop, cancel, reportViolation]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  Helpers                                                       */
@@ -934,11 +1019,55 @@ export default function InterviewRoom({
   })();
 
   /* ═══════════════════════════════════════════════════════════════ */
+  /*  STUCK-AT-START RECOVERY                                        */
+  /*  If the interview produces NOTHING — no AI opening message, so  */
+  /*  no Nira audio, no text, and no Start-Speaking button — the     */
+  /*  candidate is trapped. Surface an escape hatch so they can      */
+  /*  always retry or leave instead of staring at a frozen screen.  */
+  /* ═══════════════════════════════════════════════════════════════ */
+  const [showStuckHelp, setShowStuckHelp] = useState(false);
+  useEffect(() => {
+    if (messages.length > 0) {
+      setShowStuckHelp(false);
+      return;
+    }
+    const t = setTimeout(() => setShowStuckHelp(true), 30000);
+    return () => clearTimeout(t);
+  }, [messages.length]);
+
+  /* ═══════════════════════════════════════════════════════════════ */
   /*  RENDER                                                        */
   /* ═══════════════════════════════════════════════════════════════ */
 
   return (
     <div className="flex flex-col h-screen bg-white overflow-hidden">
+      {/* Escape hatch: the interview never produced an opening message. */}
+      {showStuckHelp && messages.length === 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl">
+            <h2 className="text-lg font-semibold text-gray-900">Trouble starting your interview</h2>
+            <p className="mt-2 text-sm text-gray-500">
+              We couldn&apos;t load the interview — this is usually a temporary connection issue.
+              Reload to try again, or end the interview.
+            </p>
+            <div className="mt-5 flex flex-col gap-2">
+              <Button
+                onClick={() => window.location.reload()}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                Reload &amp; try again
+              </Button>
+              <Button
+                variant="outline"
+                onClick={onComplete}
+                className="border-red-300 text-red-600 hover:bg-red-50"
+              >
+                End interview
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* ── Header Bar ── */}
       <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-100 z-10">
         {/* Left: Logo/Brand + Timer */}
@@ -1131,7 +1260,16 @@ export default function InterviewRoom({
         }`}>
           <div className="relative w-full rounded-2xl overflow-hidden bg-[#eef0f8] border border-gray-200/60 shadow-sm aspect-square max-h-[280px] min-h-[200px]">
             {jobConfig.virtual_avatar ? (
-              <AvatarScene isSpeaking={isLipSyncing} isThinking={isThinking} />
+              <ErrorBoundary
+                name="avatar"
+                fallback={
+                  <div className="flex h-full w-full items-center justify-center bg-[#eef0f8] text-gray-400 text-sm">
+                    Interviewer
+                  </div>
+                }
+              >
+                <AvatarScene isSpeaking={isLipSyncing} isThinking={isThinking} />
+              </ErrorBoundary>
             ) : jobConfig.manual_interview ? (
               <VoiceVisualizer
                 mode={

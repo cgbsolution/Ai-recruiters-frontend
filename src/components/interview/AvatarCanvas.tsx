@@ -288,25 +288,31 @@ export default function AvatarCanvas({ isSpeaking, isThinking }: Props) {
         </div>
       )}
       <Canvas
-        shadows
+        // Shadows are intentionally OFF. There is no floor/surface in this scene
+        // to catch a shadow, so R3F's default shadow pass was rendering a
+        // 2048² depth map every frame for zero visible benefit — pure GPU/CPU
+        // cost (and its default PCFSoftShadowMap also flooded the console with a
+        // deprecation warning every frame). Removing it makes the avatar render
+        // far cheaper on weak candidate laptops with no visible change.
         camera={{ fov: 30, near: 0.01, far: 10 }}
+        // Cap render resolution: on a 2x/3x HiDPI display the small avatar tile
+        // would otherwise render at 4–9× the pixels for no perceptible gain.
+        dpr={[1, 1.5]}
         gl={{
           antialias: true,
           toneMapping: THREE.ACESFilmicToneMapping,
           toneMappingExposure: 1.3,
+          powerPreference: "high-performance",
         }}
         style={{ background: "linear-gradient(180deg, #f0f2fa 0%, #e4e7f3 100%)" }}
       >
         <CameraRig />
 
-        {/* Key light — bright warm, from upper-right */}
+        {/* Key light — bright warm, from upper-right (no shadow casting) */}
         <directionalLight
           position={[2, 3, 2]}
           intensity={2.8}
           color="#fff8f0"
-          castShadow
-          shadow-mapSize={[2048, 2048]}
-          shadow-bias={-0.0001}
         />
 
         {/* Fill light — soft neutral, from left */}

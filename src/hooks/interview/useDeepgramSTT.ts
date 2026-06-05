@@ -117,78 +117,111 @@ export function useDeepgramSTT(language: string = "en"): DeepgramSTTHook {
     recorderRef.current = recorder;
     setIsListening(true);
 
-    // Get API key from backend (in parallel with recording start)
-    let key: string;
-    try {
-      const res = await fetch(`${API_BASE}/interview/deepgram-token`);
-      const data = await res.json();
-      key = data.key;
-      if (!key) throw new Error("No key");
-    } catch {
-      console.error("[Deepgram] Failed to get API key");
-      activeRef.current = false;
-      cleanup();
-      return;
-    }
+    // ── Connect to Deepgram, with AUTO-RECONNECT on unexpected drops ──────────
+    // Deepgram can close the socket mid-utterance (idle timeout, transient
+    // network, code 1005). Previously onclose just gave up — the candidate kept
+    // talking but nothing was transcribed, so they could never submit an answer
+    // and the interview stalled right after the opening question. Now we
+    // reconnect (re-fetching a fresh token) while still active; the running
+    // MediaRecorder keeps buffering audio and flushes it once the new socket
+    // opens, so words spoken during the gap aren't lost.
+    let reconnectAttempts = 0;
+    const MAX_RECONNECTS = 5;
 
-    // Connect to Deepgram — buffered audio will be sent once connected
-    const ws = new WebSocket(
-      `wss://api.deepgram.com/v1/listen?` +
-      `model=nova-2&` +
-      `language=${langRef.current}&` +
-      `smart_format=true&` +
-      `punctuate=true&` +
-      `interim_results=true&` +
-      `utterance_end_ms=1500&` +
-      `vad_events=true`,
-      ["token", key]
-    );
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      console.log("[Deepgram] Connected — flushing", audioBuffer.length, "buffered chunks");
-      // Flush all buffered audio that was recorded while WebSocket was connecting
-      while (audioBuffer.length > 0) {
-        const chunk = audioBuffer.shift()!;
-        ws.send(chunk);
+    const fetchKey = async (): Promise<string | null> => {
+      try {
+        const res = await fetch(`${API_BASE}/interview/deepgram-token`);
+        const data = await res.json();
+        return data.key || null;
+      } catch {
+        return null;
       }
     };
 
-    ws.onmessage = (event) => {
+    const connect = async () => {
       if (!activeRef.current) return;
-      try {
-        const msg = JSON.parse(event.data);
-
-        // Handle transcript results
-        if (msg.type === "Results") {
-          const alt = msg.channel?.alternatives?.[0];
-          if (!alt) return;
-          const text = (alt.transcript || "").trim();
-          if (!text) return;
-
-          if (msg.is_final) {
-            // Final — append confirmed words
-            textRef.current = (textRef.current + " " + text).trim();
-            interimRef.current = "";
-            // Display = just finals (interim was part of this final, so no loss)
-            setTranscript(textRef.current);
-            setInterimTranscript("");
-            setLastFinalAt(Date.now());
-          } else {
-            // Interim — show finals + this interim as one seamless display
-            interimRef.current = text;
-            setTranscript((textRef.current + " " + text).trim());
-            setInterimTranscript(text);
-          }
+      const key = await fetchKey();
+      if (!activeRef.current) return; // stopped while fetching the token
+      if (!key) {
+        console.error("[Deepgram] Failed to get API key");
+        if (reconnectAttempts < MAX_RECONNECTS) {
+          reconnectAttempts += 1;
+          setTimeout(() => { if (activeRef.current) void connect(); }, 500 * reconnectAttempts);
         }
-      } catch {}
+        return;
+      }
+
+      const ws = new WebSocket(
+        `wss://api.deepgram.com/v1/listen?` +
+        `model=nova-2&` +
+        `language=${langRef.current}&` +
+        `smart_format=true&` +
+        `punctuate=true&` +
+        `interim_results=true&` +
+        `utterance_end_ms=1500&` +
+        `vad_events=true`,
+        ["token", key]
+      );
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        reconnectAttempts = 0;
+        setIsListening(true);
+        // Flush audio buffered while (re)connecting so no words are lost.
+        while (audioBuffer.length > 0) {
+          const chunk = audioBuffer.shift()!;
+          try { ws.send(chunk); } catch {}
+        }
+      };
+
+      ws.onmessage = (event) => {
+        if (!activeRef.current) return;
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "Results") {
+            const alt = msg.channel?.alternatives?.[0];
+            if (!alt) return;
+            const text = (alt.transcript || "").trim();
+            if (!text) return;
+
+            if (msg.is_final) {
+              textRef.current = (textRef.current + " " + text).trim();
+              interimRef.current = "";
+              setTranscript(textRef.current);
+              setInterimTranscript("");
+              setLastFinalAt(Date.now());
+            } else {
+              interimRef.current = text;
+              setTranscript((textRef.current + " " + text).trim());
+              setInterimTranscript(text);
+            }
+          }
+        } catch {}
+      };
+
+      ws.onerror = () => console.error("[Deepgram] WebSocket error");
+
+      ws.onclose = (e) => {
+        // Intentional stop() sets activeRef=false BEFORE closing — don't reconnect.
+        if (!activeRef.current) {
+          setIsListening(false);
+          return;
+        }
+        // Unexpected drop while still listening → reconnect so transcription
+        // (and the candidate's ability to answer) survives the blip.
+        if (wsRef.current === ws) wsRef.current = null;
+        if (reconnectAttempts < MAX_RECONNECTS) {
+          reconnectAttempts += 1;
+          console.warn(`[Deepgram] Closed unexpectedly (code ${e.code}) — reconnecting (${reconnectAttempts}/${MAX_RECONNECTS})`);
+          setTimeout(() => { if (activeRef.current) void connect(); }, Math.min(2000, 300 * reconnectAttempts));
+        } else {
+          console.error("[Deepgram] Reconnect attempts exhausted — STT stopped");
+          setIsListening(false);
+        }
+      };
     };
 
-    ws.onerror = () => console.error("[Deepgram] WebSocket error");
-    ws.onclose = (e) => {
-      console.log("[Deepgram] Closed:", e.code);
-      setIsListening(false);
-    };
+    await connect();
   }, [isSupported, cleanup]);
 
   const stop = useCallback((): string => {

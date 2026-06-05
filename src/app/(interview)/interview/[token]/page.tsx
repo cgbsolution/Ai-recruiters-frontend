@@ -19,7 +19,7 @@ export default function InterviewPage() {
   }
 
   return (
-    <ErrorBoundary>
+    <ErrorBoundary name="interview" reloadOnRecover>
       <InterviewFlow token={token} candidateEmail={candidateEmail} />
     </ErrorBoundary>
   );

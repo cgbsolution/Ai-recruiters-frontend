@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { hasRealEmail } from "@/lib/candidateEmail";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchInput } from "@/components/ui/search-input";
@@ -30,21 +31,20 @@ import {
 } from "@/components/ui/pagination";
 import {
   CalendarDays,
-  Check,
   ChevronDown,
   ChevronRight,
-  Copy,
   Database,
   Download,
-  ExternalLink,
   Eye,
   FileText,
   Filter,
   Link,
   MoreVertical,
   Mail,
+  Pencil,
   Play,
   Plus,
+  RotateCcw,
   RefreshCw,
   Search,
   Trash2,
@@ -72,6 +72,8 @@ import FitScoreBadge, { FitScoreTooltipContent } from "./FitScoreBadge";
 import AddCandidateModal from "./AddCandidateModal";
 import UploadResumesModal from "./UploadResumesModal";
 import ScheduleInterviewModal from "./ScheduleInterviewModal";
+import EditCandidateModal from "./EditCandidateModal";
+import RetakeInterviewModal from "./RetakeInterviewModal";
 import MatchCandidatesModal from "./MatchCandidatesModal";
 import ObserverLinkButton from "./ObserverLinkButton";
 import { api, apiPost, apiUpload, ApiError, API_BASE } from "@/lib/api";
@@ -236,6 +238,8 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [pageIndex, setPageIndex] = useState(0);
   const [scheduleCandidate, setScheduleCandidate] = useState<Candidate | null>(null);
+  const [editCandidate, setEditCandidate] = useState<Candidate | null>(null);
+  const [retakeCandidate, setRetakeCandidate] = useState<Candidate | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<number | null>(null);
@@ -279,7 +283,6 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
   const resumeUploadInputRef = useRef<HTMLInputElement | null>(null);
   const resumeUploadCandidateRef = useRef<number | null>(null);
   const [interviewUrl, setInterviewUrl] = useState<string | null>(null);
-  const [urlCopied, setUrlCopied] = useState(false);
   const [showJdModal, setShowJdModal] = useState(false);
 
   // ── Data fetching ─────────────────────────────────────────────────────────
@@ -451,6 +454,10 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
     setCandidates((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
   }, []);
 
+  const handleCandidateUpdated = useCallback((updated: Candidate) => {
+    setCandidates((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+  }, []);
+
   const handleCancelInterview = useCallback(
     async (candidateId: number) => {
       try {
@@ -597,12 +604,6 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
     }
   }, [candidates]);
 
-  const copyLink = useCallback(() => {
-    if (!interviewUrl) return;
-    navigator.clipboard.writeText(interviewUrl);
-    setUrlCopied(true);
-    setTimeout(() => setUrlCopied(false), 2000);
-  }, [interviewUrl]);
 
   // ── Export candidates to Excel (CSV) ──────────────────────────────────────
   const handleExportCandidates = useCallback(() => {
@@ -654,9 +655,11 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
     notifySuccess("Candidates exported successfully!");
   }, [candidates, job]);
 
-  // ── Promote stage options — exclude current stage ─────────────────────────
+  // ── Stage move options — any stage except the current one. "Candidates" is
+  //    included so a candidate can be moved BACK to the initial stage (e.g. a
+  //    retaken candidate, or correcting a mistaken promotion). ────────────────
   const getPromoteOptions = (currentStage: string) =>
-    ["AI Round", "Panel Round", "Offer-Made", "Rejected"].filter(
+    ["Candidates", "AI Round", "Panel Round", "Offer-Made", "Rejected"].filter(
       (s) => s !== currentStage,
     );
 
@@ -765,35 +768,6 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
               )}
             </div>
 
-            {interviewUrl && (
-              <div className="mt-3 flex max-w-full items-center gap-2 overflow-hidden rounded-xl border border-gray-200/80 bg-white/80 px-3 py-1.5 shadow-sm backdrop-blur sm:max-w-md dark:border-white/10 dark:bg-gray-900/60">
-                <Link className="h-3.5 w-3.5 shrink-0 text-indigo-500" />
-                <span className="flex-1 truncate text-xs text-gray-600 dark:text-gray-300">
-                  {interviewUrl}
-                </span>
-                <button
-                  type="button"
-                  onClick={copyLink}
-                  title={urlCopied ? "Copied!" : "Copy link"}
-                  className="shrink-0 rounded p-1 text-gray-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300"
-                >
-                  {urlCopied ? (
-                    <Check className="h-3.5 w-3.5 text-green-600" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                </button>
-                <a
-                  href={interviewUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Open interview link"
-                  className="shrink-0 rounded p-1 text-gray-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-500/10 dark:hover:text-indigo-300"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
-              </div>
-            )}
           </div>
 
           {/* Action buttons */}
@@ -1168,12 +1142,16 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                           {c.phone && (
                             <p className="text-xs text-gray-500">{c.phone}</p>
                           )}
-                          <a
-                            href={`mailto:${c.email}`}
-                            className="text-xs text-blue-600 hover:underline"
-                          >
-                            {c.email}
-                          </a>
+                          {hasRealEmail(c.email) ? (
+                            <a
+                              href={`mailto:${c.email}`}
+                              className="text-xs text-blue-600 hover:underline"
+                            >
+                              {c.email}
+                            </a>
+                          ) : (
+                            <p className="text-xs italic text-amber-600">No email — add one</p>
+                          )}
                         </div>
                       </TableCell>
 
@@ -1287,7 +1265,28 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                       <TableCell className="px-3">
                         <div className="flex items-center gap-1 min-w-[200px]">
                           {TERMINAL_STATUSES.has(c.interview_status) ? (
-                            <span className="text-gray-400 text-xs">Interview Completed</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-400 text-xs">Interview Completed</span>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs gap-1 whitespace-nowrap"
+                                onClick={() => setRetakeCandidate(c)}
+                                title="Download the interview, then reset so the candidate can retake it"
+                              >
+                                <RotateCcw className="w-3 h-3" /> Retake
+                              </Button>
+                            </div>
+                          ) : !hasRealEmail(c.email) ? (
+                            // No real email — block scheduling until one is added.
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs bg-amber-500 hover:bg-amber-600 text-white gap-1 whitespace-nowrap"
+                              onClick={() => setEditCandidate(c)}
+                              title="This candidate has no email. Add one before scheduling."
+                            >
+                              <Pencil className="w-3 h-3" /> Add email to schedule
+                            </Button>
                           ) : isScheduled ? (
                             <>
                               <Button
@@ -1377,17 +1376,30 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                         </button>
                       </TableCell>
 
-                      {/* Remove from job */}
+                      {/* Edit + Remove */}
                       <TableCell className="px-3">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setRemoveTarget(c.id)}
-                          className="h-7 w-7 text-gray-400 hover:text-red-600"
-                          title="Remove candidate from job"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          {!TERMINAL_STATUSES.has(c.interview_status) && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setEditCandidate(c)}
+                              className="h-7 w-7 text-gray-400 hover:text-indigo-600"
+                              title="Edit candidate details"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setRemoveTarget(c.id)}
+                            className="h-7 w-7 text-gray-400 hover:text-red-600"
+                            title="Remove candidate from job"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </TableCell>
 
                       {/* Detail scores — stage-specific tabs only */}
@@ -1480,6 +1492,8 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                     candidate={c}
                     interviewUrl={interviewUrl}
                     onSchedule={() => setScheduleCandidate(c)}
+                    onEdit={() => setEditCandidate(c)}
+                    onRetake={() => setRetakeCandidate(c)}
                     onCancelSchedule={() => setCancelTarget(c.id)}
                     onRemove={() => setRemoveTarget(c.id)}
                     onOpenMailHistory={() => openEmailHistory(c.id, c.name)}
@@ -1573,6 +1587,20 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
           onScheduled={handleScheduled}
         />
       )}
+
+      <EditCandidateModal
+        open={!!editCandidate}
+        onClose={() => setEditCandidate(null)}
+        candidate={editCandidate}
+        onUpdated={handleCandidateUpdated}
+      />
+
+      <RetakeInterviewModal
+        open={!!retakeCandidate}
+        onClose={() => setRetakeCandidate(null)}
+        candidate={retakeCandidate}
+        onReset={handleCandidateUpdated}
+      />
 
       {/* ── JD Viewer Modal ──────────────────────────────────────────────── */}
       <Dialog open={showJdModal} onOpenChange={setShowJdModal}>
@@ -1746,6 +1774,8 @@ interface CandidateGridCardProps {
   candidate: Candidate;
   interviewUrl: string | null;
   onSchedule: () => void;
+  onEdit: () => void;
+  onRetake: () => void;
   onCancelSchedule: () => void;
   onRemove: () => void;
   onOpenMailHistory: () => void;
@@ -1808,6 +1838,8 @@ function CandidateGridCard({
   candidate: c,
   interviewUrl,
   onSchedule,
+  onEdit,
+  onRetake,
   onCancelSchedule,
   onRemove,
   onOpenMailHistory,
@@ -1946,13 +1978,20 @@ function CandidateGridCard({
             <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">
               {c.name}
             </p>
-            <a
-              href={`mailto:${c.email}`}
-              className="mt-0.5 flex items-center gap-1 truncate text-xs text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-300"
-            >
-              <Mail className="h-3 w-3 shrink-0" />
-              <span className="truncate">{c.email}</span>
-            </a>
+            {hasRealEmail(c.email) ? (
+              <a
+                href={`mailto:${c.email}`}
+                className="mt-0.5 flex items-center gap-1 truncate text-xs text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-300"
+              >
+                <Mail className="h-3 w-3 shrink-0" />
+                <span className="truncate">{c.email}</span>
+              </a>
+            ) : (
+              <p className="mt-0.5 flex items-center gap-1 truncate text-xs italic text-amber-600">
+                <Mail className="h-3 w-3 shrink-0" />
+                <span className="truncate">No email — add one</span>
+              </p>
+            )}
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1964,9 +2003,19 @@ function CandidateGridCard({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {!isTerminal && (
+                <DropdownMenuItem onClick={onEdit}>
+                  <Pencil className="mr-2 h-4 w-4" /> Edit details
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={onViewReport}>
                 <Eye className="mr-2 h-4 w-4" /> View Report
               </DropdownMenuItem>
+              {isTerminal && (
+                <DropdownMenuItem onClick={onRetake}>
+                  <RotateCcw className="mr-2 h-4 w-4" /> Retake interview
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={onOpenMailHistory}>
                 <Mail className="mr-2 h-4 w-4" /> Email History
               </DropdownMenuItem>
@@ -2110,14 +2159,26 @@ function CandidateGridCard({
             </>
           ) : canSchedule ? (
             <>
-              <Button
-                size="sm"
-                onClick={onSchedule}
-                className="h-9 gap-1.5 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-sm hover:from-indigo-600 hover:to-indigo-700"
-              >
-                <CalendarDays className="h-4 w-4" />
-                {isScheduled ? "Reschedule" : "Schedule"}
-              </Button>
+              {hasRealEmail(c.email) ? (
+                <Button
+                  size="sm"
+                  onClick={onSchedule}
+                  className="h-9 gap-1.5 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-sm hover:from-indigo-600 hover:to-indigo-700"
+                >
+                  <CalendarDays className="h-4 w-4" />
+                  {isScheduled ? "Reschedule" : "Schedule"}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={onEdit}
+                  title="This candidate has no email. Add one before scheduling."
+                  className="h-9 gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-sm hover:from-amber-600 hover:to-amber-700"
+                >
+                  <Pencil className="h-4 w-4" />
+                  Add email
+                </Button>
+              )}
               {resumeButton}
             </>
           ) : (

@@ -103,4 +103,49 @@ export async function apiUpload<T = unknown>(path: string, formData: FormData, o
   });
 }
 
+/**
+ * GET a file as a Blob with auth attached (for downloads). Unlike a plain
+ * <a href> / window.open, this sends the Bearer token, so it works with
+ * authenticated endpoints. Throws ApiError on a non-2xx response.
+ */
+export async function apiDownload(path: string, options: ApiOptions = {}): Promise<Blob> {
+  const { timeout = 600_000, skipAuth = false, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  const headers: Record<string, string> = { ...(fetchOptions.headers as Record<string, string>) };
+  if (!skipAuth) {
+    const token = getAuthToken();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}${path}`, { ...fetchOptions, headers, signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new ApiError(res.status, body.detail || res.statusText);
+    }
+    return await res.blob();
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if (e instanceof ApiError) throw e;
+    if ((e as Error).name === "AbortError") throw new ApiError(408, "Download timed out. Please try again.");
+    throw new ApiError(0, (e as Error).message || "Network error");
+  }
+}
+
+/** Trigger a browser "Save As" for a Blob. */
+export function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoke after a tick so the download has started.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export { API_BASE };

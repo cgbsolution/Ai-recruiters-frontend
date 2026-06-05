@@ -242,6 +242,40 @@ export async function deleteRecording(recordingId: string): Promise<void> {
   }
 }
 
+/**
+ * Returns all chunks for a recording with index >= fromIndex, sorted ascending.
+ * Used by the live uploader to stream newly-recorded chunks to the server while
+ * the interview is still in progress (so the video survives a tab/browser close).
+ */
+export async function getChunksFrom(
+  recordingId: string,
+  fromIndex: number,
+): Promise<{ index: number; blob: Blob }[]> {
+  try {
+    return await tx(STORE_CHUNKS, "readonly", async (t) => {
+      const idx = t.objectStore(STORE_CHUNKS).index("by_recording");
+      const rows: { index: number; blob: Blob }[] = [];
+      return new Promise<{ index: number; blob: Blob }[]>((resolve, reject) => {
+        const cursorReq = idx.openCursor(IDBKeyRange.only(recordingId));
+        cursorReq.onsuccess = () => {
+          const cursor = cursorReq.result;
+          if (cursor) {
+            const v = cursor.value as ChunkRow;
+            if (v.index >= fromIndex) rows.push({ index: v.index, blob: v.blob });
+            cursor.continue();
+          } else {
+            rows.sort((a, b) => a.index - b.index);
+            resolve(rows);
+          }
+        };
+        cursorReq.onerror = () => reject(cursorReq.error);
+      });
+    });
+  } catch {
+    return [];
+  }
+}
+
 export async function listPendingRecordings(): Promise<RecordingMeta[]> {
   try {
     return await tx(STORE_META, "readonly", async (t) => {

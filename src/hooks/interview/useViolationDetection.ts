@@ -7,7 +7,8 @@ export type ViolationType =
   | "tab_switch"
   | "fullscreen_exit"
   | "face_not_detected"
-  | "multiple_faces";
+  | "multiple_faces"
+  | "screen_share_stopped";
 
 interface ViolationDetectionHook {
   violationCount: number;
@@ -16,6 +17,8 @@ interface ViolationDetectionHook {
   resetViolations: () => void;
   disable: () => void;
   lastFaceCountRef: React.MutableRefObject<number>;
+  /** Report a violation explicitly (e.g. screen-share stopped, detected by the room). */
+  reportViolation: (type: ViolationType, details?: string) => Promise<void>;
 }
 
 const TERMINATE_THRESHOLD = 5;
@@ -179,5 +182,5 @@ export function useViolationDetection(
     setShouldTerminate(false);
   }, []);
 
-  return { violationCount, lastViolation, shouldTerminate, resetViolations, disable, lastFaceCountRef };
+  return { violationCount, lastViolation, shouldTerminate, resetViolations, disable, lastFaceCountRef, reportViolation };
 }

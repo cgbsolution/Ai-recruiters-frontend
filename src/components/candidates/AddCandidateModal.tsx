@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { notifySuccess, notifyError } from "@/lib/notify";
-import { apiPost } from "@/lib/api";
+import { apiPost, apiUpload } from "@/lib/api";
 
 interface AddCandidateModalProps {
   open: boolean;
@@ -37,7 +37,6 @@ export default function AddCandidateModal({
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
-    preferredName: "",
     email: "",
     experienceYears: "",
     country: "India",
@@ -72,12 +71,36 @@ export default function AddCandidateModal({
         status: "Applied",
       };
 
-      const data = await apiPost<any>("/candidates/", payload);
-      onCreated(data);
+      let candidate = await apiPost<any>("/candidates/", payload);
+
+      // Upload the selected resume to the newly-created candidate. THIS WAS THE
+      // BUG: the chosen file lived in `form.resume` but was never sent anywhere,
+      // so a candidate was created with no resume at all. The replace-resume
+      // endpoint stores the file, parses it (skills/experience), recomputes the
+      // fit score, and returns the enriched candidate.
+      if (form.resume && candidate?.id) {
+        try {
+          const fd = new FormData();
+          fd.append("file", form.resume);
+          const enriched = await apiUpload<any>(
+            `/candidates/${candidate.id}/replace-resume`,
+            fd,
+          );
+          if (enriched) candidate = enriched;
+        } catch (uploadErr: any) {
+          // The candidate row already exists — don't lose it because the resume
+          // failed. Surface the failure so the recruiter can retry from the row.
+          notifyError(
+            `Candidate added, but resume upload failed: ${uploadErr?.message || "you can upload it from the candidate row."}`,
+          );
+        }
+      }
+
+      onCreated(candidate);
       notifySuccess("Candidate added successfully!");
       onClose();
       setForm({
-        firstName: "", lastName: "", preferredName: "", email: "",
+        firstName: "", lastName: "", email: "",
         experienceYears: "", country: "India", phone: "", resume: null,
       });
     } catch (err: any) {
@@ -116,15 +139,6 @@ export default function AddCandidateModal({
                 onChange={(e) => handleChange("lastName", e.target.value)}
               />
             </div>
-          </div>
-
-          <div className="space-y-1">
-            <Label htmlFor="preferredName">Preferred Name</Label>
-            <Input
-              id="preferredName"
-              value={form.preferredName}
-              onChange={(e) => handleChange("preferredName", e.target.value)}
-            />
           </div>
 
           <div className="space-y-1">

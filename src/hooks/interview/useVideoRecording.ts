@@ -30,18 +30,28 @@ const CANVAS_HEIGHT = 720;
 const CAM_WIDTH = 320;
 const CAM_HEIGHT = 180;
 const FPS = 15;
+// Upper bound on how much of the recording we keep in the JS heap. IndexedDB is
+// the durable source of truth (and what stop/recovery actually upload); the
+// in-memory copy is only a last-resort fallback for when IDB itself fails. For
+// a long interview, retaining every chunk in memory is a slow leak that helps
+// crash the tab, so we stop retaining past this cap and rely on IDB.
+const MAX_IN_MEMORY_FALLBACK_BYTES = 48 * 1024 * 1024; // 48 MB
 
 export function useVideoRecording(): VideoRecordingHook {
   const [isRecording, setIsRecording] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const chunkIndexRef = useRef(0);
+  const retainedBytesRef = useRef(0);
   const recordingIdRef = useRef<string | null>(null);
   const startTimeRef = useRef<number>(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const screenVideoRef = useRef<HTMLVideoElement | null>(null);
   const webcamVideoRef = useRef<HTMLVideoElement | null>(null);
+  // Kept so we can close() it on stop. Chrome hard-caps AudioContexts per page
+  // (~6); leaking one per resume eventually makes new recordings fail.
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
   const startRecording = useCallback(
     (webcamStream: MediaStream | null, screenStream: MediaStream | null): string | null => {
@@ -52,6 +62,7 @@ export function useVideoRecording(): VideoRecordingHook {
 
       chunksRef.current = [];
       chunkIndexRef.current = 0;
+      retainedBytesRef.current = 0;
 
       // Create off-screen canvas
       if (!canvasRef.current) {
@@ -139,7 +150,14 @@ export function useVideoRecording(): VideoRecordingHook {
 
       if (micTracks.length > 0 || sysTracks.length > 0) {
         try {
+          // Close any context left over from a previous start before opening
+          // a new one, so resumes don't accumulate AudioContexts.
+          if (audioCtxRef.current) {
+            audioCtxRef.current.close().catch(() => {});
+            audioCtxRef.current = null;
+          }
           const audioCtx = new AudioContext();
+          audioCtxRef.current = audioCtx;
           const dest = audioCtx.createMediaStreamDestination();
 
           if (micTracks.length > 0) {
@@ -182,14 +200,19 @@ export function useVideoRecording(): VideoRecordingHook {
 
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
-          // Keep in-memory list for the immediate post-stop assembly path.
-          chunksRef.current.push(e.data);
-          // ALSO persist to IndexedDB — this is what makes the recording
-          // survive a tab close, crash, or upload failure. Fire-and-forget:
-          // saveChunk swallows errors internally so it can never break
-          // recording, but we still log a warning for visibility.
+          // Persist to IndexedDB FIRST — this is the durable source of truth
+          // that survives a tab close, crash, or upload failure, and what
+          // stop/recovery actually upload. Fire-and-forget: saveChunk swallows
+          // errors internally so it can never break recording.
           const idx = chunkIndexRef.current++;
           void saveChunk(recordingId, idx, e.data);
+          // Additionally keep an in-memory copy as a last-resort fallback for
+          // the immediate post-stop path, but only up to a bound — past it we
+          // rely solely on IDB so a long interview can't leak the heap to death.
+          if (retainedBytesRef.current < MAX_IN_MEMORY_FALLBACK_BYTES) {
+            chunksRef.current.push(e.data);
+            retainedBytesRef.current += e.data.size;
+          }
         }
       };
 
@@ -259,8 +282,14 @@ export function useVideoRecording(): VideoRecordingHook {
         }
         chunksRef.current = [];
         chunkIndexRef.current = 0;
+        retainedBytesRef.current = 0;
         recorderRef.current = null;
         canvasRef.current = null;
+        // Release the audio graph so the AudioContext doesn't leak across resumes.
+        if (audioCtxRef.current) {
+          audioCtxRef.current.close().catch(() => {});
+          audioCtxRef.current = null;
+        }
         setIsRecording(false);
         resolve({ blob, duration, recordingId });
       };
