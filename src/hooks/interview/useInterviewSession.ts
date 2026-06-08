@@ -477,27 +477,34 @@ export function useInterviewSession(): InterviewSessionHook {
         consecutiveFallbacksRef.current += 1;
         const lastAiQi = messagesRef.current.filter((m) => m.role === "ai").pop()?.questionIndex ?? 0;
 
-        // First timeout: ask to repeat. Second+: acknowledge and move forward
+        // First timeout: ask to repeat. Second+: acknowledge and ask a concrete
+        // bridge question locally so the candidate sees text instead of being
+        // stuck on the thinking indicator while the provider is degraded.
         let fallbackContent: string;
+        let fallbackQuestionIndex = lastAiQi;
         if (fallbackCount === 0) {
           fallbackContent = "I didn't catch that clearly. Could you please repeat your answer?";
         } else {
-          // After repeated failures, acknowledge the answer and advance
-          fallbackContent = "Thank you for your answer. Let's move on to the next question.";
+          const roleContext = jobConfig?.title || "this role";
+          fallbackQuestionIndex = lastAiQi + 1;
+          fallbackContent =
+            `Thank you for your answer. Let's continue: can you walk me through ` +
+            `a recent responsibility or project related to ${roleContext}, and what outcome you achieved?`;
         }
         const fallbackMsg: Message = {
           role: "ai",
           content: fallbackContent,
-          questionIndex: lastAiQi,
+          questionIndex: fallbackQuestionIndex,
         };
         setMessages((prev) => [...prev, fallbackMsg]);
+        updateQuestionStates(fallbackContent, fallbackQuestionIndex, false);
         return false;
       } finally {
         setIsAiThinking(false);
         isSendingRef.current = false;
       }
     },
-    [sessionId, updateQuestionStates]
+    [sessionId, updateQuestionStates, jobConfig?.title]
   );
 
   const skipQuestion = useCallback(async (): Promise<boolean> => {

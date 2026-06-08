@@ -215,23 +215,25 @@ export default function InterviewRoom({
   useGlobalErrorGuard({ duringInterview: true });
 
   // Watch the JS heap so we can shed load BEFORE Chrome force-kills the tab.
-  const { pressure } = useMemoryWatchdog();
+  // intervalMs=1500 — polls every 1.5 s so the avatar swap to VoiceVisualizer
+  // happens within ~1-2 s of memory rising, not 4 s (default) which is too slow.
+  // elevatedRatio=0.55 — swap the 3D avatar out at 55% heap, well before the
+  // OOM crash zone. On a 4 GB laptop Chrome's per-tab budget is ~500-700 MB;
+  // at 55% we still have headroom to cleanly unmount WebGL before it's too late.
+  const { pressure } = useMemoryWatchdog({ intervalMs: 1500, elevatedRatio: 0.55, criticalRatio: 0.75 });
 
   // Live observer stream — broadcasts low-fps JPEG frames of the candidate's
-  // webcam to anyone holding a valid observer link. Goes through the backend
-  // (no NAT traversal, works on any network). Read-only, send-only, fail-soft.
-  //
-  // This feed is the most expendable continuous workload, so it's the first to
-  // be shed under memory pressure: throttle fps/quality when elevated, and stop
-  // it entirely when critical. The interview itself is never degraded.
+  // webcam to anyone holding a valid observer link.
+  // Stop entirely at elevated pressure (not just critical) — this feed is 100%
+  // optional and not worth crashing the tab over.
   useFrameStreamer({
     sessionId,
     interviewToken: interviewToken ?? null,
     webcamStream,
-    enabled: !isInterviewComplete && pressure !== "critical",
-    fps: pressure === "elevated" ? 2 : 4,
-    maxWidth: pressure === "elevated" ? 360 : 480,
-    quality: pressure === "elevated" ? 0.45 : 0.6,
+    enabled: !isInterviewComplete && pressure === "normal",
+    fps: 3,
+    maxWidth: 360,
+    quality: 0.5,
   });
 
   // Record once when we begin shedding load, so a "near-miss" is visible in
@@ -246,7 +248,7 @@ export default function InterviewRoom({
       shedReportedRef.current = true;
       reportClientEvent({
         type: "load_shed",
-        message: `observer stream throttled (pressure=${pressure})`,
+        message: `load shedding active: observer stream stopped, 3D avatar swapped to VoiceVisualizer (pressure=${pressure})`,
         context: { pressure },
       });
     }
@@ -1269,38 +1271,48 @@ export default function InterviewRoom({
           showCodeEditor ? "w-[30%]" : "w-[35%]"
         }`}>
           <div className="relative w-full rounded-2xl overflow-hidden bg-[#eef0f8] border border-gray-200/60 shadow-sm aspect-square max-h-[280px] min-h-[200px]">
-            {jobConfig.virtual_avatar ? (
-              <ErrorBoundary
-                name="avatar"
-                fallback={
-                  <div className="flex h-full w-full items-center justify-center bg-[#eef0f8] text-gray-400 text-sm">
-                    Interviewer
+            {/* Shared voice-mode value used by both the avatar fallback and the manual-interview branch */}
+            {(() => {
+              const voiceMode = (isThinking || phase === "PROCESSING"
+                ? "processing"
+                : phase === "SPEAKING" || isSpeaking
+                  ? "speaking"
+                  : phase === "LISTENING" && isListening
+                    ? "listening"
+                    : "idle") as VoiceMode;
+
+              // Under memory pressure the 3D avatar (WebGL canvas + GLTF model) is
+              // the second-largest consumer after MediaPipe (~50-100 MB). Swapping
+              // it for the lightweight VoiceVisualizer frees that memory immediately
+              // and prevents the STATUS_BREAKPOINT OOM crash on low-RAM laptops.
+              if (jobConfig.virtual_avatar && pressure === "normal") {
+                return (
+                  <ErrorBoundary
+                    name="avatar"
+                    fallback={
+                      <VoiceVisualizer mode={voiceMode} micStream={micStream} ttsAudio={audioElement} />
+                    }
+                  >
+                    <AvatarScene isSpeaking={isLipSyncing} isThinking={isThinking} />
+                  </ErrorBoundary>
+                );
+              }
+
+              // virtual_avatar under pressure, or manual_interview mode
+              if (jobConfig.virtual_avatar || jobConfig.manual_interview) {
+                return (
+                  <VoiceVisualizer mode={voiceMode} micStream={micStream} ttsAudio={audioElement} />
+                );
+              }
+
+              return (
+                <div className="flex items-center justify-center h-full">
+                  <div className="w-24 h-24 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-3xl">
+                    AI
                   </div>
-                }
-              >
-                <AvatarScene isSpeaking={isLipSyncing} isThinking={isThinking} />
-              </ErrorBoundary>
-            ) : jobConfig.manual_interview ? (
-              <VoiceVisualizer
-                mode={
-                  (isThinking || phase === "PROCESSING"
-                    ? "processing"
-                    : phase === "SPEAKING" || isSpeaking
-                      ? "speaking"
-                      : phase === "LISTENING" && isListening
-                        ? "listening"
-                        : "idle") as VoiceMode
-                }
-                micStream={micStream}
-                ttsAudio={audioElement}
-              />
-            ) : (
-              <div className="flex items-center justify-center h-full">
-                <div className="w-24 h-24 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-3xl">
-                  AI
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Speaker/volume icon overlay at bottom-left */}
             {isSpeaking && (
@@ -1591,14 +1603,14 @@ export default function InterviewRoom({
             {(phase === "SPEAKING" || (phase !== "LISTENING" && phase !== "PROCESSING" && isSpeaking)) && (
               <div className="flex items-center gap-2 text-purple-500 text-sm">
                 <div className="flex items-center gap-0.5">
-                  {[...Array(4)].map((_, i) => (
+                  {([14, 10, 18, 12] as const).map((h, i) => (
                     <div
                       key={i}
                       className="w-0.5 bg-purple-400 rounded-full animate-pulse"
                       style={{
-                        height: `${10 + Math.random() * 10}px`,
+                        height: `${h}px`,
                         animationDelay: `${i * 0.1}s`,
-                        animationDuration: `${0.4 + Math.random() * 0.3}s`,
+                        animationDuration: `${0.4 + i * 0.08}s`,
                       }}
                     />
                   ))}

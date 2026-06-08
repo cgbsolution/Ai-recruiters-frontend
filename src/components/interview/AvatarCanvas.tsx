@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, Suspense, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useGLTF, Environment } from "@react-three/drei";
+import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 
 interface Props {
@@ -275,6 +275,33 @@ function LoadingFallback() {
 
 export default function AvatarCanvas({ isSpeaking, isThinking }: Props) {
   const [loaded, setLoaded] = useState(false);
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
+
+  // If the GLB hasn't loaded within 20 seconds, set loadTimedOut so we throw
+  // after all hooks (React rules require hooks before any conditional throw).
+  // On slow connections the GLB (30+ MB) can take minutes — blocking the entire
+  // avatar tile. The throw triggers the parent ErrorBoundary → VoiceVisualizer.
+  useEffect(() => {
+    if (loaded) return;
+    const timer = setTimeout(() => setLoadTimedOut(true), 20_000);
+    return () => clearTimeout(timer);
+  }, [loaded]);
+
+  // When this canvas unmounts, evict the parsed GLTF from drei's cache so Three.js
+  // can release geometry, skeleton, and texture data from the JS heap.
+  // Without this the ~30-50 MB deserialized model stays alive until page unload.
+  // Must be declared before any conditional throw to satisfy Rules of Hooks.
+  useEffect(() => {
+    return () => {
+      useGLTF.clear("/models/avatar.glb");
+    };
+  }, []);
+
+  // Throw AFTER all hooks — React's ErrorBoundary catches this and renders the
+  // VoiceVisualizer fallback configured in InterviewRoom.
+  if (loadTimedOut && !loaded) {
+    throw new Error("Avatar model did not load within 20 s — switching to VoiceVisualizer");
+  }
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-[#eef0f8]">
@@ -288,62 +315,42 @@ export default function AvatarCanvas({ isSpeaking, isThinking }: Props) {
         </div>
       )}
       <Canvas
-        // Shadows are intentionally OFF. There is no floor/surface in this scene
-        // to catch a shadow, so R3F's default shadow pass was rendering a
-        // 2048² depth map every frame for zero visible benefit — pure GPU/CPU
-        // cost (and its default PCFSoftShadowMap also flooded the console with a
-        // deprecation warning every frame). Removing it makes the avatar render
-        // far cheaper on weak candidate laptops with no visible change.
+        // Shadows OFF — no floor/surface to catch them, pure GPU cost for zero gain.
         camera={{ fov: 30, near: 0.01, far: 10 }}
-        // Cap render resolution: on a 2x/3x HiDPI display the small avatar tile
-        // would otherwise render at 4–9× the pixels for no perceptible gain.
-        dpr={[1, 1.5]}
+        // dpr=1 everywhere: the avatar tile is small (~300px²), rendering at 2×
+        // or 3× DPR gives no visible improvement but doubles/triples GPU memory.
+        dpr={1}
         gl={{
           antialias: true,
           toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.3,
-          powerPreference: "high-performance",
+          toneMappingExposure: 1.2,
+          // "default" lets the OS/driver pick the GPU. "high-performance" forces
+          // the discrete GPU even on integrated-only laptops where it means nothing,
+          // and on dual-GPU laptops it can exhaust VRAM faster.
+          powerPreference: "default",
         }}
         style={{ background: "linear-gradient(180deg, #f0f2fa 0%, #e4e7f3 100%)" }}
       >
         <CameraRig />
 
-        {/* Key light — bright warm, from upper-right (no shadow casting) */}
-        <directionalLight
-          position={[2, 3, 2]}
-          intensity={2.8}
-          color="#fff8f0"
-        />
+        {/* Key light — bright warm, from upper-right */}
+        <directionalLight position={[2, 3, 2]} intensity={3.0} color="#fff8f0" />
 
         {/* Fill light — soft neutral, from left */}
-        <directionalLight
-          position={[-2, 1.5, 1.5]}
-          intensity={1.2}
-          color="#e8e4f0"
-        />
+        <directionalLight position={[-2, 1.5, 1.5]} intensity={1.4} color="#e8e4f0" />
 
-        {/* Rim/back light — soft */}
-        <directionalLight
-          position={[0, 2, -2]}
-          intensity={0.8}
-          color="#f0ece8"
-        />
+        {/* Rim/back light */}
+        <directionalLight position={[0, 2, -2]} intensity={0.9} color="#f0ece8" />
 
-        {/* Under-chin fill */}
-        <directionalLight
-          position={[0, -0.5, 1.5]}
-          intensity={0.5}
-          color="#e8e0f0"
-        />
+        {/* Ambient base — slightly brighter to compensate for no Environment map */}
+        <ambientLight intensity={1.1} color="#f5f3f0" />
 
-        {/* Ambient base — brighter for light mode */}
-        <ambientLight intensity={0.8} color="#f5f3f0" />
+        {/* Hemisphere — sky/ground tones */}
+        <hemisphereLight args={["#e8eaf8", "#d0c8c0", 0.8]} />
 
-        {/* Hemisphere light — light tones */}
-        <hemisphereLight args={["#e8eaf8", "#d0c8c0", 0.6]} />
-
-        {/* Environment for reflections (glasses, skin) */}
-        <Environment preset="apartment" />
+        {/* Environment HDR removed — it downloads a ~20 MB HDR texture on every
+            mount and keeps it in GPU memory for the whole interview. The extra
+            directional/ambient lights above reproduce the same look on low-end devices. */}
 
         {/* Avatar — placed at origin, camera finds the head */}
         <Suspense fallback={<LoadingFallback />}>
@@ -362,4 +369,7 @@ export default function AvatarCanvas({ isSpeaking, isThinking }: Props) {
   );
 }
 
-useGLTF.preload("/models/avatar.glb");
+// Preload intentionally removed — eagerly loading the ~30-50 MB GLB on every
+// page visit wastes memory on devices where the avatar may never even render
+// (low-RAM machines that get swapped to VoiceVisualizer under pressure).
+// The Suspense fallback spinner handles the brief load delay on first mount.
