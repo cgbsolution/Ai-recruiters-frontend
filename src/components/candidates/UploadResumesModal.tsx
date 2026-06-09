@@ -27,6 +27,7 @@ interface CandidateTrack {
   email: string;
   parsing_status: ParseStatus;
   resume_fit_score: string | null;
+  parsing_error?: string | null;
 }
 
 export default function UploadResumesModal({
@@ -241,6 +242,7 @@ export default function UploadResumesModal({
             email: matched.email || "",
             parsing_status: (matched.parsing_status || "completed") as ParseStatus,
             resume_fit_score: matched.resume_fit_score,
+            parsing_error: matched.parsing_error || null,
           };
         }
         // Backend returned fewer items than uploaded (index mismatch or network error).
@@ -251,6 +253,7 @@ export default function UploadResumesModal({
           email: "",
           parsing_status: "failed" as ParseStatus,
           resume_fit_score: null,
+          parsing_error: null,
         };
       });
 
@@ -390,7 +393,9 @@ export default function UploadResumesModal({
                         )}
                         {c.parsing_status === "failed" && (
                           <p className="text-xs text-red-500">
-                            Could not parse this file. Please check the format and try again.
+                            {c.parsing_error
+                              ? c.parsing_error
+                              : "Could not parse this file. Please check the format and try again."}
                           </p>
                         )}
                       </div>
