@@ -120,6 +120,21 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   const stepRef = useRef(step);
   useEffect(() => { stepRef.current = step; }, [step]);
 
+  // Guard: if we land on CAPTURE_PHOTO without the required data, skip forward.
+  // This must be in an effect — never call setState during render.
+  useEffect(() => {
+    if (step === "CAPTURE_PHOTO" && (!webcamStream || !session.sessionId)) {
+      setStep("PERMISSION_SCREEN");
+    }
+  }, [step, webcamStream, session.sessionId]);
+
+  // Guard: if we land on DEVICE_TEST without a webcam stream, skip forward.
+  useEffect(() => {
+    if (step === "DEVICE_TEST" && !webcamStream) {
+      setStep(jobConfig?.secondary_cam ? "SECONDARY_CAM" : "PRACTICE_ROUND");
+    }
+  }, [step, webcamStream, jobConfig?.secondary_cam]);
+
   // Warn user before closing tab during processing phase
   useEffect(() => {
     if (step !== "COMPLETION" || session.evaluationStatus !== "processing") return;
@@ -319,8 +334,13 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     // Capture the recordingId so the live uploader can stream it to the server
     // during the interview.
     if (webcamStream || screenStream) {
-      const rid = startRecording(webcamStream, screenStream);
-      if (rid) setActiveRecordingId(rid);
+      try {
+        const rid = startRecording(webcamStream, screenStream);
+        if (rid) setActiveRecordingId(rid);
+      } catch (err) {
+        // Recording failure is non-fatal — interview proceeds without recording
+        console.error("[InterviewFlow] startRecording failed:", err);
+      }
     }
     if (isResumingRef.current && session.sessionStatus === "in_progress") {
       await session.resumeSession();
@@ -331,8 +351,13 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   }, [session, webcamStream, screenStream, startRecording, interviewLanguage]);
 
   const handleWarningConfirm = useCallback(async () => {
+    try {
+      await handleStartInterview();
+    } catch (err) {
+      console.error("[InterviewFlow] handleStartInterview failed:", err);
+      // Still transition — session may have partially started
+    }
     setStep("INTERVIEW");
-    await handleStartInterview();
   }, [handleStartInterview]);
 
   const handleScreenStreamChanged = useCallback((stream: MediaStream) => {
@@ -627,9 +652,7 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
 
     case "CAPTURE_PHOTO":
       if (!webcamStream || !session.sessionId) {
-        // No webcam — skip photo capture
-        setStep("PERMISSION_SCREEN");
-        return null;
+        return null; // effect will redirect to PERMISSION_SCREEN
       }
       return (
         <PreInterviewLayout currentStep={5}>
@@ -650,13 +673,7 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
 
     case "DEVICE_TEST":
       if (!webcamStream) {
-        // No webcam — skip device test
-        if (jobConfig.secondary_cam) {
-          setStep("SECONDARY_CAM");
-        } else {
-          setStep("PRACTICE_ROUND");
-        }
-        return null;
+        return null; // effect will redirect to SECONDARY_CAM or PRACTICE_ROUND
       }
       return (
         <PreInterviewLayout currentStep={6}>

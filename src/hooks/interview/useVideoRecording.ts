@@ -142,7 +142,17 @@ export function useVideoRecording(): VideoRecordingHook {
       }, 1000 / FPS);
 
       // Capture the canvas stream
-      const canvasStream = canvas.captureStream(FPS);
+      let canvasStream: MediaStream;
+      try {
+        canvasStream = canvas.captureStream(FPS);
+      } catch (err) {
+        console.error("[useVideoRecording] canvas.captureStream failed:", err);
+        if (drawIntervalRef.current) {
+          clearInterval(drawIntervalRef.current);
+          drawIntervalRef.current = null;
+        }
+        return null;
+      }
 
       // Mix audio from webcam (mic) + screen (system/avatar) using AudioContext
       const micTracks = webcamStream ? webcamStream.getAudioTracks() : [];
@@ -191,7 +201,17 @@ export function useVideoRecording(): VideoRecordingHook {
         : "";
 
       const options = mimeType ? { mimeType } : {};
-      const recorder = new MediaRecorder(canvasStream, options);
+      let recorder: MediaRecorder;
+      try {
+        recorder = new MediaRecorder(canvasStream, options);
+      } catch (err) {
+        console.error("[useVideoRecording] MediaRecorder constructor failed:", err);
+        if (drawIntervalRef.current) {
+          clearInterval(drawIntervalRef.current);
+          drawIntervalRef.current = null;
+        }
+        return null;
+      }
 
       // Mint a durable recording id and seed metadata BEFORE any chunks arrive.
       const recordingId = newRecordingId();
@@ -222,7 +242,17 @@ export function useVideoRecording(): VideoRecordingHook {
 
       recorderRef.current = recorder;
       startTimeRef.current = Date.now();
-      recorder.start(1000);
+      try {
+        recorder.start(1000);
+      } catch (err) {
+        console.error("[useVideoRecording] recorder.start() failed:", err);
+        if (drawIntervalRef.current) {
+          clearInterval(drawIntervalRef.current);
+          drawIntervalRef.current = null;
+        }
+        recorderRef.current = null;
+        return null;
+      }
       setIsRecording(true);
       return recordingId;
     },

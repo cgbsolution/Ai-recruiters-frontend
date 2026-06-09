@@ -130,21 +130,18 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
           if (speakingRef.current) setIsLipSyncing(true);
         };
 
-        audio.onended = () => {
+        const onAudioDone = () => {
+          // Guard against callbacks firing after cancel() (e.g. on unmount):
+          // if speakingRef is already false, cancel() already cleaned up state.
+          if (!speakingRef.current) return;
           speakingRef.current = false;
           setIsSpeaking(false);
           setIsLipSyncing(false);
           audioRef.current = null;
           setAudioElement(null);
         };
-
-        audio.onerror = () => {
-          speakingRef.current = false;
-          setIsSpeaking(false);
-          setIsLipSyncing(false);
-          audioRef.current = null;
-          setAudioElement(null);
-        };
+        audio.onended = onAudioDone;
+        audio.onerror = onAudioDone;
 
         try {
           await audio.play();

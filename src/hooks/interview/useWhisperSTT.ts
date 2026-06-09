@@ -128,6 +128,12 @@ export function useWhisperSTT(language: string = "en"): WhisperSTTHook {
     } catch (err) {
       console.error("[WhisperSTT] Failed to start recording:", err);
       isActiveRef.current = false;
+      // Release the mic track — without this the browser keeps the mic indicator
+      // lit and the track is never GC'd even though recording never started.
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
     }
   }, [isSupported, flushChunks]);
 

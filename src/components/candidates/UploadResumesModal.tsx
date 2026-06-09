@@ -203,7 +203,7 @@ export default function UploadResumesModal({
   }, [polling, candidates.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleUpload = async () => {
-    if (files.length === 0) return;
+    if (files.length === 0 || uploading) return;  // guard against double-click
     setError("");
     setUploading(true);
     setCandidates([]);
@@ -231,10 +231,8 @@ export default function UploadResumesModal({
       const returnedIds = new Set((data || []).map((c: any) => c.id));
 
       // Map results back to uploaded files
-      // Candidates that were deleted (parse failed) won't be in the response
       const candidateTracks: CandidateTrack[] = files.map((f, i) => {
         const matched = data && data[i] ? data[i] : null;
-        // If candidate exists in response, it parsed successfully
         if (matched && returnedIds.has(matched.id)) {
           return {
             id: matched.id,
@@ -245,7 +243,7 @@ export default function UploadResumesModal({
             resume_fit_score: matched.resume_fit_score,
           };
         }
-        // Not in response = parse failed, candidate was deleted
+        // Backend returned fewer items than uploaded (index mismatch or network error).
         return {
           id: -(i + 1),
           fileName: f.name,

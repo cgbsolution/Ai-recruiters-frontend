@@ -104,7 +104,18 @@ export function useDeepgramSTT(language: string = "en"): DeepgramSTTHook {
       ? "audio/webm;codecs=opus"
       : "audio/webm";
     const audioBuffer: Blob[] = [];
-    const recorder = new MediaRecorder(stream, { mimeType });
+    let recorder: MediaRecorder;
+    try {
+      recorder = new MediaRecorder(stream, { mimeType });
+    } catch (err) {
+      console.error("[Deepgram] MediaRecorder construction failed:", err);
+      activeRef.current = false;
+      stream.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      setMicStream(null);
+      setError("Microphone recording unavailable on this device. Please try a different browser.");
+      return;
+    }
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0 && activeRef.current) {
         audioBuffer.push(e.data);
@@ -118,7 +129,17 @@ export function useDeepgramSTT(language: string = "en"): DeepgramSTTHook {
         }
       }
     };
-    recorder.start(100);
+    try {
+      recorder.start(100);
+    } catch (err) {
+      console.error("[Deepgram] recorder.start() failed:", err);
+      activeRef.current = false;
+      stream.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      setMicStream(null);
+      setError("Microphone recording could not start. Please reload and try again.");
+      return;
+    }
     recorderRef.current = recorder;
     setIsListening(true);
 
