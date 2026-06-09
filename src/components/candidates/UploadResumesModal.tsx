@@ -257,6 +257,15 @@ export default function UploadResumesModal({
         };
       });
 
+      candidateTracks.forEach((c) => {
+        if (c.parsing_status === "failed") {
+          console.error(
+            `[ResumeUpload] Failed to parse "${c.fileName}":`,
+            c.parsing_error || "Unknown error"
+          );
+        }
+      });
+
       setCandidates(candidateTracks);
       setFiles([]);
       setAllDone(true);
@@ -393,9 +402,7 @@ export default function UploadResumesModal({
                         )}
                         {c.parsing_status === "failed" && (
                           <p className="text-xs text-red-500">
-                            {c.parsing_error
-                              ? c.parsing_error
-                              : "Could not parse this file. Please check the format and try again."}
+                            Could not parse this file. Please check the format and try again.
                           </p>
                         )}
                       </div>
