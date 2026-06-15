@@ -4,10 +4,9 @@ import { Metadata } from "next";
 import React from "react";
 
 export const metadata: Metadata = {
-  title: "Next.js Calender | TailAdmin - Next.js Dashboard Template",
+  title: "Interview Calendar | CGB AI Recruiters",
   description:
-    "This is Next.js Calender page for TailAdmin  Tailwind CSS Admin Dashboard Template",
-  // other metadata
+    "Tenant-scoped interview schedule calendar — view, filter, and track interviews by status across month, week, and day views.",
 };
 export default function page() {
   return (

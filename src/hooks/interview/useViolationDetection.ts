@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, sessionTokenHeader } from "@/lib/api";
 
 export type ViolationType =
   | "tab_switch"
@@ -58,11 +58,25 @@ export function useViolationDetection(
       });
 
       try {
-        await fetch(`${API_BASE}/interview/sessions/${sessionId}/violation`, {
+        const res = await fetch(`${API_BASE}/interview/sessions/${sessionId}/violation`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...sessionTokenHeader() },
           body: JSON.stringify({ violation_type: type, details }),
         });
+        // The server count is authoritative (it survives page refreshes, which
+        // reset the local counter). Sync it back, and honour the server's
+        // termination verdict — previously the response was discarded, so a
+        // candidate could refresh past violation #5 and keep interviewing.
+        if (res.ok) {
+          const data = await res.json().catch(() => null);
+          if (data && typeof data.total_violations === "number") {
+            setViolationCount(data.total_violations);
+            if (data.should_terminate && !terminatedRef.current) {
+              terminatedRef.current = true;
+              setShouldTerminate(true);
+            }
+          }
+        }
       } catch (e) {
         console.error("Failed to report violation:", e);
       }
@@ -112,6 +126,18 @@ export function useViolationDetection(
       // initialising simultaneously is what triggers the OOM crash on low-RAM laptops.
       await new Promise((r) => setTimeout(r, 12_000));
       if (cancelled) return;
+
+      // Skip MediaPipe entirely on 4 GB-class devices: its ~300 MB WASM/model
+      // footprint is the primary OOM-crash driver there, and most of it lives
+      // OUTSIDE the JS heap where the ratio check below can't see it. Other
+      // proctoring signals (tab switch, fullscreen, screenshots) still apply.
+      const _devMem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+      if (typeof _devMem === "number" && _devMem <= 4) {
+        console.warn(
+          `[ViolationDetection] Skipping MediaPipe — low-spec device (deviceMemory=${_devMem} GB)`
+        );
+        return;
+      }
 
       // Skip face detection entirely when the heap is already under pressure.
       // MediaPipe adds ~300 MB; if usedJSHeap / jsHeapSizeLimit > 0.50 before

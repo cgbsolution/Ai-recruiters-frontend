@@ -747,6 +747,135 @@ span.flatpickr-weekday,
   @apply min-h-screen;
 }
 
+/* ── Interview calendar: status chips, day summaries, event layout ───────── */
+.interview-calendar .fc.fc-media-screen {
+  min-height: 640px;
+}
+
+/* Day-cell header: date number on the left, per-status counts on the right */
+.interview-calendar .fc-daygrid-day-top {
+  width: 100%;
+}
+.interview-calendar .fc-daygrid-day-number {
+  width: 100%;
+  padding: 0 !important;
+}
+.iv-cell-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 10px 2px;
+}
+.iv-cell-date {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #475467;
+}
+.dark .iv-cell-date {
+  color: #98a2b3;
+}
+.iv-cell-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.iv-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+.iv-count-total {
+  background: #eef2f6;
+  color: #475467;
+}
+.dark .iv-count-total {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+}
+.iv-count-done {
+  background: #dcfce7;
+  color: #15803d;
+}
+.iv-count-pending {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.iv-count-cancel {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+/* Event chip */
+.interview-calendar .fc-event,
+.interview-calendar .fc-event:hover {
+  cursor: pointer;
+  box-shadow: none;
+}
+.interview-calendar .fc-daygrid-event.fc-event-start,
+.interview-calendar .fc-daygrid-event.fc-event-end {
+  margin-left: 4px !important;
+  margin-right: 4px;
+}
+.interview-calendar .fc-daygrid-event {
+  border-radius: 6px;
+}
+.iv-event {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 8px;
+  border-left: 3px solid;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.iv-event-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+}
+.iv-event-time {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: #475467;
+}
+.dark .iv-event-time {
+  color: #cbd5e1;
+}
+.iv-event-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: #1d2939;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dark .iv-event-title {
+  color: #e4e7ec;
+}
+/* "+X more" link */
+.interview-calendar .fc-daygrid-more-link {
+  font-size: 11px;
+  font-weight: 600;
+  color: #475467;
+}
+.dark .interview-calendar .fc-daygrid-more-link {
+  color: #98a2b3;
+}
+
 .input-date-icon::-webkit-inner-spin-button,
 .input-date-icon::-webkit-calendar-picker-indicator {
   opacity: 0;

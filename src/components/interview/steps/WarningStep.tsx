@@ -4,14 +4,30 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, Eye, Monitor, Shield, Tablet } from "lucide-react";
+import { AlertTriangle, Eye, Loader2, Monitor, Shield, Tablet } from "lucide-react";
 
 interface Props {
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
 }
 
 export default function WarningStep({ onConfirm }: Props) {
   const [confirmed, setConfirmed] = useState(false);
+  const [starting, setStarting] = useState(false);
+
+  // Give immediate feedback the moment the candidate clicks: the opening
+  // question takes a few seconds to generate, and without this the button
+  // looked frozen. Latches true (we're navigating into the room next) and is
+  // guarded against double-clicks.
+  const handleClick = async () => {
+    if (starting) return;
+    setStarting(true);
+    try {
+      await onConfirm();
+    } catch {
+      // Parent handles errors; re-enable so the candidate can retry.
+      setStarting(false);
+    }
+  };
 
   const warnings = [
     { icon: <Monitor className="w-4 h-4 text-red-500" />, text: "Do NOT switch browser tabs or windows during the interview." },
@@ -70,11 +86,18 @@ export default function WarningStep({ onConfirm }: Props) {
         </div>
 
         <Button
-          onClick={onConfirm}
-          disabled={!confirmed}
+          onClick={handleClick}
+          disabled={!confirmed || starting}
           className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white rounded-xl disabled:opacity-50"
         >
-          Begin Interview
+          {starting ? (
+            <span className="flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Starting your interview…
+            </span>
+          ) : (
+            "Begin Interview"
+          )}
         </Button>
       </div>
     </div>

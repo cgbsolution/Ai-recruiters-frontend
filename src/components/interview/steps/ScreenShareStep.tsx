@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, CheckCircle, Monitor, XCircle } from "lucide-react";
+import { canCaptureSystemAudio } from "@/lib/browserCapabilities";
 
 interface Props {
   onNext: (screenStream?: MediaStream) => void;
@@ -28,9 +29,13 @@ export default function ScreenShareStep({ onNext, required = false }: Props) {
         setStatus("wrong_surface");
         return;
       }
-      // Validate that system audio is included — required for recording
+      // Validate that system audio is included — required for recording.
+      // ONLY enforced where the browser can actually deliver it: Firefox and
+      // Safari cannot capture system audio at all, so requiring it there
+      // trapped candidates in an unsatisfiable retry loop. On those browsers
+      // we accept video-only and rely on the mic track in the recording mix.
       const audioTracks = stream.getAudioTracks();
-      if (audioTracks.length === 0) {
+      if (audioTracks.length === 0 && canCaptureSystemAudio()) {
         stream.getTracks().forEach((t) => t.stop());
         setStatus("no_audio");
         return;

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { sessionTokenHeader } from "@/lib/api";
 import type { CodingQuestion } from "@/hooks/interview/useInterviewSession";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -184,7 +185,7 @@ export default function CodeEditor({
         `${apiBase}/interview/sessions/${sessionId}/run-code`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...sessionTokenHeader() },
           // No test_cases → backend just executes the code once and returns
           // the raw stdout/stderr in `output`. Matches a normal REPL run.
           body: JSON.stringify({ language, code }),
@@ -228,7 +229,7 @@ export default function CodeEditor({
         `${apiBase}/interview/sessions/${sessionId}/run-code`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...sessionTokenHeader() },
           body: JSON.stringify({
             language,
             code,
@@ -260,7 +261,7 @@ export default function CodeEditor({
           `${apiBase}/interview/sessions/${sessionId}/save-coding-submission`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...sessionTokenHeader() },
             body: JSON.stringify({
               language,
               code,

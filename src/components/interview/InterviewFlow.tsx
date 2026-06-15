@@ -10,6 +10,7 @@ import {
   deleteRecording as deleteStoredRecording,
 } from "@/lib/recordingStorage";
 import { reportClientEvent } from "@/lib/clientTelemetry";
+import { checkInterviewCapabilities } from "@/lib/browserCapabilities";
 
 import WelcomeStep from "./steps/WelcomeStep";
 import EmailVerifyStep from "./steps/EmailVerifyStep";
@@ -202,15 +203,29 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
         console.log("[Interview] Job config loaded:", { title: config.title, allowMobile: config.allow_mobile, mode: config.mode });
 
         // Block mobile devices if allow_mobile is disabled
+        const ua = navigator.userAgent || "";
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
         if (!config.allow_mobile) {
-          const ua = navigator.userAgent || "";
-          const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
           if (isMobile) {
             console.warn("[Interview] Mobile device blocked — allow_mobile is disabled");
             setLoadError("Please join using a desktop or laptop. Mobile devices are not supported for this interview.");
             setStep("ERROR");
             return;
           }
+        }
+
+        // Block browsers that cannot run the interview at all (e.g. Safari has
+        // no WebM MediaRecorder, which transcription + recording depend on).
+        // Failing here is far kinder than a dead end 10 minutes into the flow.
+        const caps = checkInterviewCapabilities({ requireScreenShare: !isMobile });
+        if (!caps.supported) {
+          console.warn("[Interview] Unsupported browser:", caps.missing);
+          setLoadError(
+            "Your browser is not supported for this interview. Please use the latest Google Chrome or Microsoft Edge on a desktop or laptop. " +
+            `(Missing: ${caps.missing.join(", ")})`
+          );
+          setStep("ERROR");
+          return;
         }
 
         // Auto-verify if candidateEmail is in the URL (?candidate=email)
@@ -351,13 +366,24 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   }, [session, webcamStream, screenStream, startRecording, interviewLanguage]);
 
   const handleWarningConfirm = useCallback(async () => {
+    // Enter the interview room IMMEDIATELY. The opening question requires a
+    // 20–40s LLM call (POST /start); previously we awaited that BEFORE
+    // transitioning, so a slow — or, on the un-fixed backend, a pool-exhausted
+    // and therefore HUNG — /start left the candidate stranded on the
+    // Zero-Tolerance screen staring at a dead "Begin Interview" button.
+    //
+    // The room renders its own "Starting interview…" indicator and, if no
+    // opening message arrives within 30s, a Reload/End escape hatch — so the
+    // candidate is never trapped. requestFullscreen()/startRecording() inside
+    // handleStartInterview still run within this user-gesture tick because
+    // setStep() is synchronous and does not suspend before they're called.
+    setStep("INTERVIEW");
     try {
       await handleStartInterview();
     } catch (err) {
       console.error("[InterviewFlow] handleStartInterview failed:", err);
-      // Still transition — session may have partially started
+      // The room's own stuck-recovery UI handles this — nothing else to do.
     }
-    setStep("INTERVIEW");
   }, [handleStartInterview]);
 
   const handleScreenStreamChanged = useCallback((stream: MediaStream) => {
@@ -500,7 +526,8 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     const isTimeout = errLower.includes("timed out");
     const isTerminated = errLower.includes("terminated") || errLower.includes("contact hr");
     const isCompleted = errLower.includes("already completed");
-    const isMobileBlocked = errLower.includes("desktop or laptop");
+    const isMobileBlocked = errLower.includes("desktop or laptop") && !errLower.includes("browser is not supported");
+    const isUnsupportedBrowser = errLower.includes("browser is not supported");
     const isNotFound = errLower.includes("not found") || errLower.includes("no longer active");
     const isScheduled = errLower.includes("scheduled for") || errLower.includes("come back");
     const canRetry = isNetwork || isTimeout;
@@ -535,6 +562,11 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
       title = "Interview Session Ended";
       subtitle = loadError || "Your interview session was ended.";
       hint = "Please contact your recruiter for next steps.";
+    } else if (isUnsupportedBrowser) {
+      icon = "🌐";
+      title = "Browser Not Supported";
+      subtitle = loadError || "Your browser cannot run this interview.";
+      hint = "Please copy this link into the latest Google Chrome or Microsoft Edge on a desktop or laptop.";
     } else if (isMobileBlocked) {
       icon = "💻";
       title = "Desktop Required";

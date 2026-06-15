@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { api, apiPost, apiUpload, ApiError } from "@/lib/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, apiPost, apiUpload, ApiError, setSessionToken } from "@/lib/api";
 import {
   updateMeta as updateRecordingMeta,
   deleteRecording as deleteStoredRecording,
@@ -22,6 +22,10 @@ export interface Message {
   content: string;
   questionIndex?: number;
   codingQuestion?: CodingQuestion;
+  /** True for AI messages fabricated locally when the backend was unreachable.
+   *  They reuse the current question index (never invent a new one) so the
+   *  progress counter and per-question timer stay in sync with the server. */
+  isLocalFallback?: boolean;
 }
 
 export interface QuestionState {
@@ -159,6 +163,14 @@ export function useInterviewSession(): InterviewSessionHook {
   /** Ref to latest messages for use in callbacks without stale closures */
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+  /** Stop background loops (evaluation polling) once the hook unmounts */
+  const unmountedRef = useRef(false);
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => { unmountedRef.current = true; };
+  }, []);
+  /** Guard: only one evaluation poll loop at a time (retry could stack a second) */
+  const isPollingRef = useRef(false);
 
   const loadJobConfig = useCallback(async (token: string): Promise<{ config: JobConfig } | { error: string }> => {
     // Retry once on timeout/network errors — mobile networks are flaky
@@ -198,6 +210,7 @@ export function useInterviewSession(): InterviewSessionHook {
         console.log("[Interview] Access result:", { access: data.access, canResume: data.can_resume, sessionId: data.session_id, message: data.message });
         if (data.session_id) setSessionId(data.session_id);
         if (data.candidate_id) setCandidateId(data.candidate_id);
+        if (data.session_token) setSessionToken(data.session_token);
         setCanResume(data.can_resume ?? false);
         setSessionStatus(data.session_status ?? null);
         return {
@@ -255,6 +268,7 @@ export function useInterviewSession(): InterviewSessionHook {
         });
         setSessionId(data.session_id);
         setCandidateId(data.candidate_id);
+        if (data.session_token) setSessionToken(data.session_token);
         setIsExistingUser(data.is_existing_user ?? false);
         setAlreadyCompleted(data.already_completed ?? false);
         setCanResume(data.can_resume ?? false);
@@ -278,6 +292,7 @@ export function useInterviewSession(): InterviewSessionHook {
         );
         setSessionId(data.session_id);
         setCandidateId(data.candidate_id);
+        if (data.session_token) setSessionToken(data.session_token);
         setIsExistingUser(data.is_existing_user ?? false);
         setAlreadyCompleted(data.already_completed ?? false);
         setCanResume(data.can_resume ?? false);
@@ -298,6 +313,7 @@ export function useInterviewSession(): InterviewSessionHook {
         const data = await apiPost<any>(`/interview/${token}/login`, { email });
         setSessionId(data.session_id);
         setCandidateId(data.candidate_id);
+        if (data.session_token) setSessionToken(data.session_token);
         setIsExistingUser(true);
         setCanResume(data.can_resume ?? false);
         setSessionStatus(data.session_status ?? null);
@@ -438,11 +454,18 @@ export function useInterviewSession(): InterviewSessionHook {
         // and returns a bridge question instead of hanging, so the first attempt
         // almost always succeeds; a second covers a transient network blip.
         // (Previously 3×45s = up to ~135s before the candidate saw any response.)
+        // turn_id makes the retry idempotent: if the first request actually
+        // completed server-side, the retry replays the SAME stored response
+        // instead of running a duplicate AI turn.
+        const turnId =
+          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
         let data: any;
         let lastErr: any;
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
-            data = await apiPost<any>(`/interview/sessions/${sessionId}/message`, { content: text }, { timeout: 45_000 });
+            data = await apiPost<any>(`/interview/sessions/${sessionId}/message`, { content: text, turn_id: turnId }, { timeout: 45_000 });
             lastErr = null;
             break;
           } catch (retryErr) {
@@ -480,13 +503,16 @@ export function useInterviewSession(): InterviewSessionHook {
         // First timeout: ask to repeat. Second+: acknowledge and ask a concrete
         // bridge question locally so the candidate sees text instead of being
         // stuck on the thinking indicator while the provider is degraded.
+        // NOTE: local fallbacks always REUSE the current question index. The
+        // previous +1 invented an index the backend never issued, desyncing the
+        // progress counter / per-question timer / max-question guard from the
+        // server (the next real reply then collided with or skipped an index).
         let fallbackContent: string;
-        let fallbackQuestionIndex = lastAiQi;
+        const fallbackQuestionIndex = lastAiQi;
         if (fallbackCount === 0) {
           fallbackContent = "I didn't catch that clearly. Could you please repeat your answer?";
         } else {
           const roleContext = jobConfig?.title || "this role";
-          fallbackQuestionIndex = lastAiQi + 1;
           fallbackContent =
             `Thank you for your answer. Let's continue: can you walk me through ` +
             `a recent responsibility or project related to ${roleContext}, and what outcome you achieved?`;
@@ -495,6 +521,7 @@ export function useInterviewSession(): InterviewSessionHook {
           role: "ai",
           content: fallbackContent,
           questionIndex: fallbackQuestionIndex,
+          isLocalFallback: true,
         };
         setMessages((prev) => [...prev, fallbackMsg]);
         updateQuestionStates(fallbackContent, fallbackQuestionIndex, false);
@@ -522,10 +549,24 @@ export function useInterviewSession(): InterviewSessionHook {
   }, [sessionId, sendMessage]);
 
   const _pollForEvaluation = useCallback(async (sid: number) => {
+    // One loop at a time (retryEvaluation could otherwise stack a second),
+    // and stop dead once the component unmounts — no orphaned polling.
+    if (isPollingRef.current) return;
+    isPollingRef.current = true;
+    try {
+      await _pollForEvaluationInner(sid);
+    } finally {
+      isPollingRef.current = false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const _pollForEvaluationInner = useCallback(async (sid: number) => {
     setEvaluationStatus("processing");
     const MAX_POLLS = 100; // 100 × 4s = ~6.7 minutes — matches backend TOTAL_TIMEOUT
     for (let i = 0; i < MAX_POLLS; i++) {
       await new Promise((r) => setTimeout(r, 4000));
+      if (unmountedRef.current) return;
       try {
         // Cheap status probe — never 404s, so the browser console stays clean
         // and we find out about backend failure within one poll cycle.

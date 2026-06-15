@@ -29,7 +29,16 @@ const CANVAS_HEIGHT = 720;
 // Webcam strip at bottom-center: 320x180
 const CAM_WIDTH = 320;
 const CAM_HEIGHT = 180;
-const FPS = 15;
+// The canvas-composite + VP8 software encode is the single biggest CPU
+// consumer in the interview. On 4 GB-class devices (which also tend to have
+// 2 weak cores) halve the frame rate — 8 fps is plenty for proctoring review
+// and the saved CPU goes to STT/TTS/avatar so the interview stays responsive.
+const FPS =
+  typeof navigator !== "undefined" &&
+  typeof (navigator as { deviceMemory?: number }).deviceMemory === "number" &&
+  ((navigator as { deviceMemory?: number }).deviceMemory as number) <= 4
+    ? 8
+    : 15;
 // Upper bound on how much of the recording we keep in the JS heap. IndexedDB is
 // the durable source of truth (and what stop/recovery actually upload); the
 // in-memory copy is only a last-resort fallback for when IDB itself fails. For

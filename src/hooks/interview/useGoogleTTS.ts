@@ -17,6 +17,11 @@ interface SpeechSynthesisHook {
    *  whenever nothing is playing. */
   audioElement: HTMLAudioElement | null;
   isSupported: boolean;
+  /** Non-null when the last TTS request failed after all retries — the AI
+   *  question was NOT spoken. The UI should tell the candidate to read the
+   *  question on screen instead of degrading silently. Cleared on the next
+   *  successful speak(). */
+  error: string | null;
 }
 
 /**
@@ -47,16 +52,23 @@ function cleanForSpeech(text: string): string {
 export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLipSyncing, setIsLipSyncing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const speakingRef = useRef(false);
   const langRef = useRef(language);
   langRef.current = language;
   const pendingTextRef = useRef<string | null>(null);
+  // Monotonic token: each speak()/cancel() invalidates older in-flight calls.
+  // Without it, two rapid speak() calls (e.g. a local fallback message followed
+  // by the real AI reply) both pass the speakingRef check after their fetches
+  // resolve and play two overlapping audios.
+  const generationRef = useRef(0);
 
   const isSupported = typeof window !== "undefined" && typeof Audio !== "undefined";
 
   const cancel = useCallback(() => {
+    generationRef.current += 1;
     speakingRef.current = false;
     if (audioRef.current) {
       try {
@@ -102,6 +114,7 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
       if (!isSupported || !text.trim()) return;
 
       cancel();
+      const gen = ++generationRef.current;
       speakingRef.current = true;
       // isSpeaking goes true immediately so the interview state machine
       // (which gates SPEAKING → LISTENING on isSpeaking) doesn't transition
@@ -112,7 +125,8 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
         // Speak the cleaned text (no markdown/code symbols); the displayed
         // transcript still shows the original formatting.
         const audioB64 = await fetchTTS(cleanForSpeech(text));
-        if (!speakingRef.current) return;
+        if (gen !== generationRef.current || !speakingRef.current) return;
+        setError(null);
 
         const audio = new Audio(`data:audio/mp3;base64,${audioB64}`);
         audio.volume = 1.0;
@@ -127,12 +141,14 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
         // avatar's mouth in sync with the voice, regardless of network/decode
         // latency.
         audio.onplaying = () => {
-          if (speakingRef.current) setIsLipSyncing(true);
+          if (gen === generationRef.current && speakingRef.current) setIsLipSyncing(true);
         };
 
         const onAudioDone = () => {
-          // Guard against callbacks firing after cancel() (e.g. on unmount):
-          // if speakingRef is already false, cancel() already cleaned up state.
+          // Guard against callbacks firing after cancel() / a newer speak():
+          // if speakingRef is false or the generation moved on, cleanup is
+          // someone else's responsibility.
+          if (gen !== generationRef.current) return;
           if (!speakingRef.current) return;
           speakingRef.current = false;
           setIsSpeaking(false);
@@ -146,6 +162,7 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
         try {
           await audio.play();
         } catch (err: any) {
+          if (gen !== generationRef.current) return;
           if (err.name === "NotAllowedError") {
             console.log("[GoogleTTS] Autoplay blocked — saving for retry on click");
             pendingTextRef.current = text;
@@ -160,6 +177,10 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
         }
       } catch (err) {
         console.error("[GoogleTTS] Failed after retries:", err);
+        if (gen !== generationRef.current) return;
+        setError(
+          "The AI voice is temporarily unavailable — please read the question in the chat panel and answer normally."
+        );
         speakingRef.current = false;
         setIsSpeaking(false);
         setIsLipSyncing(false);
@@ -172,19 +193,20 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
   // Unlock autoplay on first user interaction — retry pending speech
   useEffect(() => {
     if (!isSupported) return;
+    // Persistent listeners (NOT once): the first user click usually happens
+    // before any TTS is blocked, which used to consume the once-listeners and
+    // leave a later blocked playback with no retry path — the AI went silent
+    // for the rest of the interview. Keeping them armed costs nothing.
     const unlock = () => {
       if (pendingTextRef.current) {
         const text = pendingTextRef.current;
         pendingTextRef.current = null;
         setTimeout(() => speak(text), 100);
       }
-      window.removeEventListener("click", unlock);
-      window.removeEventListener("keydown", unlock);
-      window.removeEventListener("touchstart", unlock);
     };
-    window.addEventListener("click", unlock, { once: true });
-    window.addEventListener("keydown", unlock, { once: true });
-    window.addEventListener("touchstart", unlock, { once: true });
+    window.addEventListener("click", unlock);
+    window.addEventListener("keydown", unlock);
+    window.addEventListener("touchstart", unlock);
     return () => {
       window.removeEventListener("click", unlock);
       window.removeEventListener("keydown", unlock);
@@ -197,5 +219,5 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
     return () => { cancel(); };
   }, [cancel]);
 
-  return { speak, cancel, isSpeaking, isLipSyncing, audioElement, isSupported };
+  return { speak, cancel, isSpeaking, isLipSyncing, audioElement, isSupported, error };
 }

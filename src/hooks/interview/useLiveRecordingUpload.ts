@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, sessionTokenHeader } from "@/lib/api";
 import { getChunksFrom } from "@/lib/recordingStorage";
 
 /**
@@ -89,14 +89,14 @@ export function useLiveRecordingUpload({
         // server didn't actually store them. Parts are idempotent (keyed by
         // start_index), so the next normal drain / finalize tail-sweep / orphan
         // recovery harmlessly re-sends this same range and confirms it.
-        void fetch(url, { method: "POST", body: form, keepalive: true }).catch(() => {});
+        void fetch(url, { method: "POST", headers: sessionTokenHeader(), body: form, keepalive: true }).catch(() => {});
         return;
       }
 
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), PART_TIMEOUT_MS);
       try {
-        const res = await fetch(url, { method: "POST", body: form, signal: controller.signal });
+        const res = await fetch(url, { method: "POST", headers: sessionTokenHeader(), body: form, signal: controller.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         // Only advance the cursor once the server has the bytes — a failure
         // leaves lastAcked unchanged so the next tick retries the same run.
@@ -163,7 +163,7 @@ export function useLiveRecordingUpload({
       form.append("duration", duration);
       const res = await fetch(
         `${API_BASE}/interview/sessions/${sid}/recording-finalize`,
-        { method: "POST", body: form },
+        { method: "POST", headers: sessionTokenHeader(), body: form },
       );
       return res.ok;
     } catch {

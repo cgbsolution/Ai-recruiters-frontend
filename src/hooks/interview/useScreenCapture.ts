@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, sessionTokenHeader } from "@/lib/api";
 
 const CAPTURE_INTERVAL_MS = 14_000; // Every 14 seconds (within the 13-15s range)
 const JPEG_QUALITY = 0.75;          // Balance quality vs size
@@ -75,6 +75,7 @@ export function useScreenCapture(
       // Fire-and-forget — never await to block the interview
       fetch(`${API_BASE}/interview/sessions/${sessionId}/screenshot`, {
         method: "POST",
+        headers: sessionTokenHeader(),
         body: form,
       }).catch(() => {
         // Silently ignore upload errors — non-critical

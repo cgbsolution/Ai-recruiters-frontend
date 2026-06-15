@@ -25,11 +25,12 @@ import { useScreenCapture } from "@/hooks/interview/useScreenCapture";
 import { useSecondaryCamMonitor } from "@/hooks/interview/useSecondaryCamMonitor";
 import SecondCamReconnectModal from "./SecondCamReconnectModal";
 import type { Message, JobConfig, QuestionState, CodingQuestion } from "@/hooks/interview/useInterviewSession";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, getSessionToken } from "@/lib/api";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { useMemoryWatchdog } from "@/hooks/interview/useMemoryWatchdog";
 import { useGlobalErrorGuard } from "@/hooks/useGlobalErrorGuard";
 import { reportClientEvent } from "@/lib/clientTelemetry";
+import { canCaptureSystemAudio } from "@/lib/browserCapabilities";
 
 const CodeEditor = dynamic(() => import("./CodeEditor"), { ssr: false });
 
@@ -73,8 +74,20 @@ const INTRO_SILENCE_TIMEOUT_MS = 8000;
 /** Delay after TTS finishes before starting STT — prevents echo pickup */
 const POST_SPEECH_DELAY_MS = 1200;
 
-/** If PROCESSING phase lasts longer than this, force-recover */
-const PROCESSING_TIMEOUT_MS = 45000;
+/** If PROCESSING phase lasts longer than this, force-recover.
+ *  MUST exceed sendMessage's worst case (2 attempts × 45 s + 2 s backoff ≈ 92 s):
+ *  recovering EARLIER re-enabled the submit UI while the session-level
+ *  in-flight guard still held, so the candidate's re-submitted answer was
+ *  silently rejected and the transcript reset — a lost answer. In practice the
+ *  backend self-bounds turns to ~38 s, so this ceiling almost never fires. */
+const PROCESSING_TIMEOUT_MS = 100_000;
+
+/** Heuristic for 4 GB-class devices: pre-emptively skip the 3D avatar (WebGL +
+ *  GLTF ≈ 100+ MB beyond the JS heap, where the memory watchdog can't see). */
+const IS_LOW_SPEC_DEVICE =
+  typeof navigator !== "undefined" &&
+  typeof (navigator as { deviceMemory?: number }).deviceMemory === "number" &&
+  ((navigator as { deviceMemory?: number }).deviceMemory as number) <= 4;
 
 /** Hard ceiling for the SPEAKING phase. TTS questions are short (well under a
  *  minute); if we're still "speaking" after this, the audio almost certainly
@@ -204,8 +217,8 @@ export default function InterviewRoom({
   });
 
   /* ── Hooks ── */
-  const { transcript, interimTranscript, isListening, isSupported, lastFinalAt, micStream, error: sttError, start, stop, reset, getSnapshot } = useDeepgramSTT(interviewLanguage);
-  const { speak, cancel, isSpeaking, isLipSyncing, audioElement } = useGoogleTTS(interviewLanguage);
+  const { transcript, interimTranscript, finalTranscript, isListening, isSupported, lastFinalAt, micStream, error: sttError, start, stop, reset, getSnapshot } = useDeepgramSTT(interviewLanguage, sessionId);
+  const { speak, cancel, isSpeaking, isLipSyncing, audioElement, error: ttsError } = useGoogleTTS(interviewLanguage);
   const { violationCount, lastViolation, shouldTerminate, disable: disableViolations, lastFaceCountRef, reportViolation } = useViolationDetection(sessionId, true, webcamStream, jobConfig.face_match);
   useScreenCapture(sessionId, webcamStream, !isInterviewComplete, lastFaceCountRef);
   const secondaryCam = useSecondaryCamMonitor(sessionId, !!jobConfig.secondary_cam);
@@ -257,11 +270,10 @@ export default function InterviewRoom({
   /* ── Keep transcriptRef in sync on every render ── */
   // transcript from Deepgram hook already includes interim, so don't add interimTranscript again
   transcriptRef.current = transcript.trim();
-  // finalTranscriptRef = transcript WITHOUT interim (for silence detection)
-  // When interimTranscript is set, strip it from the end of transcript to get finals-only
-  finalTranscriptRef.current = interimTranscript
-    ? transcript.replace(new RegExp(interimTranscript.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "\\s*$"), "").trim()
-    : transcript.trim();
+  // finalTranscriptRef = finals-only transcript, now provided directly by the
+  // STT hook (previously reconstructed by regex-stripping the interim tail off
+  // `transcript`, which could over-strip a repeated phrase).
+  finalTranscriptRef.current = finalTranscript.trim();
 
   /* ── Keep capturedTranscriptRef in sync ── */
   useEffect(() => {
@@ -284,7 +296,9 @@ export default function InterviewRoom({
     if (!sessionId) return;
     const handleBeforeUnload = () => {
       if (isInterviewComplete) return;
-      const url = `${API_BASE}/interview/sessions/${sessionId}/drop`;
+      // sendBeacon can't set headers — pass the session token as ?st=
+      const st = getSessionToken();
+      const url = `${API_BASE}/interview/sessions/${sessionId}/drop${st ? `?st=${encodeURIComponent(st)}` : ""}`;
       navigator.sendBeacon(url);
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
@@ -407,6 +421,19 @@ export default function InterviewRoom({
       });
     }, 800);
   }, [reset, start]);
+
+  // If STT failed to start (mic denied/unavailable), don't leave the candidate
+  // in a fake "connecting"/"recording" state talking into a dead mic — drop
+  // back to idle so the Start Speaking button (and the sttError banner) show.
+  useEffect(() => {
+    if (sttError && !isListening && (voiceState === "connecting" || voiceState === "recording")) {
+      setVoiceState("idle");
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    }
+  }, [sttError, isListening, voiceState]);
 
   const handleStopSpeaking = useCallback(() => {
     playStopRecording();
@@ -1174,6 +1201,14 @@ export default function InterviewRoom({
         </div>
       )}
 
+      {/* ── Text-to-speech failure banner ── */}
+      {ttsError && (
+        <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs flex items-center gap-2 shrink-0">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>{ttsError}</span>
+        </div>
+      )}
+
       {/* ── State Tabs ── */}
       <div className="px-4 py-2 border-b border-gray-100 shrink-0 flex items-center gap-1.5 overflow-x-auto">
         {STATE_TABS.map((tab) => (
@@ -1244,8 +1279,10 @@ export default function InterviewRoom({
       {/* ── Main Content Area ── */}
       <div id="interview-main" className="flex flex-1 overflow-hidden relative">
 
-        {/* ── Draggable Webcam PIP (small overlay, top-left) ── */}
-        {webcamStream && (
+        {/* ── Draggable Webcam PIP (small overlay, top-left) ──
+            Only when the stream actually has video: in mic-only interviews
+            webcamStream holds an audio-only stream and rendered a black box. */}
+        {webcamStream && webcamStream.getVideoTracks().length > 0 && (
           <div
             className="absolute z-20 rounded-xl overflow-hidden border border-gray-200 shadow-lg cursor-move group"
             style={{
@@ -1285,7 +1322,11 @@ export default function InterviewRoom({
               // the second-largest consumer after MediaPipe (~50-100 MB). Swapping
               // it for the lightweight VoiceVisualizer frees that memory immediately
               // and prevents the STATUS_BREAKPOINT OOM crash on low-RAM laptops.
-              if (jobConfig.virtual_avatar && pressure === "normal") {
+              // Low-spec devices (≤4 GB RAM) skip the 3D avatar entirely: its
+              // WebGL/GLTF memory lives outside the JS heap where the watchdog
+              // can't see it, so by the time pressure reads "elevated" the
+              // process can already be in the OOM kill zone.
+              if (jobConfig.virtual_avatar && pressure === "normal" && !IS_LOW_SPEC_DEVICE) {
                 return (
                   <ErrorBoundary
                     name="avatar"
@@ -1673,8 +1714,10 @@ export default function InterviewRoom({
                     video: { displaySurface: "monitor" } as any,
                     audio: true,
                   });
-                  // Validate system audio is included
-                  if (stream.getAudioTracks().length === 0) {
+                  // Validate system audio is included — but only on browsers
+                  // that can actually provide it (Firefox/Safari can't; the
+                  // old unconditional check trapped them in an endless loop).
+                  if (stream.getAudioTracks().length === 0 && canCaptureSystemAudio()) {
                     stream.getTracks().forEach((t) => t.stop());
                     alert("Please enable \"Also share system audio\" when sharing your screen.");
                     return;

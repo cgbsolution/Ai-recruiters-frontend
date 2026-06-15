@@ -25,6 +25,39 @@ function getAuthToken(): string | undefined {
   return Cookies.get("auth_token");
 }
 
+/* ── Candidate interview session token ─────────────────────────────────────
+ * Minted by the backend at register/verify/login and required (as the
+ * X-Session-Token header, or ?st= for sendBeacon) on every
+ * /interview/sessions/{id}/* call. Kept in sessionStorage so a mid-interview
+ * page refresh (the resume flow) doesn't lose it. */
+let _sessionToken: string | null = null;
+
+export function setSessionToken(token: string | null): void {
+  _sessionToken = token;
+  try {
+    if (token) sessionStorage.setItem("interview_session_token", token);
+    else sessionStorage.removeItem("interview_session_token");
+  } catch {
+    // sessionStorage unavailable (private mode) — in-memory only
+  }
+}
+
+export function getSessionToken(): string | null {
+  if (_sessionToken) return _sessionToken;
+  try {
+    _sessionToken = sessionStorage.getItem("interview_session_token");
+  } catch {
+    // ignore
+  }
+  return _sessionToken;
+}
+
+/** Header object for raw fetch() callers; empty when no token is held. */
+export function sessionTokenHeader(): Record<string, string> {
+  const t = getSessionToken();
+  return t ? { "X-Session-Token": t } : {};
+}
+
 /**
  * Centralized API client with automatic timeout, error handling, and auth.
  * Usage: const data = await api<MyType>("/endpoint", { method: "POST", body: ... });
@@ -43,6 +76,10 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
     }
+  }
+  {
+    const st = getSessionToken();
+    if (st) headers["X-Session-Token"] = st;
   }
 
   try {
@@ -117,6 +154,10 @@ export async function apiDownload(path: string, options: ApiOptions = {}): Promi
   if (!skipAuth) {
     const token = getAuthToken();
     if (token) headers["Authorization"] = `Bearer ${token}`;
+  }
+  {
+    const st = getSessionToken();
+    if (st) headers["X-Session-Token"] = st;
   }
 
   try {
