@@ -11,6 +11,7 @@ import {
 } from "@/lib/recordingStorage";
 import { reportClientEvent } from "@/lib/clientTelemetry";
 import { checkInterviewCapabilities } from "@/lib/browserCapabilities";
+import { API_BASE, getSessionToken } from "@/lib/api";
 
 import WelcomeStep from "./steps/WelcomeStep";
 import EmailVerifyStep from "./steps/EmailVerifyStep";
@@ -88,7 +89,7 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
 
   const session = useInterviewSession();
-  const { startRecording, stopRecording, getRecordingId, isRecording } = useVideoRecording();
+  const { startRecording, stopRecording, isRecording } = useVideoRecording();
 
   // Stream the recording to the server WHILE the interview runs, so it survives
   // a tab/browser/laptop close. Returns finalize() to stitch parts at the end.
@@ -110,11 +111,18 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   // (backend session created), link them in IndexedDB. This ensures that if
   // the tab / browser / device dies mid-interview, orphan recovery on the
   // next load has enough info to upload the partial recording.
+  //
+  // IMPORTANT: depend on `activeRecordingId` (set the moment recording starts),
+  // NOT on the stable `getRecordingId` callback. The session id is known BEFORE
+  // recording starts, so the old effect ran once (recordingId still null → it
+  // bailed) and never re-ran when recording actually began — leaving the
+  // recording's meta with sessionId=null. That silently disabled orphan
+  // recovery, so any tab/laptop close at the very end lost the video with no
+  // error. This was the root cause of the "3-4 lost videos" report.
   useEffect(() => {
-    const rid = getRecordingId();
-    if (!rid || !session.sessionId) return;
-    void updateRecordingMeta(rid, { sessionId: session.sessionId });
-  }, [session.sessionId, getRecordingId]);
+    if (!activeRecordingId || !session.sessionId) return;
+    void updateRecordingMeta(activeRecordingId, { sessionId: session.sessionId });
+  }, [session.sessionId, activeRecordingId]);
   const isCompletingRef = useRef(false);
   const isResumingRef = useRef(false);
   const autoVerifiedRef = useRef(false);
@@ -146,6 +154,30 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [step, session.evaluationStatus]);
+
+  // Tab close / navigation away while a recording exists — including on the
+  // COMPLETION screen, where InterviewRoom's /drop beacon no longer fires
+  // (it bails once the interview is complete). Tell the server to assemble the
+  // live-uploaded recording parts NOW, so the video isn't left unstitched if
+  // the candidate closes the tab the instant the interview ends (the exact
+  // "lost video" case). The endpoint is idempotent + size-guarded, and the
+  // periodic server sweeper remains the ultimate backstop.
+  useEffect(() => {
+    if (!session.sessionId || !activeRecordingId) return;
+    if (step !== "INTERVIEW" && step !== "COMPLETION") return;
+    const sid = session.sessionId;
+    const finalizeBeacon = () => {
+      const st = getSessionToken();
+      const url = `${API_BASE}/interview/sessions/${sid}/recording-finalize-beacon${st ? `?st=${encodeURIComponent(st)}` : ""}`;
+      try {
+        navigator.sendBeacon(url);
+      } catch {
+        // best-effort only
+      }
+    };
+    window.addEventListener("pagehide", finalizeBeacon);
+    return () => window.removeEventListener("pagehide", finalizeBeacon);
+  }, [session.sessionId, activeRecordingId, step]);
 
   // Re-enter fullscreen when candidate returns to tab during interview
   useEffect(() => {
@@ -448,14 +480,14 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     // already underway regardless. Each outcome is beaconed so an operator can
     // see — in the backend — exactly why a recording is or isn't present.
     if (recording && session.sessionId) {
-      const sizeMb = +(recording.blob.size / (1024 * 1024)).toFixed(1);
+      const sizeMb = +(recording.sizeBytes / (1024 * 1024)).toFixed(1);
       reportClientEvent({
         type: "recording_upload_started",
         message: `session ${session.sessionId} — ${sizeMb} MB`,
         context: { sessionId: session.sessionId, sizeMb, recordingId: recording.recordingId },
       });
       console.log(
-        `[InterviewFlow] Finalizing recording — blob size: ${sizeMb} MB, recordingId=${recording.recordingId}`,
+        `[InterviewFlow] Finalizing recording — size: ${sizeMb} MB, recordingId=${recording.recordingId}`,
       );
       // PRIMARY: most of the recording was already streamed to the server during
       // the interview (useLiveRecordingUpload). finalize() drains the tail and
@@ -467,15 +499,23 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
         await updateRecordingMeta(recording.recordingId, { uploaded: true });
         await deleteStoredRecording(recording.recordingId);
       } else if (!ok) {
-        // FALLBACK: live path didn't confirm (errored / no parts). Use the
-        // single-shot upload, which has its own retries + IndexedDB safety net.
+        // FALLBACK: live path didn't confirm (errored / no parts). Assemble the
+        // blob lazily ONLY now (not eagerly at stop, which spiked memory) and
+        // use the single-shot upload, which has its own retries + IDB safety net.
         console.warn("[InterviewFlow] Live finalize unconfirmed — falling back to single-shot upload.");
-        ok = await session.uploadRecording(
-          recording.blob,
-          session.sessionId,
-          recording.duration,
-          recording.recordingId,
-        );
+        const blob = await recording.getBlob();
+        if (blob && blob.size > 0) {
+          ok = await session.uploadRecording(
+            blob,
+            session.sessionId,
+            recording.duration,
+            recording.recordingId,
+          );
+        } else {
+          console.warn(
+            "[InterviewFlow] No assembled blob for fallback upload — chunks remain in IndexedDB for orphan recovery.",
+          );
+        }
       }
       reportClientEvent({
         type: ok ? "recording_upload_succeeded" : "recording_upload_failed",

@@ -6,7 +6,9 @@ import {
   initMeta,
   saveChunk,
   assembleBlob,
+  getMeta,
 } from "@/lib/recordingStorage";
+import { isLowSpecDevice } from "@/lib/deviceCapability";
 
 interface VideoRecordingHook {
   isRecording: boolean;
@@ -16,7 +18,13 @@ interface VideoRecordingHook {
     screenStream: MediaStream | null,
   ) => string | null;
   stopRecording: () => Promise<{
-    blob: Blob;
+    /** Assemble the full recording Blob on demand. Only the single-shot upload
+     *  FALLBACK needs it; the primary path stitches parts server-side, so we
+     *  avoid materialising hundreds of MB in RAM at the fragile completion
+     *  moment unless it's actually required. Returns null if assembly fails. */
+    getBlob: () => Promise<Blob | null>;
+    /** Total recorded bytes, read from durable IndexedDB meta (no RAM blob). */
+    sizeBytes: number;
     duration: string;
     recordingId: string;
   } | null>;
@@ -24,21 +32,23 @@ interface VideoRecordingHook {
   getRecordingId: () => string | null;
 }
 
-const CANVAS_WIDTH = 1280;
-const CANVAS_HEIGHT = 720;
-// Webcam strip at bottom-center: 320x180
-const CAM_WIDTH = 320;
-const CAM_HEIGHT = 180;
-// The canvas-composite + VP8 software encode is the single biggest CPU
-// consumer in the interview. On 4 GB-class devices (which also tend to have
-// 2 weak cores) halve the frame rate — 8 fps is plenty for proctoring review
-// and the saved CPU goes to STT/TTS/avatar so the interview stays responsive.
-const FPS =
-  typeof navigator !== "undefined" &&
-  typeof (navigator as { deviceMemory?: number }).deviceMemory === "number" &&
-  ((navigator as { deviceMemory?: number }).deviceMemory as number) <= 4
-    ? 8
-    : 15;
+// Recording is proctoring evidence, not a cinematic capture. The canvas-
+// composite + VP8 SOFTWARE encode is the single biggest CPU/memory consumer in
+// the interview and a direct OOM-crash contributor, so on weak machines we
+// record smaller and slower. The profile is chosen at recording start from the
+// SAME low-spec heuristic that gates the 3D avatar — previously the FPS keyed
+// off RAM (`deviceMemory<=4`) while the avatar keyed off cores, so the real
+// crashing 8 GB / i5-1035G1 laptop got the HEAVY recording profile anyway.
+//   strong  → 960x540 @ 10 fps, ~1.2 Mbps
+//   weak    → 640x360 @  6 fps, ~0.7 Mbps   (≈55% fewer pixels, 40% fewer fps)
+function recordingProfile() {
+  const low = isLowSpecDevice();
+  return low
+    ? { canvasW: 640, canvasH: 360, camW: 160, camH: 90, fps: 6, videoBps: 700_000 }
+    : { canvasW: 960, canvasH: 540, camW: 240, camH: 135, fps: 10, videoBps: 1_200_000 };
+}
+// Audio is speech — 64 kbps is ample on any device.
+const AUDIO_BITS_PER_SECOND = 64_000;
 // Upper bound on how much of the recording we keep in the JS heap. IndexedDB is
 // the durable source of truth (and what stop/recovery actually upload); the
 // in-memory copy is only a last-resort fallback for when IDB itself fails. For
@@ -68,6 +78,11 @@ export function useVideoRecording(): VideoRecordingHook {
         return recordingIdRef.current;
       }
       if (!webcamStream && !screenStream) return null;
+
+      // Pick the recording profile at runtime (navigator is available here) from
+      // the shared low-spec heuristic, so weak laptops record lighter.
+      const { canvasW: CANVAS_WIDTH, canvasH: CANVAS_HEIGHT, camW: CAM_WIDTH,
+              camH: CAM_HEIGHT, fps: FPS, videoBps: VIDEO_BITS_PER_SECOND } = recordingProfile();
 
       chunksRef.current = [];
       chunkIndexRef.current = 0;
@@ -209,7 +224,11 @@ export function useVideoRecording(): VideoRecordingHook {
         ? "video/webm"
         : "";
 
-      const options = mimeType ? { mimeType } : {};
+      const options: MediaRecorderOptions = {
+        ...(mimeType ? { mimeType } : {}),
+        videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
+        audioBitsPerSecond: AUDIO_BITS_PER_SECOND,
+      };
       let recorder: MediaRecorder;
       try {
         recorder = new MediaRecorder(canvasStream, options);
@@ -269,7 +288,8 @@ export function useVideoRecording(): VideoRecordingHook {
   );
 
   const stopRecording = useCallback((): Promise<{
-    blob: Blob;
+    getBlob: () => Promise<Blob | null>;
+    sizeBytes: number;
     duration: string;
     recordingId: string;
   } | null> => {
@@ -307,18 +327,9 @@ export function useVideoRecording(): VideoRecordingHook {
 
       recorder.onstop = async () => {
         const mimeType = recorder.mimeType || "video/webm";
-        // Prefer the IDB-assembled blob because it's byte-for-byte the same
-        // bytes that will survive a crash. Fall back to in-memory chunks if
-        // IDB ever fails (e.g. Safari private mode).
-        let blob: Blob | null = null;
-        try {
-          blob = await assembleBlob(recordingId);
-        } catch {
-          blob = null;
-        }
-        if (!blob || blob.size === 0) {
-          blob = new Blob(chunksRef.current, { type: mimeType });
-        }
+        // Capture the in-memory fallback chunks for lazy assembly, then drop the
+        // refs so the heap isn't holding two copies past stop.
+        const inMemoryChunks = chunksRef.current;
         chunksRef.current = [];
         chunkIndexRef.current = 0;
         retainedBytesRef.current = 0;
@@ -330,9 +341,49 @@ export function useVideoRecording(): VideoRecordingHook {
           audioCtxRef.current = null;
         }
         setIsRecording(false);
-        resolve({ blob, duration, recordingId });
+
+        // Report size from the durable IndexedDB meta instead of materialising
+        // the whole video Blob in RAM here. Assembling a long recording
+        // (hundreds of MB) at the exact moment the interview ends — while the
+        // avatar, MediaPipe and media streams are still tearing down — was a
+        // memory-spike crash trigger. The primary upload path stitches the parts
+        // server-side and never needs this Blob; only the rarely-hit single-shot
+        // fallback does, so we assemble lazily via getBlob() on demand.
+        let sizeBytes = 0;
+        try {
+          const meta = await getMeta(recordingId);
+          sizeBytes = meta?.sizeBytes ?? 0;
+        } catch {
+          // sizeBytes stays 0 — non-fatal (used only for a log line)
+        }
+
+        const getBlob = async (): Promise<Blob | null> => {
+          // Prefer the IDB-assembled blob (byte-for-byte the durable bytes).
+          // Fall back to the retained in-memory chunks only if IDB fails
+          // (e.g. Safari private mode).
+          let blob: Blob | null = null;
+          try {
+            blob = await assembleBlob(recordingId);
+          } catch {
+            blob = null;
+          }
+          if ((!blob || blob.size === 0) && inMemoryChunks.length > 0) {
+            blob = new Blob(inMemoryChunks, { type: mimeType });
+          }
+          return blob;
+        };
+
+        resolve({ getBlob, sizeBytes, duration, recordingId });
       };
 
+      // Force the final buffered chunk out before stopping, so the last ~1s of
+      // the answer isn't lost (requestData triggers ondataavailable → IDB save
+      // before onstop runs).
+      try {
+        if (recorder.state === "recording") recorder.requestData();
+      } catch {
+        // not all implementations support requestData — onstop still flushes
+      }
       recorder.stop();
     });
   }, []);

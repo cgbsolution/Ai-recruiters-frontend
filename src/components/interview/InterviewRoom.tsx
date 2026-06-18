@@ -31,6 +31,7 @@ import { useMemoryWatchdog } from "@/hooks/interview/useMemoryWatchdog";
 import { useGlobalErrorGuard } from "@/hooks/useGlobalErrorGuard";
 import { reportClientEvent } from "@/lib/clientTelemetry";
 import { canCaptureSystemAudio } from "@/lib/browserCapabilities";
+import { isLowSpecDevice } from "@/lib/deviceCapability";
 
 const CodeEditor = dynamic(() => import("./CodeEditor"), { ssr: false });
 
@@ -82,12 +83,10 @@ const POST_SPEECH_DELAY_MS = 1200;
  *  backend self-bounds turns to ~38 s, so this ceiling almost never fires. */
 const PROCESSING_TIMEOUT_MS = 100_000;
 
-/** Heuristic for 4 GB-class devices: pre-emptively skip the 3D avatar (WebGL +
- *  GLTF ≈ 100+ MB beyond the JS heap, where the memory watchdog can't see). */
-const IS_LOW_SPEC_DEVICE =
-  typeof navigator !== "undefined" &&
-  typeof (navigator as { deviceMemory?: number }).deviceMemory === "number" &&
-  ((navigator as { deviceMemory?: number }).deviceMemory as number) <= 4;
+/** Low-spec devices pre-emptively skip the 3D avatar (WebGL + GLTF ≈ 100+ MB
+ *  beyond the JS heap) and fall back to the lightweight VoiceVisualizer. Shared
+ *  heuristic so the avatar gate and the recording-quality gate never disagree. */
+const IS_LOW_SPEC_DEVICE = isLowSpecDevice();
 
 /** Hard ceiling for the SPEAKING phase. TTS questions are short (well under a
  *  minute); if we're still "speaking" after this, the audio almost certainly
@@ -97,6 +96,15 @@ const SPEAKING_TIMEOUT_MS = 90000;
 
 /** Minimum characters of FINAL transcript required before auto-submit */
 const MIN_SUBMIT_LENGTH = 3;
+
+/** When the per-question auto-skip timer runs out but the candidate is STILL
+ *  actively speaking, re-arm for this many seconds instead of cutting them off. */
+const AUTO_SKIP_SPEECH_GRACE_SECONDS = 8;
+/** Having produced final transcript within the last N ms counts as
+ *  "still answering" for the grace check above. Set comfortably longer than a
+ *  normal mid-answer thinking pause so a brief silence can't be mistaken for
+ *  "done" and cut the candidate off. */
+const AUTO_SKIP_SPEECH_GRACE_MS = 6000;
 
 const END_COMMANDS = [
   "close interview", "end interview", "stop interview",
@@ -109,7 +117,9 @@ const END_COMMANDS = [
   "please end", "please stop", "please close",
   "want to leave", "need to leave", "want to quit",
   "terminate interview", "cancel interview",
-  "end up", "need to end up",
+  // NOTE: "end up" was removed — it is an extremely common English phrase
+  // ("we'll end up doing X") and, matched anywhere in the answer, it was
+  // silently ENDING the whole interview mid-sentence.
   "close this call", "end this call", "end call",
 ];
 
@@ -127,19 +137,31 @@ const SKIP_PHRASES = [
   "move to next", "pass this question",
 ];
 
+/**
+ * Voice commands are only honoured when they come at the END of what the
+ * candidate has said so far (ignoring trailing punctuation/whitespace). The
+ * previous `.includes()` matched the phrase ANYWHERE in the accumulated
+ * transcript, so an ordinary mid-answer phrase — "...so that's all I had on the
+ * first point, but then..." — was mistaken for "submit now" and cut the answer
+ * off (or, for END phrases, ended the whole interview). Requiring the candidate
+ * to FINISH on the phrase keeps the convenience commands working while removing
+ * the false-trigger. Candidates can always use the Stop Speaking button instead.
+ */
+function endsWithPhrase(text: string, phrases: string[]): boolean {
+  const lower = text.toLowerCase().replace(/[\s.,!?;:'"]+$/g, "");
+  return phrases.some((phrase) => lower.endsWith(phrase));
+}
+
 function isEndCommand(text: string): boolean {
-  const lower = text.toLowerCase();
-  return END_COMMANDS.some((cmd) => lower.includes(cmd));
+  return endsWithPhrase(text, END_COMMANDS);
 }
 
 function isCompletionPhrase(text: string): boolean {
-  const lower = text.toLowerCase();
-  return COMPLETION_PHRASES.some((phrase) => lower.includes(phrase));
+  return endsWithPhrase(text, COMPLETION_PHRASES);
 }
 
 function isSkipCommand(text: string): boolean {
-  const lower = text.toLowerCase();
-  return SKIP_PHRASES.some((phrase) => lower.includes(phrase));
+  return endsWithPhrase(text, SKIP_PHRASES);
 }
 
 /* ─────────────────────── Component ─────────────────────── */
@@ -209,6 +231,12 @@ export default function InterviewRoom({
   const handleSkipRef = useRef<() => void>(() => {});
   const cancelSilenceAnimRef = useRef<() => void>(() => {});
   const messagesRef = useRef(messages);
+  // Live mirrors of speech activity, read inside the auto-skip setInterval
+  // callback (which can't see fresh state/props through its closure) to decide
+  // whether the candidate is still answering before any auto-submit fires.
+  const interimTranscriptRef = useRef("");
+  const lastFinalAtRef = useRef(0);
+  const voiceStateRef = useRef<VoiceState>("idle");
 
   /* ── Draggable PIP ── */
   const [pipPos, setPipPos] = useState({ x: 16, y: 16 });
@@ -219,13 +247,6 @@ export default function InterviewRoom({
   /* ── Hooks ── */
   const { transcript, interimTranscript, finalTranscript, isListening, isSupported, lastFinalAt, micStream, error: sttError, start, stop, reset, getSnapshot } = useDeepgramSTT(interviewLanguage, sessionId);
   const { speak, cancel, isSpeaking, isLipSyncing, audioElement, error: ttsError } = useGoogleTTS(interviewLanguage);
-  const { violationCount, lastViolation, shouldTerminate, disable: disableViolations, lastFaceCountRef, reportViolation } = useViolationDetection(sessionId, true, webcamStream, jobConfig.face_match);
-  useScreenCapture(sessionId, webcamStream, !isInterviewComplete, lastFaceCountRef);
-  const secondaryCam = useSecondaryCamMonitor(sessionId, !!jobConfig.secondary_cam);
-
-  // Catch async errors React's ErrorBoundary can't see, and flag abnormal
-  // teardown (the fingerprint of a tab crash) for telemetry.
-  useGlobalErrorGuard({ duringInterview: true });
 
   // Watch the JS heap so we can shed load BEFORE Chrome force-kills the tab.
   // intervalMs=1500 — polls every 1.5 s so the avatar swap to VoiceVisualizer
@@ -233,17 +254,37 @@ export default function InterviewRoom({
   // elevatedRatio=0.55 — swap the 3D avatar out at 55% heap, well before the
   // OOM crash zone. On a 4 GB laptop Chrome's per-tab budget is ~500-700 MB;
   // at 55% we still have headroom to cleanly unmount WebGL before it's too late.
+  // Declared BEFORE useViolationDetection so MediaPipe (the single biggest
+  // consumer, ~300 MB WASM+model) is torn down under pressure too — not just
+  // the much cheaper 3D avatar.
   const { pressure } = useMemoryWatchdog({ intervalMs: 1500, elevatedRatio: 0.55, criticalRatio: 0.75 });
+
+  // Face detection no longer runs in the browser (it was the main OOM-crash
+  // driver). Behavioural proctoring stays client-side; face counting is done
+  // server-side from the uploaded screenshots.
+  const { violationCount, lastViolation, shouldTerminate, disable: disableViolations, reportViolation } = useViolationDetection(sessionId, true);
+  useScreenCapture(sessionId, webcamStream, !isInterviewComplete);
+  const secondaryCam = useSecondaryCamMonitor(sessionId, !!jobConfig.secondary_cam);
+
+  // Catch async errors React's ErrorBoundary can't see, and flag abnormal
+  // teardown (the fingerprint of a tab crash) for telemetry.
+  useGlobalErrorGuard({ duringInterview: true });
+
+  // (useMemoryWatchdog is declared above — before useViolationDetection — so the
+  //  MediaPipe detector is released under memory pressure as well.)
 
   // Live observer stream — broadcasts low-fps JPEG frames of the candidate's
   // webcam to anyone holding a valid observer link.
   // Stop entirely at elevated pressure (not just critical) — this feed is 100%
-  // optional and not worth crashing the tab over.
+  // optional and not worth crashing the tab over. Also off on low-spec devices
+  // up front: the per-frame canvas.toBlob + WebSocket send is pure overhead a
+  // weak CPU (e.g. the 1.0 GHz i5-1035G1) can't spare from the recording encode.
+  // Observers can still review the saved recording afterwards.
   useFrameStreamer({
     sessionId,
     interviewToken: interviewToken ?? null,
     webcamStream,
-    enabled: !isInterviewComplete && pressure === "normal",
+    enabled: !isInterviewComplete && pressure === "normal" && !IS_LOW_SPEC_DEVICE,
     fps: 3,
     maxWidth: 360,
     quality: 0.5,
@@ -274,6 +315,10 @@ export default function InterviewRoom({
   // STT hook (previously reconstructed by regex-stripping the interim tail off
   // `transcript`, which could over-strip a repeated phrase).
   finalTranscriptRef.current = finalTranscript.trim();
+  // Mirrors for the auto-skip timer's "still speaking?" guard.
+  interimTranscriptRef.current = interimTranscript.trim();
+  lastFinalAtRef.current = lastFinalAt;
+  voiceStateRef.current = voiceState;
 
   /* ── Keep capturedTranscriptRef in sync ── */
   useEffect(() => {
@@ -763,46 +808,63 @@ export default function InterviewRoom({
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  EFFECT: Per-question auto-skip countdown timer                */
-  /*  Resets when question index changes; auto-skips on expiry.     */
+  /*                                                                  */
+  /*  Split into two effects that CANNOT race (the old version kept  */
+  /*  `questionTimeLeft` in a dependency array while also setting it */
+  /*  every tick, which tore down/recreated the interval each second */
+  /*  and could leave two intervals running — both firing a submit). */
+  /*                                                                  */
+  /*   (A) reset the countdown when the question changes             */
+  /*   (B) run the countdown ONLY while LISTENING; on expiry         */
+  /*       auto-submit/skip — but NEVER while the candidate is still */
+  /*       actively speaking (re-arm with a grace window instead).   */
   /* ═══════════════════════════════════════════════════════════════ */
 
+  // (A) Reset the countdown whenever the question changes.
   useEffect(() => {
-    // Clear existing timer
     if (questionTimerRef.current) {
       clearInterval(questionTimerRef.current);
       questionTimerRef.current = null;
     }
-
-    // Only activate when auto_skip_timeout > 0 and we're past the intro (question 0)
     if (autoSkipTimeout <= 0 || currentQuestionIndex <= 0) {
       setQuestionTimeLeft(0);
       return;
     }
-
-    // Reset countdown for this new question
     setQuestionTimeLeft(autoSkipTimeout);
+  }, [currentQuestionIndex, autoSkipTimeout]);
+
+  // (B) Run the countdown only during LISTENING — a single interval owned by
+  //     this effect, so two timers can never coexist and double-fire. Paused
+  //     automatically while the AI speaks / we process (phase !== LISTENING).
+  useEffect(() => {
+    if (autoSkipTimeout <= 0 || currentQuestionIndex <= 0) return;
+    if (phase !== "LISTENING") return;
 
     questionTimerRef.current = setInterval(() => {
       setQuestionTimeLeft((prev) => {
-        if (prev <= 1) {
-          // Time's up — auto-submit if there's a transcript, otherwise skip
-          if (questionTimerRef.current) clearInterval(questionTimerRef.current);
+        if (prev > 1) return prev - 1;
+
+        // Countdown hit zero. If the candidate is STILL answering — mic live and
+        // mid-utterance or only just paused — do NOT submit. Re-arm with a grace
+        // window so a long answer is never truncated. THIS is the fix for
+        // "voice listening starts, then it suddenly stops and auto-submits".
+        const stillSpeaking =
+          (voiceStateRef.current === "recording" || voiceStateRef.current === "connecting") &&
+          (interimTranscriptRef.current.length > 0 ||
+            (lastFinalAtRef.current > 0 &&
+              Date.now() - lastFinalAtRef.current < AUTO_SKIP_SPEECH_GRACE_MS));
+        if (stillSpeaking) return AUTO_SKIP_SPEECH_GRACE_SECONDS;
+
+        if (questionTimerRef.current) {
+          clearInterval(questionTimerRef.current);
           questionTimerRef.current = null;
-          if (phaseRef.current === "LISTENING") {
-            setTimeout(() => {
-              if (phaseRef.current === "LISTENING" && !isSubmittingRef.current) {
-                const hasAnswer = finalTranscriptRef.current.trim().length >= MIN_SUBMIT_LENGTH;
-                if (hasAnswer) {
-                  handleSubmit();
-                } else {
-                  handleSkip();
-                }
-              }
-            }, 0);
-          }
-          return 0;
         }
-        return prev - 1;
+        if (phaseRef.current === "LISTENING" && !isSubmittingRef.current) {
+          const hasAnswer = finalTranscriptRef.current.trim().length >= MIN_SUBMIT_LENGTH;
+          if (hasAnswer) handleSubmitRef.current();
+          else handleSkipRef.current();
+        }
+        return 0;
       });
     }, 1000);
 
@@ -812,46 +874,7 @@ export default function InterviewRoom({
         questionTimerRef.current = null;
       }
     };
-  }, [currentQuestionIndex, autoSkipTimeout, handleSubmit, handleSkip]);
-
-  // Pause question timer during SPEAKING/PROCESSING, resume during LISTENING
-  useEffect(() => {
-    if (autoSkipTimeout <= 0 || currentQuestionIndex <= 0) return;
-
-    if (phase === "SPEAKING" || phase === "PROCESSING") {
-      // Pause: clear interval but keep questionTimeLeft
-      if (questionTimerRef.current) {
-        clearInterval(questionTimerRef.current);
-        questionTimerRef.current = null;
-      }
-    } else if (phase === "LISTENING" && !questionTimerRef.current && questionTimeLeft > 0) {
-      // Resume countdown
-      questionTimerRef.current = setInterval(() => {
-        setQuestionTimeLeft((prev) => {
-          if (prev <= 1) {
-            if (questionTimerRef.current) clearInterval(questionTimerRef.current);
-            questionTimerRef.current = null;
-            setTimeout(() => {
-              if (phaseRef.current === "LISTENING" && !isSubmittingRef.current) {
-                const hasAnswer = finalTranscriptRef.current.trim().length >= MIN_SUBMIT_LENGTH;
-                if (hasAnswer) {
-                  handleSubmit();
-                } else {
-                  handleSkip();
-                }
-              }
-            }, 0);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-
-    return () => {
-      // Don't clear on unmount here — the main effect handles full cleanup
-    };
-  }, [phase, autoSkipTimeout, currentQuestionIndex, questionTimeLeft, handleSubmit, handleSkip]);
+  }, [phase, autoSkipTimeout, currentQuestionIndex]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  Violation modal                                               */

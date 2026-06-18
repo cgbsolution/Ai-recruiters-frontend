@@ -9,15 +9,21 @@ const JPEG_QUALITY = 0.75;          // Balance quality vs size
 /**
  * Periodically captures a JPEG snapshot from the webcam stream and uploads it
  * to the backend. Runs silently in the background — never blocks the interview.
+ *
+ * The backend counts faces in each screenshot server-side (OpenCV), so we no
+ * longer run an in-browser face detector or send a face_count from here — that
+ * detector (MediaPipe, ~300 MB) was the main OOM-crash driver.
  */
 export function useScreenCapture(
   sessionId: number | null,
   webcamStream: MediaStream | null,
   isActive: boolean,
-  lastFaceCountRef?: React.MutableRefObject<number>,
 ) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Reused across ticks on the fallback path so we don't allocate a fresh
+  // decoder-backed <video> every 14s (a slow leak on weak machines).
+  const fallbackVideoRef = useRef<HTMLVideoElement | null>(null);
   const isUploadingRef = useRef(false);
 
   const captureAndUpload = useCallback(async () => {
@@ -26,13 +32,16 @@ export function useScreenCapture(
     const videoTrack = webcamStream.getVideoTracks()[0];
     if (!videoTrack || videoTrack.readyState !== "live") return;
 
-    // Lazy-create the off-screen canvas
-    if (!canvasRef.current) {
-      canvasRef.current = document.createElement("canvas");
-    }
-    const canvas = canvasRef.current;
-
+    // Set the in-flight guard at ENTRY (not just before fetch) so a slow capture
+    // on a weak machine can't overlap with the next interval tick.
+    isUploadingRef.current = true;
     try {
+      // Lazy-create the off-screen canvas
+      if (!canvasRef.current) {
+        canvasRef.current = document.createElement("canvas");
+      }
+      const canvas = canvasRef.current;
+
       // Use ImageCapture API if available (most modern browsers)
       if (typeof ImageCapture !== "undefined") {
         const capture = new (ImageCapture as any)(videoTrack);
@@ -44,18 +53,23 @@ export function useScreenCapture(
         ctx.drawImage(bitmap, 0, 0);
         bitmap.close();
       } else {
-        // Fallback: use a hidden video element to snapshot the stream
-        const video = document.createElement("video");
-        video.srcObject = new MediaStream([videoTrack]);
-        video.muted = true;
-        await video.play();
+        // Fallback: a single hidden video element, REUSED across ticks.
+        let video = fallbackVideoRef.current;
+        if (!video) {
+          video = document.createElement("video");
+          video.muted = true;
+          (video as HTMLVideoElement & { playsInline: boolean }).playsInline = true;
+          fallbackVideoRef.current = video;
+        }
+        if (video.srcObject == null) {
+          video.srcObject = new MediaStream([videoTrack]);
+          await video.play();
+        }
         canvas.width = video.videoWidth || 640;
         canvas.height = video.videoHeight || 480;
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        video.pause();
-        video.srcObject = null;
       }
 
       // Convert to JPEG blob
@@ -64,27 +78,21 @@ export function useScreenCapture(
       );
       if (!blob) return;
 
-      isUploadingRef.current = true;
       const form = new FormData();
       form.append("file", blob, `screenshot_${Date.now()}.jpg`);
       form.append("timestamp", new Date().toISOString());
-      if (lastFaceCountRef) {
-        form.append("face_count", String(lastFaceCountRef.current));
-      }
 
-      // Fire-and-forget — never await to block the interview
-      fetch(`${API_BASE}/interview/sessions/${sessionId}/screenshot`, {
+      await fetch(`${API_BASE}/interview/sessions/${sessionId}/screenshot`, {
         method: "POST",
         headers: sessionTokenHeader(),
         body: form,
       }).catch(() => {
         // Silently ignore upload errors — non-critical
-      }).finally(() => {
-        isUploadingRef.current = false;
       });
     } catch {
-      isUploadingRef.current = false;
       // Silently ignore any capture errors
+    } finally {
+      isUploadingRef.current = false;
     }
   }, [sessionId, webcamStream]);
 
@@ -108,6 +116,12 @@ export function useScreenCapture(
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
+      }
+      // Release the reused fallback <video> and its stream reference.
+      if (fallbackVideoRef.current) {
+        try { fallbackVideoRef.current.pause(); } catch {}
+        try { fallbackVideoRef.current.srcObject = null; } catch {}
+        fallbackVideoRef.current = null;
       }
     };
   }, [isActive, sessionId, webcamStream, captureAndUpload]);
