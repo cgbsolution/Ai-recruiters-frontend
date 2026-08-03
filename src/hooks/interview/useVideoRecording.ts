@@ -34,36 +34,34 @@ interface VideoRecordingHook {
 }
 
 // Recording is proctoring evidence: a reviewer has to be able to READ the text
-// on the candidate's shared screen. Two things previously destroyed legibility,
-// and only one of them was resolution:
+// on the candidate's shared screen. Everything here serves that.
 //
-//   1. The canvas was 960x540 (or 480x270 on weak machines).
-//   2. The webcam was drawn as a full-width strip along the BOTTOM, which stole
-//      25% of the height. The remaining area was far wider than the 16:9 screen
-//      capture, so the screen letterboxed into it and lost even more scale.
+// THE CANVAS IS 1080p AND THE SCREEN IS NEVER RESCALED.
+// Any resampling softens text, and text is the whole point. The capture is
+// already capped at 1920x1080 in useScreenShare, and the canvas matches it
+// exactly, so a 1080p monitor is copied pixel-for-pixel. Smaller screens
+// (1366x768, 1440x900) are drawn at their NATIVE size and letterboxed rather
+// than stretched up — upscaling invents no detail, it just costs bitrate and
+// adds blur. Draw offsets are rounded to whole pixels for the same reason: a
+// fractional dx/dy forces the compositor to resample an otherwise 1:1 blit.
 //
-// Net effect: a 1920x1080 shared screen landed at 0.375 scale on a strong
-// machine and 0.183 on a weak one — 14px UI text became 5.2px / 2.6px, i.e.
-// unreadable. The webcam is now a small picture-in-picture OVERLAY (which is
-// what InterviewFlow's own comment always claimed it was), so the screen gets
-// the FULL canvas. That alone nearly doubles legibility at zero encode cost.
+// History: this was 960x540 (480x270 on weak machines) with the webcam eating a
+// full-width strip along the bottom, so a 1080p screen landed at 0.375 / 0.183
+// scale and 14px UI text became 5.2px / 2.6px. It then went to 720p with the
+// webcam as a corner PiP, which was readable but still visibly soft at 0.667.
 //
-// RESOLUTION IS NOT TIERED AND NEVER CHANGES. Two reasons:
-//   - Resolution is what makes text readable; frame rate is nearly irrelevant
-//     for proctoring. So the weak-device knob is fps + bitrate, not pixels.
-//   - A rejoin mints a NEW recording segment, and the server stitches segments
-//     with ffmpeg's concat demuxer under `-c copy`, which requires every segment
-//     to share one resolution. A device that recorded segment 1 at 720p and
-//     segment 2 at 480p would produce a broken stitched file.
+// RESOLUTION IS NOT TIERED AND NEVER CHANGES. A rejoin mints a NEW recording
+// segment, and the server stitches segments with ffmpeg's concat demuxer under
+// `-c copy`, which requires every segment to share one resolution. So the
+// weak-device knob is fps + bitrate, never pixels — which is the right trade
+// anyway, since frame rate barely matters for proctoring and resolution is
+// exactly what makes text readable.
 //
-// The headroom to do this at all comes from the OOM work: in-browser MediaPipe
-// (~300 MB) was removed entirely and the 3D avatar is gated off on weak devices
-// (sound-bar visualizer instead), which freed far more than 720p costs.
-const CANVAS_WIDTH = 1280;
-const CANVAS_HEIGHT = 720;
-// Webcam PiP: 20% of canvas height, bottom-right, with a small inset margin.
-const PIP_HEIGHT = 144;
-const PIP_MARGIN = 16;
+// The headroom comes from the OOM work: in-browser MediaPipe (~300 MB) was
+// removed entirely, the 3D avatar is gated off on weak devices (sound-bar
+// visualizer instead), and the webcam is no longer composited (below).
+const CANVAS_WIDTH = 1920;
+const CANVAS_HEIGHT = 1080;
 // Floor for adaptive degradation — below ~2 fps the recording stops being
 // usable as evidence of what the candidate was doing.
 const MIN_ADAPTIVE_FPS = 2;
@@ -72,13 +70,19 @@ const MIN_ADAPTIVE_FPS = 2;
 // that gates the 3D avatar, so the two can never disagree the way they once
 // did — an 8 GB / i5-1035G1 laptop used to get the light avatar but the HEAVY
 // recording profile and crashed anyway).
-//   strong → 720p @ 10 fps, ~2.2 Mbps  (crisp text)
-//   weak   → 720p @  4 fps, ~1.1 Mbps  (same legibility, 60% fewer frames)
+//
+// The bitrates look generous for the frame rate, and that is deliberate: they
+// are a CEILING, not a target. Screen content at a few fps is mostly static, so
+// inter-frame prediction keeps the real output far below the cap — but when a
+// frame DOES change (scrolling code, switching tabs) there has to be enough
+// budget to encode the new text sharply instead of smearing it.
+//   strong → 1080p @ 8 fps, up to 4.0 Mbps
+//   weak   → 1080p @ 4 fps, up to 2.5 Mbps  (same sharpness, half the frames)
 function recordingProfile() {
   const low = isLowSpecDevice();
   return low
-    ? { fps: 4, videoBps: 1_100_000 }
-    : { fps: 10, videoBps: 2_200_000 };
+    ? { fps: 4, videoBps: 2_500_000 }
+    : { fps: 8, videoBps: 4_000_000 };
 }
 // Audio is speech — 64 kbps is ample on any device.
 const AUDIO_BITS_PER_SECOND = 64_000;
@@ -149,7 +153,16 @@ export function useVideoRecording(): VideoRecordingHook {
         screenVideoRef.current = sv;
       }
 
-      if (webcamStream) {
+      // The webcam is NOT composited into the recording. The candidate's face is
+      // already visible inside the screen capture itself (the interview UI shows
+      // their camera tile), so a second copy in the corner was redundant, ate
+      // frame area, and cost a whole extra video decode per drawn frame.
+      // Its AUDIO is still mixed in below — that part is essential.
+      //
+      // The one exception is a session with no screen share at all (denied or
+      // failed): a black rectangle would be worthless as evidence, so we fall
+      // back to recording the camera full-frame.
+      if (webcamStream && !screenStream) {
         const wv = document.createElement("video");
         wv.srcObject = webcamStream;
         wv.muted = true;
@@ -158,49 +171,34 @@ export function useVideoRecording(): VideoRecordingHook {
         webcamVideoRef.current = wv;
       }
 
-      // Draw loop: screen fills the canvas, webcam as a small PiP overlay.
+      // Draw the source at native size when it fits, centred on whole pixels.
+      // `Math.min(1, ...)` is what stops a 1366x768 laptop screen from being
+      // stretched to 1920x1080: upscaling adds no detail and only softens text.
+      // Rounding dx/dy keeps a same-size blit free of resampling.
+      const drawFitted = (src: HTMLVideoElement, srcW: number, srcH: number) => {
+        const scale = Math.min(1, CANVAS_WIDTH / srcW, CANVAS_HEIGHT / srcH);
+        const dw = Math.round(srcW * scale);
+        const dh = Math.round(srcH * scale);
+        const dx = Math.round((CANVAS_WIDTH - dw) / 2);
+        const dy = Math.round((CANVAS_HEIGHT - dh) / 2);
+        ctx.drawImage(src, dx, dy, dw, dh);
+      };
+
+      // Draw loop: the screen capture, and nothing else.
       const drawFrame = () => {
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
         const sv = screenVideoRef.current;
-        const wv = webcamVideoRef.current;
-        const hasCam = !!wv && wv.readyState >= 2;
-        const hasScreen = !!sv && sv.readyState >= 2;
-
-        // Screen share gets the WHOLE canvas — no reserved strip. Aspect-fit, so
-        // a 16:9 monitor lands pixel-for-pixel with no letterboxing at all.
-        if (hasScreen) {
-          const sw = sv!.videoWidth || CANVAS_WIDTH;
-          const sh = sv!.videoHeight || CANVAS_HEIGHT;
-          const scale = Math.min(CANVAS_WIDTH / sw, CANVAS_HEIGHT / sh);
-          const dw = sw * scale;
-          const dh = sh * scale;
-          ctx.drawImage(sv!, (CANVAS_WIDTH - dw) / 2, (CANVAS_HEIGHT - dh) / 2, dw, dh);
+        if (sv && sv.readyState >= 2) {
+          drawFitted(sv, sv.videoWidth || CANVAS_WIDTH, sv.videoHeight || CANVAS_HEIGHT);
+          return;
         }
 
-        if (hasCam && hasScreen) {
-          // Webcam as picture-in-picture, bottom-right. Small enough to leave the
-          // screen readable, large enough to identify the candidate.
-          const camAspect = (wv!.videoWidth || 4) / (wv!.videoHeight || 3);
-          const pipH = PIP_HEIGHT;
-          const pipW = Math.round(pipH * camAspect);
-          const x = CANVAS_WIDTH - pipW - PIP_MARGIN;
-          const y = CANVAS_HEIGHT - pipH - PIP_MARGIN;
-
-          ctx.fillStyle = "#111";
-          ctx.fillRect(x - 2, y - 2, pipW + 4, pipH + 4);
-          ctx.drawImage(wv!, x, y, pipW, pipH);
-          ctx.strokeStyle = "rgba(255,255,255,0.45)";
-          ctx.lineWidth = 2;
-          ctx.strokeRect(x - 1, y - 1, pipW + 2, pipH + 2);
-        } else if (hasCam) {
-          // No screen share → webcam fills the frame (aspect-fit, not stretched).
-          const camAspect = (wv!.videoWidth || 4) / (wv!.videoHeight || 3);
-          const scale = Math.min(CANVAS_WIDTH / (wv!.videoWidth || 4), CANVAS_HEIGHT / (wv!.videoHeight || 3));
-          const dw = (wv!.videoWidth || 4) * scale;
-          const dh = dw / camAspect;
-          ctx.drawImage(wv!, (CANVAS_WIDTH - dw) / 2, (CANVAS_HEIGHT - dh) / 2, dw, dh);
+        // Fallback only — no screen share in this session (see above).
+        const wv = webcamVideoRef.current;
+        if (wv && wv.readyState >= 2) {
+          drawFitted(wv, wv.videoWidth || 640, wv.videoHeight || 480);
         }
       };
 
