@@ -252,19 +252,25 @@ export async function getChunksFrom(
   fromIndex: number,
 ): Promise<{ index: number; blob: Blob }[]> {
   try {
+    // SEEK straight to fromIndex using the primary key range instead of scanning
+    // every chunk of the recording and filtering in JS. The key is
+    // `${recordingId}:${index padded to 8}`, so zero-padding makes lexicographic
+    // order == numeric order. Previously each 4s drain re-read ALL prior chunks
+    // (growing cost over a long interview) — wasteful CPU/IO on weak machines.
+    const lower = `${recordingId}:${fromIndex.toString().padStart(8, "0")}`;
+    const upper = `${recordingId}:99999999`;
     return await tx(STORE_CHUNKS, "readonly", async (t) => {
-      const idx = t.objectStore(STORE_CHUNKS).index("by_recording");
+      const store = t.objectStore(STORE_CHUNKS);
       const rows: { index: number; blob: Blob }[] = [];
       return new Promise<{ index: number; blob: Blob }[]>((resolve, reject) => {
-        const cursorReq = idx.openCursor(IDBKeyRange.only(recordingId));
+        const cursorReq = store.openCursor(IDBKeyRange.bound(lower, upper));
         cursorReq.onsuccess = () => {
           const cursor = cursorReq.result;
           if (cursor) {
             const v = cursor.value as ChunkRow;
-            if (v.index >= fromIndex) rows.push({ index: v.index, blob: v.blob });
+            rows.push({ index: v.index, blob: v.blob }); // already in key (index) order
             cursor.continue();
           } else {
-            rows.sort((a, b) => a.index - b.index);
             resolve(rows);
           }
         };

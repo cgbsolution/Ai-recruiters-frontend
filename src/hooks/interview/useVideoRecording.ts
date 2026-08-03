@@ -9,6 +9,7 @@ import {
   getMeta,
 } from "@/lib/recordingStorage";
 import { isLowSpecDevice } from "@/lib/deviceCapability";
+import { reportClientEvent } from "@/lib/clientTelemetry";
 
 interface VideoRecordingHook {
   isRecording: boolean;
@@ -32,20 +33,52 @@ interface VideoRecordingHook {
   getRecordingId: () => string | null;
 }
 
-// Recording is proctoring evidence, not a cinematic capture. The canvas-
-// composite + VP8 SOFTWARE encode is the single biggest CPU/memory consumer in
-// the interview and a direct OOM-crash contributor, so on weak machines we
-// record smaller and slower. The profile is chosen at recording start from the
-// SAME low-spec heuristic that gates the 3D avatar — previously the FPS keyed
-// off RAM (`deviceMemory<=4`) while the avatar keyed off cores, so the real
-// crashing 8 GB / i5-1035G1 laptop got the HEAVY recording profile anyway.
-//   strong  → 960x540 @ 10 fps, ~1.2 Mbps
-//   weak    → 640x360 @  6 fps, ~0.7 Mbps   (≈55% fewer pixels, 40% fewer fps)
+// Recording is proctoring evidence: a reviewer has to be able to READ the text
+// on the candidate's shared screen. Two things previously destroyed legibility,
+// and only one of them was resolution:
+//
+//   1. The canvas was 960x540 (or 480x270 on weak machines).
+//   2. The webcam was drawn as a full-width strip along the BOTTOM, which stole
+//      25% of the height. The remaining area was far wider than the 16:9 screen
+//      capture, so the screen letterboxed into it and lost even more scale.
+//
+// Net effect: a 1920x1080 shared screen landed at 0.375 scale on a strong
+// machine and 0.183 on a weak one — 14px UI text became 5.2px / 2.6px, i.e.
+// unreadable. The webcam is now a small picture-in-picture OVERLAY (which is
+// what InterviewFlow's own comment always claimed it was), so the screen gets
+// the FULL canvas. That alone nearly doubles legibility at zero encode cost.
+//
+// RESOLUTION IS NOT TIERED AND NEVER CHANGES. Two reasons:
+//   - Resolution is what makes text readable; frame rate is nearly irrelevant
+//     for proctoring. So the weak-device knob is fps + bitrate, not pixels.
+//   - A rejoin mints a NEW recording segment, and the server stitches segments
+//     with ffmpeg's concat demuxer under `-c copy`, which requires every segment
+//     to share one resolution. A device that recorded segment 1 at 720p and
+//     segment 2 at 480p would produce a broken stitched file.
+//
+// The headroom to do this at all comes from the OOM work: in-browser MediaPipe
+// (~300 MB) was removed entirely and the 3D avatar is gated off on weak devices
+// (sound-bar visualizer instead), which freed far more than 720p costs.
+const CANVAS_WIDTH = 1280;
+const CANVAS_HEIGHT = 720;
+// Webcam PiP: 20% of canvas height, bottom-right, with a small inset margin.
+const PIP_HEIGHT = 144;
+const PIP_MARGIN = 16;
+// Floor for adaptive degradation — below ~2 fps the recording stops being
+// usable as evidence of what the candidate was doing.
+const MIN_ADAPTIVE_FPS = 2;
+
+// Only fps and bitrate tier off the shared low-spec heuristic (the same one
+// that gates the 3D avatar, so the two can never disagree the way they once
+// did — an 8 GB / i5-1035G1 laptop used to get the light avatar but the HEAVY
+// recording profile and crashed anyway).
+//   strong → 720p @ 10 fps, ~2.2 Mbps  (crisp text)
+//   weak   → 720p @  4 fps, ~1.1 Mbps  (same legibility, 60% fewer frames)
 function recordingProfile() {
   const low = isLowSpecDevice();
   return low
-    ? { canvasW: 640, canvasH: 360, camW: 160, camH: 90, fps: 6, videoBps: 700_000 }
-    : { canvasW: 960, canvasH: 540, camW: 240, camH: 135, fps: 10, videoBps: 1_200_000 };
+    ? { fps: 4, videoBps: 1_100_000 }
+    : { fps: 10, videoBps: 2_200_000 };
 }
 // Audio is speech — 64 kbps is ample on any device.
 const AUDIO_BITS_PER_SECOND = 64_000;
@@ -80,9 +113,9 @@ export function useVideoRecording(): VideoRecordingHook {
       if (!webcamStream && !screenStream) return null;
 
       // Pick the recording profile at runtime (navigator is available here) from
-      // the shared low-spec heuristic, so weak laptops record lighter.
-      const { canvasW: CANVAS_WIDTH, canvasH: CANVAS_HEIGHT, camW: CAM_WIDTH,
-              camH: CAM_HEIGHT, fps: FPS, videoBps: VIDEO_BITS_PER_SECOND } = recordingProfile();
+      // the shared low-spec heuristic, so weak laptops record fewer frames.
+      // Resolution is fixed at 720p for everyone — see the note above.
+      const { fps: FPS, videoBps: VIDEO_BITS_PER_SECOND } = recordingProfile();
 
       chunksRef.current = [];
       chunkIndexRef.current = 0;
@@ -95,8 +128,16 @@ export function useVideoRecording(): VideoRecordingHook {
       const canvas = canvasRef.current;
       canvas.width = CANVAS_WIDTH;
       canvas.height = CANVAS_HEIGHT;
-      const ctx = canvas.getContext("2d");
+      // alpha:false lets the compositor skip per-pixel blending and store the
+      // backing buffer without an alpha channel — a free CPU/memory saving that
+      // matters more now that the buffer is 720p. Deliberately NOT using
+      // `desynchronized:true`: it has known interactions with captureStream, and
+      // the recording is proctoring evidence — not the place for a clever flag.
+      const ctx = canvas.getContext("2d", { alpha: false });
       if (!ctx) return null;
+      // The screen capture gets scaled DOWN into the canvas every frame; medium
+      // quality keeps small text from turning to mush without the cost of high.
+      ctx.imageSmoothingQuality = "medium";
 
       // Create hidden video elements to feed the canvas
       if (screenStream) {
@@ -117,53 +158,102 @@ export function useVideoRecording(): VideoRecordingHook {
         webcamVideoRef.current = wv;
       }
 
-      // Draw loop: screen (top) + webcam strip (bottom-center)
-      drawIntervalRef.current = setInterval(() => {
+      // Draw loop: screen fills the canvas, webcam as a small PiP overlay.
+      const drawFrame = () => {
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
         const sv = screenVideoRef.current;
         const wv = webcamVideoRef.current;
-        const hasCam = wv && wv.readyState >= 2;
-        const hasScreen = sv && sv.readyState >= 2;
+        const hasCam = !!wv && wv.readyState >= 2;
+        const hasScreen = !!sv && sv.readyState >= 2;
 
-        // Screen area = top portion, webcam strip at bottom
-        const screenAreaH = hasCam ? CANVAS_HEIGHT - CAM_HEIGHT : CANVAS_HEIGHT;
-
-        // Draw screen share
+        // Screen share gets the WHOLE canvas — no reserved strip. Aspect-fit, so
+        // a 16:9 monitor lands pixel-for-pixel with no letterboxing at all.
         if (hasScreen) {
-          const sw = sv.videoWidth || CANVAS_WIDTH;
-          const sh = sv.videoHeight || CANVAS_HEIGHT;
-          const scale = Math.min(CANVAS_WIDTH / sw, screenAreaH / sh);
+          const sw = sv!.videoWidth || CANVAS_WIDTH;
+          const sh = sv!.videoHeight || CANVAS_HEIGHT;
+          const scale = Math.min(CANVAS_WIDTH / sw, CANVAS_HEIGHT / sh);
           const dw = sw * scale;
           const dh = sh * scale;
-          const dx = (CANVAS_WIDTH - dw) / 2;
-          const dy = (screenAreaH - dh) / 2;
-          ctx.drawImage(sv, dx, dy, dw, dh);
+          ctx.drawImage(sv!, (CANVAS_WIDTH - dw) / 2, (CANVAS_HEIGHT - dh) / 2, dw, dh);
         }
 
-        // Draw webcam as bottom-center strip
-        if (hasCam) {
-          const camY = CANVAS_HEIGHT - CAM_HEIGHT;
-          const camAspect = (wv.videoWidth || 4) / (wv.videoHeight || 3);
-          const drawW = Math.min(CAM_WIDTH, CAM_HEIGHT * camAspect);
-          const drawX = (CANVAS_WIDTH - drawW) / 2;
+        if (hasCam && hasScreen) {
+          // Webcam as picture-in-picture, bottom-right. Small enough to leave the
+          // screen readable, large enough to identify the candidate.
+          const camAspect = (wv!.videoWidth || 4) / (wv!.videoHeight || 3);
+          const pipH = PIP_HEIGHT;
+          const pipW = Math.round(pipH * camAspect);
+          const x = CANVAS_WIDTH - pipW - PIP_MARGIN;
+          const y = CANVAS_HEIGHT - pipH - PIP_MARGIN;
 
           ctx.fillStyle = "#111";
-          ctx.fillRect(0, camY, CANVAS_WIDTH, CAM_HEIGHT);
-
-          ctx.strokeStyle = "rgba(255,255,255,0.3)";
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(0, camY);
-          ctx.lineTo(CANVAS_WIDTH, camY);
-          ctx.stroke();
-
-          ctx.drawImage(wv, drawX, camY, drawW, CAM_HEIGHT);
-        } else if (wv && !hasScreen) {
-          ctx.drawImage(wv, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+          ctx.fillRect(x - 2, y - 2, pipW + 4, pipH + 4);
+          ctx.drawImage(wv!, x, y, pipW, pipH);
+          ctx.strokeStyle = "rgba(255,255,255,0.45)";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x - 1, y - 1, pipW + 2, pipH + 2);
+        } else if (hasCam) {
+          // No screen share → webcam fills the frame (aspect-fit, not stretched).
+          const camAspect = (wv!.videoWidth || 4) / (wv!.videoHeight || 3);
+          const scale = Math.min(CANVAS_WIDTH / (wv!.videoWidth || 4), CANVAS_HEIGHT / (wv!.videoHeight || 3));
+          const dw = (wv!.videoWidth || 4) * scale;
+          const dh = dw / camAspect;
+          ctx.drawImage(wv!, (CANVAS_WIDTH - dw) / 2, (CANVAS_HEIGHT - dh) / 2, dw, dh);
         }
-      }, 1000 / FPS);
+      };
+
+      // ── Adaptive frame-rate governor ──────────────────────────────────────
+      // The profile used to be picked once at start and then held for the whole
+      // interview, so a machine that got into trouble mid-session had no way to
+      // shed load and just crashed. Now the draw rate backs off as the heap
+      // fills.
+      //
+      // FPS is the ONLY thing that adapts. Dropping resolution mid-recording
+      // would change the frame size inside a single WebM segment and break the
+      // server-side `-c copy` stitching, and it is also the wrong trade: text
+      // legibility is exactly what we are trying to protect. Fewer frames per
+      // second of a readable screen beats a smooth stream of unreadable mush.
+      let activeFps = FPS;
+      let tickCount = 0;
+
+      const scheduleDraw = (fps: number) => {
+        if (drawIntervalRef.current) clearInterval(drawIntervalRef.current);
+        drawIntervalRef.current = setInterval(loopTick, 1000 / fps);
+      };
+
+      const targetFpsForHeap = (): number => {
+        const mem = (performance as Performance & {
+          memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number };
+        }).memory;
+        // Unmeasurable (non-Chromium) → stay at the profile rate; the profile is
+        // already conservative on anything we detect as low-spec.
+        if (!mem || !mem.jsHeapSizeLimit) return FPS;
+        const ratio = mem.usedJSHeapSize / mem.jsHeapSizeLimit;
+        if (ratio >= 0.75) return MIN_ADAPTIVE_FPS;
+        if (ratio >= 0.55) return Math.max(MIN_ADAPTIVE_FPS, Math.floor(FPS / 2));
+        return FPS;
+      };
+
+      const loopTick = () => {
+        drawFrame();
+        // Re-evaluate roughly every 4 seconds of wall clock, not every frame.
+        if (++tickCount % Math.max(1, Math.round(activeFps * 4)) !== 0) return;
+        const want = targetFpsForHeap();
+        if (want === activeFps) return;
+        const prev = activeFps;
+        activeFps = want;
+        scheduleDraw(want);
+        console.warn(`[useVideoRecording] adaptive fps ${prev} → ${want} (heap pressure)`);
+        reportClientEvent({
+          type: "load_shed",
+          message: `recording fps ${prev} → ${want} under heap pressure`,
+          context: { from: prev, to: want, profileFps: FPS, width: CANVAS_WIDTH, height: CANVAS_HEIGHT },
+        });
+      };
+
+      scheduleDraw(activeFps);
 
       // Capture the canvas stream
       let canvasStream: MediaStream;

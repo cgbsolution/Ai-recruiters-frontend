@@ -41,8 +41,20 @@ export function useScreenShare(): ScreenShareHook {
 
   const requestScreenShare = useCallback(async (): Promise<MediaStream | null> => {
     try {
+      // Cap the captured surface at 1080p / 15 fps. Uncapped, a 4K monitor
+      // hands us 3840x2160 frames that the recorder then rescales to 720p on
+      // the CPU every single frame — one of the heaviest things a weak laptop
+      // was being asked to do. Letting the browser downscale in the compositor
+      // (GPU, effectively free) instead costs nothing in legibility, because
+      // the recording canvas is 720p either way. `max` keeps these as ceilings,
+      // so a 1366x768 laptop screen is still captured at its native size.
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { displaySurface: "monitor" } as any,
+        video: {
+          displaySurface: "monitor",
+          width: { max: 1920 },
+          height: { max: 1080 },
+          frameRate: { max: 15 },
+        } as any,
         audio: true,
       });
 

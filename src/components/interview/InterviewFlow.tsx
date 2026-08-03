@@ -9,9 +9,10 @@ import {
   updateMeta as updateRecordingMeta,
   deleteRecording as deleteStoredRecording,
 } from "@/lib/recordingStorage";
-import { reportClientEvent } from "@/lib/clientTelemetry";
+import { reportClientEvent, BUILD_ID } from "@/lib/clientTelemetry";
 import { checkInterviewCapabilities } from "@/lib/browserCapabilities";
 import { API_BASE, getSessionToken } from "@/lib/api";
+import { isLowSpecDevice } from "@/lib/deviceCapability";
 
 import WelcomeStep from "./steps/WelcomeStep";
 import EmailVerifyStep from "./steps/EmailVerifyStep";
@@ -88,6 +89,11 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   // live uploader so the video streams to the server during the interview.
   const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
 
+  // Low-spec device heads-up (shown once, early). isLowSpec is read once so it's
+  // stable across renders.
+  const [isLowSpec] = useState<boolean>(() => isLowSpecDevice());
+  const [lowSpecAck, setLowSpecAck] = useState(false);
+
   const session = useInterviewSession();
   const { startRecording, stopRecording, isRecording } = useVideoRecording();
 
@@ -106,6 +112,29 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   // memory on top of the live recording + avatar and crash the tab.
   const recoveryEnabled = !webcamStream && !screenStream && step !== "INTERVIEW";
   useOrphanRecordingRecovery({ enabled: recoveryEnabled });
+
+  // Build stamp + device report, fired ONCE on interview load. Lets you confirm
+  // — from the candidate's console or the client_events table — exactly which
+  // build ran and what the machine reported, so "I deployed but it still
+  // crashes" can be diagnosed instead of guessed.
+  useEffect(() => {
+    const nav = navigator as Navigator & { deviceMemory?: number };
+    // eslint-disable-next-line no-console
+    console.log(
+      `%c[interview-build] ${BUILD_ID}`,
+      "color:#0a0;font-weight:bold",
+      { deviceMemoryGb: nav.deviceMemory ?? "n/a", cores: navigator.hardwareConcurrency ?? "n/a", lowSpec: isLowSpecDevice() },
+    );
+    reportClientEvent({
+      type: "interview_loaded",
+      message: BUILD_ID,
+      context: {
+        deviceMemoryGb: nav.deviceMemory ?? null,
+        cores: navigator.hardwareConcurrency ?? null,
+        lowSpec: isLowSpecDevice(),
+      },
+    });
+  }, []);
 
   // As soon as we know BOTH a recordingId (recording started) and a sessionId
   // (backend session created), link them in IndexedDB. This ensures that if
@@ -554,6 +583,43 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
         <div className="text-center">
           <div className="w-12 h-12 rounded-full border-4 border-blue-600 border-t-transparent animate-spin mx-auto mb-4" />
           <p className="text-gray-500">Loading interview...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Low-spec heads-up — shown once, early (after loading, before the candidate
+  // invests in the flow), so they can close other apps or switch devices BEFORE
+  // a possible mid-interview crash. They can still continue.
+  if (
+    isLowSpec &&
+    !lowSpecAck &&
+    !["ERROR", "INTERVIEW", "COMPLETION", "FEEDBACK", "SCHEDULE_MEETING", "DONE"].includes(step)
+  ) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-white px-4">
+        <div className="max-w-md w-full text-center border border-amber-200 bg-amber-50 rounded-2xl p-8 shadow-sm">
+          <div className="text-4xl mb-3">⚠️</div>
+          <h2 className="text-lg font-semibold text-gray-800 mb-2">
+            Your device may struggle with this interview
+          </h2>
+          <p className="text-sm text-gray-600 mb-4">
+            This interview records your screen, camera and microphone at the same
+            time, which needs a fair amount of memory. We detected this computer
+            may be low on resources.
+          </p>
+          <p className="text-sm text-gray-700 font-medium mb-1">Before you continue, please:</p>
+          <ul className="text-sm text-gray-600 text-left list-disc list-inside mb-5 space-y-1">
+            <li>Close <strong>all other apps</strong> (Teams, Zoom, etc.) and extra browser tabs</li>
+            <li>If possible, <strong>restart your computer</strong> first for a clean start</li>
+            <li>Ideally, use a laptop with <strong>8&nbsp;GB+ RAM</strong> and little else running</li>
+          </ul>
+          <button
+            onClick={() => setLowSpecAck(true)}
+            className="w-full rounded-lg bg-blue-600 text-white font-medium py-2.5 hover:bg-blue-700 transition"
+          >
+            I&apos;ve closed other apps — Continue
+          </button>
         </div>
       </div>
     );

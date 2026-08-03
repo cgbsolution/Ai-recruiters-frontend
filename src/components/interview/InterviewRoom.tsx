@@ -12,7 +12,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PhoneOff, Mic, MicOff, GripVertical, SkipForward, Monitor, Square, Send, Trash2, Pencil, Check, X, AlertTriangle } from "lucide-react";
 import dynamic from "next/dynamic";
-import AvatarScene from "./AvatarScene";
 import VoiceVisualizer, { type VoiceMode } from "./VoiceVisualizer";
 import TranscriptPanel from "./TranscriptPanel";
 import ViolationModal from "./ViolationModal";
@@ -34,6 +33,12 @@ import { canCaptureSystemAudio } from "@/lib/browserCapabilities";
 import { isLowSpecDevice } from "@/lib/deviceCapability";
 
 const CodeEditor = dynamic(() => import("./CodeEditor"), { ssr: false });
+// Code-split the 3D avatar (three.js + GLTF). Statically importing it pulled
+// three.js into the interview bundle and PARSED it on every load — including on
+// weak/low-spec devices that never render the avatar (it's gated off below).
+// Dynamic import means three.js is only downloaded when the avatar actually
+// renders (strong devices), so weak laptops never pay the download/parse cost.
+const AvatarScene = dynamic(() => import("./AvatarScene"), { ssr: false });
 
 /* ─────────────────────── Types & Constants ─────────────────────── */
 

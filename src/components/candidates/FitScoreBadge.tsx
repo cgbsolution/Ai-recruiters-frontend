@@ -7,6 +7,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
+import { fitLevelForPercentage } from "@/lib/fitScore";
 
 type FitLevel = "high" | "medium" | "low" | string | null | undefined;
 
@@ -117,11 +118,7 @@ export function FitScoreTooltipContent({
 
   const resolvedLevel: "high" | "medium" | "low" = (() => {
     const pctVal = resolvedPct ?? pctFromLevel ?? percentage ?? 0;
-    if (pctVal > 0) {
-      if (pctVal >= 70) return "high";
-      if (pctVal >= 40) return "medium";
-      return "low";
-    }
+    if (pctVal > 0) return fitLevelForPercentage(pctVal);
     if (fitLevel === "high" || fitLevel === "medium" || fitLevel === "low") return fitLevel;
     return "low";
   })();
@@ -279,11 +276,7 @@ export default function FitScoreBadge({
 
   const resolvedLevel: "high" | "medium" | "low" = (() => {
     const pctVal = resolvedPct ?? pctFromLevel ?? percentage ?? 0;
-    if (pctVal > 0) {
-      if (pctVal >= 70) return "high";
-      if (pctVal >= 40) return "medium";
-      return "low";
-    }
+    if (pctVal > 0) return fitLevelForPercentage(pctVal);
     if (fitLevel === "high" || fitLevel === "medium" || fitLevel === "low") return fitLevel;
     return "low";
   })();

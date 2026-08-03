@@ -15,6 +15,16 @@
 
 import { API_BASE } from "@/lib/api";
 
+/**
+ * Build stamp. BUMP THIS STRING whenever you ship a change you want to confirm
+ * is live. It is logged to the console on interview load and attached to every
+ * telemetry event, so you can prove — from the browser console or the
+ * client_events table — exactly which build a candidate actually ran. This is
+ * the antidote to "I deployed but it looks identical" (stale cache / CDN /
+ * wrong target): if you don't see this exact string, the new build is NOT live.
+ */
+export const BUILD_ID = "v2026.06.18-weak-device-hardening-1";
+
 export type ClientEventType =
   | "js_error" // uncaught synchronous error
   | "unhandled_rejection" // uncaught promise rejection
@@ -23,6 +33,7 @@ export type ClientEventType =
   | "load_shed" // a subsystem was degraded to save the tab
   | "abnormal_unload" // page hidden/closed during the live interview
   | "session_recovered" // a prior session ended abnormally; this load resumed it
+  | "interview_loaded" // interview page mounted — carries build id + device specs
   // ── Recording lifecycle (so "video not present" is never silent) ──
   | "recording_upload_started" // upload of a finished recording began
   | "recording_upload_succeeded" // server confirmed the recording was saved
@@ -73,6 +84,7 @@ export function reportClientEvent(evt: ClientEvent): void {
 
     const payload = JSON.stringify({
       ...evt,
+      buildId: BUILD_ID,
       at: now,
       url: window.location?.href,
       userAgent: navigator.userAgent,

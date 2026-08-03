@@ -54,6 +54,7 @@ import { cn } from "@/lib/utils";
 import VideoPlayer from "@/components/evaluation/VideoPlayer";
 import { api, API_BASE } from "@/lib/api";
 import { notifySuccess, notifyError } from "@/lib/notify";
+import { FIT_LEVEL_HIGH, FIT_LEVEL_MEDIUM } from "@/lib/fitScore";
 
 const API_STATIC = API_BASE.replace(/\/api$/, "");
 
@@ -538,9 +539,9 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
   const fitTagline =
     fitPct === null
       ? "No fit data"
-      : fitPct >= 70
+      : fitPct >= FIT_LEVEL_HIGH
       ? "Strong match"
-      : fitPct >= 40
+      : fitPct >= FIT_LEVEL_MEDIUM
       ? "Partial match"
       : "Weak match";
 
@@ -1397,9 +1398,9 @@ function ResumePortfolioTab({
   const fitTheme =
     fitPct === null
       ? { bar: "bg-gray-300", ring: "ring-gray-200", label: "Not scored", text: "text-gray-500", bg: "from-gray-50 to-white border-gray-200" }
-      : fitPct >= 70
+      : fitPct >= FIT_LEVEL_HIGH
       ? { bar: "bg-emerald-500", ring: "ring-emerald-200", label: "Strong match", text: "text-emerald-600", bg: "from-emerald-50 to-white border-emerald-200" }
-      : fitPct >= 40
+      : fitPct >= FIT_LEVEL_MEDIUM
       ? { bar: "bg-amber-500", ring: "ring-amber-200", label: "Partial match", text: "text-amber-600", bg: "from-amber-50 to-white border-amber-200" }
       : { bar: "bg-rose-500", ring: "ring-rose-200", label: "Weak match", text: "text-rose-600", bg: "from-rose-50 to-white border-rose-200" };
 
