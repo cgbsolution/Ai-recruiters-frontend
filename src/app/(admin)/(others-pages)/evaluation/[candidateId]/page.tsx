@@ -181,7 +181,26 @@ interface EvaluationData {
     completed_at: string | null;
     violation_count: number;
     status: string;
+    /** Backend evaluation pipeline state: idle | processing | done | failed */
+    evaluation_state?: string | null;
+    /** Populated only when evaluation_state === "failed" */
+    evaluation_error?: string | null;
+    evaluation_state_at?: string | null;
   } | null;
+}
+
+/**
+ * A failed evaluation still writes a placeholder Evaluation row (so the UI has
+ * something to attach a retry button to), which means "a row exists" is NOT the
+ * same as "a report was generated". Anything that reports success must check for
+ * an actual score — otherwise we tell the user it worked while rendering
+ * "Evaluation couldn't be generated" right below the toast.
+ */
+function isRealEvaluation(d: EvaluationData | null | undefined): boolean {
+  const e = d?.evaluation;
+  if (!e) return false;
+  if (d?.session?.evaluation_state === "failed") return false;
+  return e.overall_score !== null && e.overall_score !== undefined;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -307,15 +326,30 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
       // Use regenerate endpoint which deletes old evaluation and re-triggers background task
       await api(`/candidates/${candidateId}/regenerate-evaluation`, { method: "POST" });
 
-      // Poll /candidates/{id}/evaluation until evaluation data appears (max 3 min)
-      const MAX_POLLS = 45;
+      // Poll /candidates/{id}/evaluation until the report is actually ready.
+      // The backend gives up after ~15 min, so poll a little past that rather
+      // than bailing at 3 min while generation is still legitimately running.
+      const MAX_POLLS = 120; // 120 x 5s = 10 min
       for (let i = 0; i < MAX_POLLS; i++) {
-        await new Promise((r) => setTimeout(r, 4000));
+        await new Promise((r) => setTimeout(r, 5000));
         try {
           const fresh = await api<EvaluationData>(`/candidates/${candidateId}/evaluation`);
-          if (fresh.evaluation) {
+
+          if (isRealEvaluation(fresh)) {
             setData(fresh);
             notifySuccess("Evaluation generated successfully!");
+            return;
+          }
+
+          // A placeholder row appeared, or the backend flagged the run as
+          // failed: report the actual reason instead of claiming success.
+          if (fresh.session?.evaluation_state === "failed" || fresh.evaluation) {
+            setData(fresh);
+            notifyError(
+              fresh.session?.evaluation_error
+                ? `Evaluation failed: ${fresh.session.evaluation_error}`
+                : "Evaluation failed to generate. Please try again."
+            );
             return;
           }
         } catch {
@@ -1071,6 +1105,14 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
                           ? "Evaluation report was not generated"
                           : "Evaluation will appear after the interview is completed."}
                       </p>
+                      {/* Show why it failed. The reason was already recorded
+                          server-side but never rendered, so every failure
+                          looked identical and undiagnosable from the UI. */}
+                      {evalFailed && session?.evaluation_error && (
+                        <p className="mx-auto mt-2 max-w-md break-words rounded-lg bg-amber-50 px-3 py-2 text-left text-[11px] font-mono text-amber-800 ring-1 ring-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20">
+                          {session.evaluation_error}
+                        </p>
+                      )}
                       {(evalFailed || session?.status === "completed" || session?.status === "terminated") && (
                         <p className="mt-1 text-xs text-gray-400">
                           Click below to {evalFailed ? "re-generate" : "generate"} it. This may take 1–3 minutes.
