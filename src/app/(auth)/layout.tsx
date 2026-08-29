@@ -22,10 +22,15 @@ export default function AuthLayout({
               <GridShape />
               <div className="flex flex-col items-center max-w-xs">
                 <Link href="/" className="block mb-4">
+                  {/* Root-relative, not "./" — a relative src resolves against
+                      the current URL, so it only happened to work on the
+                      one-segment /signin route and would 404 on any deeper
+                      auth route. */}
                   <Image
                     width={231}
                     height={48}
-                    src="./images/logo/ai-white.svg"
+                    className="h-auto w-full"
+                    src="/images/logo/ai-white.svg"
                     alt="Logo"
                   />
                 </Link>
