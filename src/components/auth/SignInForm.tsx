@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Eye, EyeOff, Loader2, Mail, Lock } from "lucide-react";
 import { toast } from "sonner";
+import ForgotPasswordModal from "@/components/auth/ForgotPasswordModal";
 
 export default function SignInForm() {
   const { login } = useAuth();
@@ -17,6 +18,7 @@ export default function SignInForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [forgotOpen, setForgotOpen] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
   // Show session expired toast if redirected from expired session
@@ -132,6 +134,15 @@ export default function SignInForm() {
                 {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
+            <div className="mt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setForgotOpen(true)}
+                className="text-sm font-medium text-brand-500 hover:text-brand-600"
+              >
+                Forgot password?
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -162,6 +173,12 @@ export default function SignInForm() {
           </Link>
         </p>
       </div>
+
+      <ForgotPasswordModal
+        open={forgotOpen}
+        onOpenChange={setForgotOpen}
+        defaultEmail={email}
+      />
     </div>
   );
 }

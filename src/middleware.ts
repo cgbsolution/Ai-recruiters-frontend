@@ -21,6 +21,9 @@ const PUBLIC_PATHS = [
   "/signup",
   "/verify-email",
   "/update-password",
+  // Reached from an emailed link by someone who cannot sign in — must not
+  // require a session.
+  "/reset-password",
   "/interview",
   "/secondary-cam",
   "/avatar-debug",
