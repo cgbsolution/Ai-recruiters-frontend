@@ -40,21 +40,36 @@ interface UserItem {
   created_at: string | null;
 }
 
+interface OrgOption {
+  id: number;
+  ref: string;
+  name: string;
+  domain: string;
+  is_active: boolean;
+}
+
 const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: "recruiter", label: "Recruiter" },
   { value: "admin", label: "Admin" },
   { value: "super_admin", label: "Super Admin" },
 ];
 
+const errorMessage = (err: unknown, fallback: string) =>
+  err instanceof Error && err.message ? err.message : fallback;
+
 export default function AccessControlView() {
   const { user: currentUser, hasRole } = useAuth();
+  const isSuperAdmin = hasRole("super_admin");
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [orgs, setOrgs] = useState<OrgOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formName, setFormName] = useState("");
   const [formEmail, setFormEmail] = useState("");
   const [formPassword, setFormPassword] = useState("");
   const [formRole, setFormRole] = useState<UserRole>("recruiter");
+  // "" = let the backend match the organization by email domain
+  const [formOrgRef, setFormOrgRef] = useState("");
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -67,9 +82,20 @@ export default function AccessControlView() {
     }
   }, []);
 
+  const fetchOrgs = useCallback(async () => {
+    try {
+      const data = await api<OrgOption[]>("/organizations/");
+      setOrgs(data);
+    } catch {
+      // silently fail — the organization pickers just stay empty
+    }
+  }, []);
+
   useEffect(() => {
-    fetchUsers().finally(() => setLoading(false));
-  }, [fetchUsers]);
+    Promise.all([fetchUsers(), isSuperAdmin ? fetchOrgs() : Promise.resolve()]).finally(() =>
+      setLoading(false)
+    );
+  }, [fetchUsers, fetchOrgs, isSuperAdmin]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,6 +110,7 @@ export default function AccessControlView() {
           email: formEmail.trim().toLowerCase(),
           password: formPassword,
           role: formRole,
+          ...(isSuperAdmin && formOrgRef ? { organization_id: formOrgRef } : {}),
         }),
       });
       setDialogOpen(false);
@@ -91,10 +118,11 @@ export default function AccessControlView() {
       setFormEmail("");
       setFormPassword("");
       setFormRole("recruiter");
+      setFormOrgRef("");
       toast.success("User created successfully");
       await fetchUsers();
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : "Failed to create user");
+      setFormError(errorMessage(err, "Failed to create user"));
     } finally {
       setSaving(false);
     }
@@ -113,8 +141,8 @@ export default function AccessControlView() {
           : `"${u.name}" activated successfully`
       );
       await fetchUsers();
-    } catch {
-      toast.error("Failed to update user status");
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, "Failed to update user status"));
     }
   };
 
@@ -127,8 +155,30 @@ export default function AccessControlView() {
       });
       toast.success(`Role updated to ${newRole.replace("_", " ")}`);
       await fetchUsers();
-    } catch {
-      toast.error("Failed to update role");
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, "Failed to update role"));
+    }
+  };
+
+  const handleOrgChange = async (u: UserItem, orgRef: string) => {
+    const org = orgs.find((o) => o.ref === orgRef);
+    if (!org) return;
+    if (
+      u.organization_id &&
+      !confirm(`Move "${u.name}" from ${u.organization_name ?? "their organization"} to ${org.name}? They will only see ${org.name}'s data.`)
+    ) {
+      return;
+    }
+    try {
+      await api(`/auth/users/${u.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organization_id: org.ref }),
+      });
+      toast.success(`"${u.name}" linked to ${org.name}`);
+      await Promise.all([fetchUsers(), fetchOrgs()]);
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, "Failed to link organization"));
     }
   };
 
@@ -162,6 +212,9 @@ export default function AccessControlView() {
     return r.value === "recruiter" || r.value === "admin";
   });
 
+  const activeOrgs = orgs.filter((o) => o.is_active);
+  const unlinkedCount = users.filter((u) => u.role !== "super_admin" && !u.organization_id).length;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -177,6 +230,13 @@ export default function AccessControlView() {
           Add User
         </Button>
       </div>
+
+      {isSuperAdmin && unlinkedCount > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+          {unlinkedCount} user{unlinkedCount === 1 ? " is" : "s are"} not linked to an organization and
+          cannot sign in. Pick an organization for them in the Organization column.
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -201,7 +261,7 @@ export default function AccessControlView() {
             <TableRow className="bg-gray-50 dark:bg-gray-700/50">
               <TableHead className="px-6">User</TableHead>
               <TableHead className="px-6">Email</TableHead>
-              {hasRole("super_admin") && (
+              {isSuperAdmin && (
                 <TableHead className="px-6">Organization</TableHead>
               )}
               <TableHead className="px-6 text-center">Role</TableHead>
@@ -220,8 +280,11 @@ export default function AccessControlView() {
             ) : (
               users.map((u) => {
                 const isSelf = u.id === currentUser?.id;
-                const isSuperAdmin = u.role === "super_admin";
-                const canModify = !isSelf && (!isSuperAdmin || hasRole("super_admin"));
+                const rowIsSuperAdmin = u.role === "super_admin";
+                const canModify = !isSelf && (!rowIsSuperAdmin || isSuperAdmin);
+                // A super admin without an organization is the global account; only
+                // tenant users (admins/recruiters) are linked from here.
+                const canLinkOrg = isSuperAdmin && canModify && !rowIsSuperAdmin;
 
                 return (
                   <TableRow key={u.id}>
@@ -232,9 +295,28 @@ export default function AccessControlView() {
                       </p>
                     </TableCell>
                     <TableCell className="px-6 text-gray-600 dark:text-gray-400">{u.email}</TableCell>
-                    {hasRole("super_admin") && (
+                    {isSuperAdmin && (
                       <TableCell className="px-6">
-                        {u.organization_name ? (
+                        {canLinkOrg ? (
+                          <select
+                            value={orgs.find((o) => o.id === u.organization_id)?.ref ?? ""}
+                            onChange={(e) => handleOrgChange(u, e.target.value)}
+                            className={`text-xs px-2 py-1 rounded-md border bg-transparent dark:bg-input/30 max-w-[180px] ${
+                              u.organization_id
+                                ? "border-input"
+                                : "border-red-300 text-red-600 dark:border-red-800 dark:text-red-400"
+                            }`}
+                          >
+                            <option value="" disabled>Not linked — select</option>
+                            {orgs
+                              .filter((o) => o.is_active || o.id === u.organization_id)
+                              .map((o) => (
+                                <option key={o.id} value={o.ref}>
+                                  {o.name} (@{o.domain}){o.is_active ? "" : " — inactive"}
+                                </option>
+                              ))}
+                          </select>
+                        ) : u.organization_name ? (
                           <Badge variant="secondary" className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-0">
                             {u.organization_name}
                           </Badge>
@@ -310,8 +392,8 @@ export default function AccessControlView() {
                                 await api(`/auth/users/${u.id}`, { method: "DELETE" });
                                 toast.success(`"${u.name}" deleted successfully`);
                                 await fetchUsers();
-                              } catch {
-                                toast.error("Failed to delete user");
+                              } catch (err: unknown) {
+                                toast.error(errorMessage(err, "Failed to delete user"));
                               }
                             }}
                             className="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30"
@@ -386,6 +468,21 @@ export default function AccessControlView() {
                   ))}
                 </select>
               </div>
+              {isSuperAdmin && formRole !== "super_admin" && (
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Organization</Label>
+                  <select
+                    value={formOrgRef}
+                    onChange={(e) => setFormOrgRef(e.target.value)}
+                    className="h-11 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] dark:bg-input/30"
+                  >
+                    <option value="">Match by email domain</option>
+                    {activeOrgs.map((o) => (
+                      <option key={o.id} value={o.ref}>{o.name} (@{o.domain})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             {formError && (
