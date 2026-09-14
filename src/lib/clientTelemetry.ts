@@ -23,7 +23,7 @@ import { API_BASE } from "@/lib/api";
  * the antidote to "I deployed but it looks identical" (stale cache / CDN /
  * wrong target): if you don't see this exact string, the new build is NOT live.
  */
-export const BUILD_ID = "v2026.06.18-weak-device-hardening-1";
+export const BUILD_ID = "v2026.09.12-spoken-mic-check-1";
 
 export type ClientEventType =
   | "js_error" // uncaught synchronous error
@@ -40,7 +40,14 @@ export type ClientEventType =
   | "recording_upload_failed" // all upload retries failed (kept in IndexedDB)
   | "recording_upload_attempt_failed" // one attempt failed; will retry
   | "recording_empty" // the recorder produced a 0-byte blob
-  | "recording_missing"; // interview ended with no recording blob at all
+  | "recording_missing" // interview ended with no recording blob at all
+  // ── Pre-interview microphone check (DeviceTestStep) ──
+  // One event per attempt. `context` carries the evidence (transcript, Deepgram
+  // voice events, dBFS numbers) so the gate's thresholds can be tuned from real
+  // candidate data instead of guesswork.
+  | "mic_check_passed" // an attempt passed, soft-passed or volume-passed
+  | "mic_check_failed" // an attempt was blocked — context.reason says why
+  | "mic_check_stt_unavailable"; // our speech service failed; fell back to volume-only
 
 export interface ClientEvent {
   type: ClientEventType;

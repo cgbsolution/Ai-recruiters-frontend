@@ -10,7 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, sessionTokenHeader } from "@/lib/api";
 
 const RECONNECT_TIMEOUT = 300; // 5 minutes
 
@@ -29,6 +29,7 @@ export default function SecondCamReconnectModal({ sessionId, disconnectedSeconds
         // init endpoint returns existing code if already created
         const res = await fetch(`${API_BASE}/secondary-cam/${sessionId}/init`, {
           method: "POST",
+          headers: sessionTokenHeader(),
         });
         if (res.ok) {
           const data = await res.json();

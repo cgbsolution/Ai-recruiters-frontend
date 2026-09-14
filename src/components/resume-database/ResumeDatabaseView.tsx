@@ -30,7 +30,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { api, apiPost, API_BASE } from "@/lib/api";
+import { api, apiPost, mediaUrl } from "@/lib/api";
 import { notifySuccess, notifyError } from "@/lib/notify";
 import BulkUploadModal from "./BulkUploadModal";
 import EditResumeModal from "./EditResumeModal";
@@ -51,6 +51,8 @@ interface ResumeItem {
   parsed_at: string | null;
   created_at: string | null;
   resume_file_path: string | null;
+  /** Signed, expiring "/media/..." link to the resume file; null when not servable. */
+  resume_file_url: string | null;
 }
 
 interface ResumeListResponse {
@@ -565,9 +567,9 @@ export default function ResumeDatabaseView() {
                           >
                             <RefreshCw className={cn("h-3.5 w-3.5", isReparsing && "animate-spin")} />
                           </button>
-                          {item.resume_file_path && (
+                          {item.resume_file_url && (
                             <a
-                              href={`${API_BASE.replace(/\/api$/, "")}/${item.resume_file_path.replace(/\\/g, "/")}`}
+                              href={mediaUrl(item.resume_file_url)}
                               target="_blank"
                               rel="noopener noreferrer"
                               title="View Resume"

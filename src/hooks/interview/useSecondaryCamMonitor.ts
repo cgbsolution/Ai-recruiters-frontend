@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, sessionTokenHeader } from "@/lib/api";
 
 interface SecondaryCamState {
   isConnected: boolean;
@@ -34,7 +34,9 @@ export function useSecondaryCamMonitor(
 
   const poll = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/secondary-cam/${sessionId}/status`);
+      const res = await fetch(`${API_BASE}/secondary-cam/${sessionId}/status`, {
+        headers: sessionTokenHeader(),
+      });
       if (!res.ok) return;
       const data = await res.json();
 

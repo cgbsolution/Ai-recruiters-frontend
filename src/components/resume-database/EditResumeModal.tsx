@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
 import { notifySuccess, notifyError } from "@/lib/notify";
-import { API_BASE } from "@/lib/api";
+import { api } from "@/lib/api";
 
 interface ResumeItem {
   id: number;
@@ -80,13 +80,12 @@ export default function EditResumeModal({ open, onClose, resume, onUpdated }: Ed
         return;
       }
 
-      const res = await fetch(`${API_BASE}/resume-database/${resume.id}`, {
+      // api() attaches the Bearer token — the resume-database router requires it.
+      const data = await api<ResumeItem>(`/resume-database/${resume.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error("Failed to update");
-      const data = await res.json();
       notifySuccess("Resume updated");
       onUpdated(data);
       onClose();

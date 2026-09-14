@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { ArrowLeft, Mail, ShieldCheck, Loader2 } from "lucide-react";
 
 interface VerifyResult {
-  access: "granted" | "apply" | "completed" | "terminated";
+  access: "granted" | "apply" | "completed" | "terminated" | "invite_required" | "invalid_invite" | "error";
   candidateName?: string;
   canResume: boolean;
   message: string;
@@ -28,6 +28,9 @@ interface Props {
   onShowApply: (email: string, name?: string) => void;
   onBack?: () => void;
   initialEmail?: string;
+  /** Message to show inline on first render (e.g. an auto-verify from a
+   *  legacy ?candidate= link that answered "invite_required"). */
+  initialError?: string;
 }
 
 export default function EmailVerifyStep({
@@ -36,10 +39,11 @@ export default function EmailVerifyStep({
   onShowApply,
   onBack,
   initialEmail,
+  initialError,
 }: Props) {
   const [email, setEmail] = useState(initialEmail ?? "");
   const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(initialError ?? null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,6 +71,14 @@ export default function EmailVerifyStep({
         break;
       case "terminated":
         setErrorMsg(result.message);
+        break;
+      case "invite_required":
+      case "invalid_invite":
+        // This candidate has a personal link — email alone doesn't admit them.
+        setErrorMsg(result.message || "Please open the personal interview link from your invitation email.");
+        break;
+      case "error":
+        setErrorMsg(result.message || "Verification failed. Please try again.");
         break;
     }
 

@@ -290,7 +290,7 @@ function MessageRenderer({ message, onSend }: { message: AIMessage; onSend: (t: 
     return (
       <div className="flex items-start gap-2">
         {Avatar}
-        <SuccessCard jobId={message.jobId} jobTitle={message.jobTitle} />
+        <SuccessCard jobRef={message.jobRef} jobTitle={message.jobTitle} />
       </div>
     );
   }
@@ -464,7 +464,7 @@ function MetaChip({ icon: Icon, children }: { icon: LucideIcon; children: React.
 
 /* ═════════════════════════════ Success card ════════════════════════════════ */
 
-function SuccessCard({ jobId, jobTitle }: { jobId: number; jobTitle: string }) {
+function SuccessCard({ jobRef, jobTitle }: { jobRef: string; jobTitle: string }) {
   const router = useRouter();
   const { closePanel } = useAIAssistant();
 
@@ -492,7 +492,7 @@ function SuccessCard({ jobId, jobTitle }: { jobId: number; jobTitle: string }) {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => go(`/job-openings/${jobId}/candidates`)}
+              onClick={() => go(`/job-openings/${jobRef}/candidates`)}
               className="h-8 gap-1.5 rounded-lg text-xs"
             >
               <Users className="h-3.5 w-3.5" />

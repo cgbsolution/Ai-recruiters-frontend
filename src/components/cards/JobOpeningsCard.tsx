@@ -56,6 +56,8 @@ import { notifyError, notifySuccess } from "@/lib/notify";
 
 type Job = {
   id: number;
+  /** Opaque id used in page URLs instead of the numeric id. */
+  ref: string;
   title: string;
   department: string;
   location: string;
@@ -152,12 +154,13 @@ export const JobsOpeningsCard = () => {
     });
   };
 
-  const handleEditJob = (jobId: number) => {
-    router.push(`/job-openings/update/${jobId}`);
+  // Page URLs use the job's opaque ref, never the numeric id.
+  const handleEditJob = (jobRef: string) => {
+    router.push(`/job-openings/update/${jobRef}`);
   };
 
-  const handleViewDetails = (jobId: number) => {
-    router.push(`/job-openings/${jobId}/candidates`);
+  const handleViewDetails = (jobRef: string) => {
+    router.push(`/job-openings/${jobRef}/candidates`);
   };
 
   const handleDuplicateJob = async (jobId: number) => {
@@ -171,6 +174,7 @@ export const JobsOpeningsCard = () => {
         status: "Draft",
         created_at: new Date().toISOString(),
         id: undefined,
+        ref: undefined,
       };
 
       const newJob = await apiPost<Job>("/jobs/", duplicatedJob);
@@ -302,7 +306,7 @@ export const JobsOpeningsCard = () => {
                     <div className="shrink-0">
                       {/* <PencilIcon
                         className="w-4 h-4 text-gray-400 cursor-pointer hover:text-gray-600"
-                        onClick={() => handleEditJob(job.id)}
+                        onClick={() => handleEditJob(job.ref)}
                       /> */}
                       <span
                         className={`px-2.5 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${
@@ -363,7 +367,7 @@ export const JobsOpeningsCard = () => {
                     size="sm"
                     variant="primary"
                     className="flex-1"
-                    onClick={() => handleViewDetails(job.id)}
+                    onClick={() => handleViewDetails(job.ref)}
                   >
                     View Candidates
                   </Button>
@@ -375,7 +379,7 @@ export const JobsOpeningsCard = () => {
                       </div>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleEditJob(job.id)}>
+                      <DropdownMenuItem onClick={() => handleEditJob(job.ref)}>
                         <PencilIcon className="h-4 w-4 mr-2" />
                         Edit Opening
                       </DropdownMenuItem>

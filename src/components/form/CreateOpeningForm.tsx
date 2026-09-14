@@ -1,5 +1,5 @@
 "use client";
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import AIJDModal, { type AIGeneratedJD } from "@/components/modals/AIJDModal";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
@@ -118,6 +118,8 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
   const [openings, setOpenings] = useState<number>(1);
   const [empType, setEmpType] = useState<string>("Permanent");
   const [uploadJD, setUploadJD] = useState<File | null>(null);
+  // Last JD file stored via POST /uploads/jd and its returned URL.
+  const uploadedJdRef = useRef<{ file: File; url: string } | null>(null);
   const [open, setOpen] = useState(false);
 
   // ---------- STEP 2 (Responsibilities) ----------
@@ -793,6 +795,30 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
       return;
     }
 
+    // Attach the chosen JD file by the URL POST /uploads/jd returns — the API
+    // only accepts that shape for upload_jd, not a bare local file name.
+    // Reuse a previous upload of the same file (e.g. retry after a failed
+    // save), and never let a failed upload block saving the job itself.
+    let uploadJdUrl = "";
+    if (uploadJD) {
+      if (uploadedJdRef.current?.file === uploadJD) {
+        uploadJdUrl = uploadedJdRef.current.url;
+      } else {
+        try {
+          const jdForm = new FormData();
+          jdForm.append("file", uploadJD);
+          const uploaded = await apiUpload<{ filename: string; url: string }>("/uploads/jd", jdForm);
+          if (uploaded?.url) {
+            uploadJdUrl = uploaded.url;
+            uploadedJdRef.current = { file: uploadJD, url: uploaded.url };
+          }
+        } catch (err: unknown) {
+          const msg = err instanceof ApiError ? err.detail : (err instanceof Error ? err.message : String(err));
+          notifyError(`The JD file could not be attached (${msg}). The job will be saved without it.`);
+        }
+      }
+    }
+
     const interview_payload = {
       code_editor_required: interviewSettings.codeEditor,
       resume_based: interviewSettings.resumeBased,
@@ -856,7 +882,7 @@ export default function CreateOpeningForm({ jobId }: CreateOpeningFormProps) {
           : []),
       ],
       allow_to_contact: interviewSettings.allowCandidateContact,
-      upload_jd: uploadJD ? uploadJD.name : "",
+      upload_jd: uploadJdUrl,
     };
 
     try {

@@ -176,6 +176,17 @@ export async function apiDownload(path: string, options: ApiOptions = {}): Promi
   }
 }
 
+/**
+ * Absolute URL for a signed media path returned by the API ("/media/...?exp=&sig=").
+ * Uploads are no longer publicly served — only these short-lived signed links
+ * work, and they can be used directly in <img>/<video>/<iframe>/<a href>.
+ */
+export function mediaUrl(path?: string | null): string | undefined {
+  if (!path) return undefined;
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${API_BASE.replace(/\/api$/, "")}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
 /** Trigger a browser "Save As" for a Blob. */
 export function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);

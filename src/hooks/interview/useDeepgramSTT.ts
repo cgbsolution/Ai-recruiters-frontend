@@ -3,6 +3,27 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE, sessionTokenHeader } from "@/lib/api";
 
+/** Why speech-to-text failed, at the granularity the microphone check needs to
+ *  tell the candidate what to actually do about it. */
+export type DeepgramErrorKind =
+  | "mic_not_allowed"
+  | "mic_not_found"
+  | "mic_busy"
+  | "recorder"
+  | "token"
+  | "ws";
+
+export interface DeepgramDiagnostics {
+  /** A Deepgram WebSocket is open right now. */
+  connected: boolean;
+  /** Deepgram's own server-side voice detection (vad_events=true) fired this
+   *  many times — proof that audio carrying speech actually reached them. */
+  speechStartedCount: number;
+  errorKind: DeepgramErrorKind | null;
+  /** HTTP status of the last /interview/deepgram-token response, if any. */
+  tokenStatus: number | null;
+}
+
 interface DeepgramSTTHook {
   transcript: string;
   interimTranscript: string;
@@ -24,6 +45,9 @@ interface DeepgramSTTHook {
   stop: () => string;
   reset: () => void;
   getSnapshot: () => string;
+  /** Ref-backed diagnostics for the pre-interview microphone check. Reading
+   *  them never triggers a render, so the interview room is unaffected. */
+  getDiagnostics: () => DeepgramDiagnostics;
 }
 
 const DG_LANG_MAP: Record<string, string> = {
@@ -35,6 +59,21 @@ const DG_LANG_MAP: Record<string, string> = {
  *  100 ms chunks → 600 ≈ 60 s of audio. Past that we drop the OLDEST chunks:
  *  without a cap, a connection that never comes back grew the buffer forever. */
 const MAX_BUFFERED_CHUNKS = 600;
+
+/** Map a getUserMedia rejection to the cause the candidate can act on. */
+function micErrorKind(err: unknown): DeepgramErrorKind {
+  const name = (err as { name?: string } | null)?.name || "";
+  if (name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError") {
+    return "mic_not_allowed";
+  }
+  if (name === "NotFoundError" || name === "DevicesNotFoundError" || name === "OverconstrainedError") {
+    return "mic_not_found";
+  }
+  // NotReadableError / AbortError / TrackStartError — and anything unknown:
+  // the device exists but won't open, which in practice means another app (or
+  // the OS) is holding it, so "close other apps" is the advice that helps.
+  return "mic_busy";
+}
 
 /**
  * Deepgram real-time STT via WebSocket.
@@ -62,6 +101,14 @@ export function useDeepgramSTT(language: string = "en", sessionId?: number | nul
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
 
+  // ── Diagnostics. Refs, not state, so a voice-activity event never re-renders
+  //    the interview room. Read through getDiagnostics() by DeviceTestStep.
+  const startSeqRef = useRef(0);
+  const connectedRef = useRef(false);
+  const speechStartedRef = useRef(0);
+  const errorKindRef = useRef<DeepgramErrorKind | null>(null);
+  const tokenStatusRef = useRef<number | null>(null);
+
   const isSupported =
     typeof window !== "undefined" &&
     !!navigator?.mediaDevices?.getUserMedia &&
@@ -82,6 +129,7 @@ export function useDeepgramSTT(language: string = "en", sessionId?: number | nul
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
+    connectedRef.current = false;
     setMicStream(null);
   }, []);
 
@@ -97,6 +145,13 @@ export function useDeepgramSTT(language: string = "en", sessionId?: number | nul
     setLastFinalAt(0);
     setError(null);
     activeRef.current = true;
+    // Bumped by stop(), by unmount and by every start(). The guard after the
+    // getUserMedia await below uses it to tell "still the current start" from
+    // "superseded while the permission prompt was open".
+    const seq = ++startSeqRef.current;
+    errorKindRef.current = null;
+    tokenStatusRef.current = null;
+    speechStartedRef.current = 0;
 
     // Get microphone FIRST — start recording immediately to not lose any words
     let stream: MediaStream;
@@ -104,10 +159,19 @@ export function useDeepgramSTT(language: string = "en", sessionId?: number | nul
       stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true }
       });
+      // stop(), unmount or a second start() landed while we were awaiting the
+      // permission prompt. Without this the stream and its MediaRecorder stay
+      // alive forever — connect() bails on !activeRef and nothing ever stops
+      // the tracks, so the browser's microphone indicator never goes off.
+      if (!activeRef.current || seq !== startSeqRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       streamRef.current = stream;
       setMicStream(stream);
-    } catch {
+    } catch (err) {
       console.error("[Deepgram] Microphone denied");
+      errorKindRef.current = micErrorKind(err);
       activeRef.current = false;
       setIsListening(false);
       // Surface the failure — without this the UI flips to "recording" on a
@@ -129,6 +193,7 @@ export function useDeepgramSTT(language: string = "en", sessionId?: number | nul
       recorder = new MediaRecorder(stream, { mimeType });
     } catch (err) {
       console.error("[Deepgram] MediaRecorder construction failed:", err);
+      errorKindRef.current = "recorder";
       activeRef.current = false;
       stream.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -156,6 +221,7 @@ export function useDeepgramSTT(language: string = "en", sessionId?: number | nul
       recorder.start(100);
     } catch (err) {
       console.error("[Deepgram] recorder.start() failed:", err);
+      errorKindRef.current = "recorder";
       activeRef.current = false;
       stream.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -187,6 +253,9 @@ export function useDeepgramSTT(language: string = "en", sessionId?: number | nul
           `${API_BASE}/interview/deepgram-token${sid ? `?session_id=${sid}` : ""}`,
           { headers: sessionTokenHeader() },
         );
+        // Kept for the microphone check: 401/403 means the session itself is
+        // bad (reload), while 429/5xx means our service is down (don't block).
+        tokenStatusRef.current = res.status;
         const data = await res.json();
         if (!data.key) return null;
         return { key: data.key, scheme: data.scheme === "bearer" ? "bearer" : "token" };
@@ -207,6 +276,7 @@ export function useDeepgramSTT(language: string = "en", sessionId?: number | nul
           reconnectAttempts += 1;
           setTimeout(() => { if (activeRef.current) void connect(); }, 500 * reconnectAttempts);
         } else {
+          errorKindRef.current = "token";
           setError("Transcription service unavailable (could not authorize). Please check your connection or contact support.");
         }
         return;
@@ -227,6 +297,7 @@ export function useDeepgramSTT(language: string = "en", sessionId?: number | nul
 
       ws.onopen = () => {
         reconnectAttempts = 0;
+        connectedRef.current = true;
         setError(null);
         setIsListening(true);
         // Flush audio buffered while (re)connecting so no words are lost.
@@ -240,6 +311,14 @@ export function useDeepgramSTT(language: string = "en", sessionId?: number | nul
         if (!activeRef.current) return;
         try {
           const msg = JSON.parse(event.data);
+          // vad_events=true: Deepgram's own start-of-speech detection. The
+          // interview ignores it; the microphone check uses it as proof that
+          // audio carrying real speech reached Deepgram, which is what tells a
+          // dead microphone apart from a merely poor transcription.
+          if (msg.type === "SpeechStarted") {
+            speechStartedRef.current += 1;
+            return;
+          }
           if (msg.type === "Results") {
             const alt = msg.channel?.alternatives?.[0];
             if (!alt) return;
@@ -272,6 +351,7 @@ export function useDeepgramSTT(language: string = "en", sessionId?: number | nul
       ws.onerror = () => console.warn("[Deepgram] WebSocket error (will auto-reconnect if unexpected)");
 
       ws.onclose = (e) => {
+        connectedRef.current = false;
         // Intentional stop() sets activeRef=false BEFORE closing — don't reconnect.
         if (!activeRef.current) {
           setIsListening(false);
@@ -286,6 +366,7 @@ export function useDeepgramSTT(language: string = "en", sessionId?: number | nul
           setTimeout(() => { if (activeRef.current) void connect(); }, Math.min(2000, 300 * reconnectAttempts));
         } else {
           console.error(`[Deepgram] Reconnect attempts exhausted — STT stopped (last close code ${e.code})`);
+          errorKindRef.current = "ws";
           setError("Transcription stopped (the speech service kept disconnecting). This is often an API quota/credit issue — please contact support.");
           setIsListening(false);
           // Nothing will consume further audio — stop the recorder and release
@@ -309,6 +390,9 @@ export function useDeepgramSTT(language: string = "en", sessionId?: number | nul
 
   const stop = useCallback((): string => {
     activeRef.current = false;
+    // Invalidate any start() still awaiting getUserMedia, so the stream it is
+    // about to receive is stopped instead of leaking.
+    startSeqRef.current += 1;
     cleanup();
 
     // Save any pending interim
@@ -339,9 +423,16 @@ export function useDeepgramSTT(language: string = "en", sessionId?: number | nul
     return (textRef.current + " " + interimRef.current).trim();
   }, []);
 
+  const getDiagnostics = useCallback((): DeepgramDiagnostics => ({
+    connected: connectedRef.current,
+    speechStartedCount: speechStartedRef.current,
+    errorKind: errorKindRef.current,
+    tokenStatus: tokenStatusRef.current,
+  }), []);
+
   useEffect(() => {
-    return () => { activeRef.current = false; cleanup(); };
+    return () => { activeRef.current = false; startSeqRef.current += 1; cleanup(); };
   }, [cleanup]);
 
-  return { transcript, interimTranscript, finalTranscript, isListening, isSupported, lastFinalAt, micStream, error, start, stop, reset, getSnapshot };
+  return { transcript, interimTranscript, finalTranscript, isListening, isSupported, lastFinalAt, micStream, error, start, stop, reset, getSnapshot, getDiagnostics };
 }

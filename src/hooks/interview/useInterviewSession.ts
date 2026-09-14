@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, apiPost, apiUpload, ApiError, setSessionToken } from "@/lib/api";
+import { api, apiPost, apiUpload, ApiError, getSessionToken, setSessionToken } from "@/lib/api";
 import {
   updateMeta as updateRecordingMeta,
   deleteRecording as deleteStoredRecording,
@@ -88,6 +88,17 @@ export interface MeetingSlot {
 
 export type EvaluationStatus = "idle" | "processing" | "completed" | "failed";
 
+/** verify-access outcomes, plus "error" when the request itself failed
+ *  (network / timeout / server error) — `message` then says what to do. */
+export type AccessOutcome =
+  | "granted"
+  | "apply"
+  | "completed"
+  | "terminated"
+  | "invite_required"
+  | "invalid_invite"
+  | "error";
+
 interface InterviewSessionHook {
   sessionId: number | null;
   candidateId: number | null;
@@ -95,8 +106,6 @@ interface InterviewSessionHook {
   questionStates: QuestionState[];
   isAiThinking: boolean;
   isInterviewComplete: boolean;
-  isExistingUser: boolean;
-  alreadyCompleted: boolean;
   canResume: boolean;
   sessionStatus: string | null;
   evaluation: EvaluationResult | null;
@@ -105,15 +114,9 @@ interface InterviewSessionHook {
   error: string | null;
   retryEvaluation: () => Promise<void>;
   loadJobConfig: (token: string) => Promise<{ config: JobConfig } | { error: string }>;
-  registerCandidate: (
-    token: string,
-    name: string,
-    email: string,
-    phone: string | undefined,
-    resumePath: string
-  ) => Promise<true | false | null>;
-  verifyAccess: (token: string, email: string) => Promise<{
-    access: "granted" | "apply" | "completed" | "terminated";
+  /** Personal invite link → `{ invite }`; email form / legacy ?candidate= link → `{ email }`. */
+  verifyAccess: (token: string, credentials: { invite?: string; email?: string }) => Promise<{
+    access: AccessOutcome;
     candidateName?: string;
     canResume: boolean;
     message: string;
@@ -123,8 +126,6 @@ interface InterviewSessionHook {
     allowJoiningEarly?: boolean;
   }>;
   applyForJob: (token: string, name: string, email: string, phone: string | undefined, resumePath: string) => Promise<{ success: boolean; message: string }>;
-  autoRegister: (token: string, email: string) => Promise<true | false | null>;
-  loginCandidate: (token: string, email: string) => Promise<"ok" | "resume" | "completed" | "not_found" | "error">;
   resumeSession: () => Promise<boolean>;
   startInterview: (language?: string) => Promise<void>;
   sendMessage: (text: string) => Promise<boolean>;
@@ -147,8 +148,6 @@ export function useInterviewSession(): InterviewSessionHook {
   const [questionStates, setQuestionStates] = useState<QuestionState[]>([]);
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [isInterviewComplete, setIsInterviewComplete] = useState(false);
-  const [isExistingUser, setIsExistingUser] = useState(false);
-  const [alreadyCompleted, setAlreadyCompleted] = useState(false);
   const [canResume, setCanResume] = useState(false);
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
   const [evaluation, setEvaluation] = useState<EvaluationResult | null>(null);
@@ -203,10 +202,14 @@ export function useInterviewSession(): InterviewSessionHook {
   }, []);
 
   const verifyAccess = useCallback(
-    async (token: string, email: string) => {
+    async (token: string, credentials: { invite?: string; email?: string }) => {
+      // Send exactly one credential: the invite wins when the link carries one.
+      const body = credentials.invite ? { invite: credentials.invite } : { email: credentials.email };
+      // Never log the invite secret itself.
+      const via = credentials.invite ? "personal invite link" : credentials.email;
       try {
-        console.log(`[Interview] Verifying access for: ${email}, token: ${token.slice(0, 8)}...`);
-        const data = await apiPost<any>(`/interview/${token}/verify-access`, { email }, { timeout: 45_000 });
+        console.log(`[Interview] Verifying access via: ${via}, token: ${token.slice(0, 8)}...`);
+        const data = await apiPost<any>(`/interview/${token}/verify-access`, body, { timeout: 45_000 });
         console.log("[Interview] Access result:", { access: data.access, canResume: data.can_resume, sessionId: data.session_id, message: data.message });
         if (data.session_id) setSessionId(data.session_id);
         if (data.candidate_id) setCandidateId(data.candidate_id);
@@ -214,10 +217,10 @@ export function useInterviewSession(): InterviewSessionHook {
         setCanResume(data.can_resume ?? false);
         setSessionStatus(data.session_status ?? null);
         return {
-          access: data.access as "granted" | "apply" | "completed" | "terminated",
+          access: data.access as AccessOutcome,
           candidateName: data.candidate_name ?? undefined,
           canResume: data.can_resume ?? false,
-          message: data.message,
+          message: data.message ?? "",
           interviewDate: data.interview_date ?? undefined,
           interviewTimezone: data.interview_timezone ?? undefined,
           joiningFlexibility: data.joining_flexibility ?? undefined,
@@ -226,9 +229,17 @@ export function useInterviewSession(): InterviewSessionHook {
       } catch (e: any) {
         const status = e instanceof ApiError ? e.status : 0;
         const msg = e instanceof ApiError ? e.detail : e.message;
-        console.error("[Interview] verifyAccess failed:", { status, message: msg, email, error: e });
+        console.error("[Interview] verifyAccess failed:", { status, message: msg, via, error: e });
         setError(msg);
-        return { access: "apply" as const, canResume: false, message: "Verification failed. Please try again." };
+        // "error", not "apply": a failed request says nothing about whether the
+        // candidate was invited, so callers show a retryable message instead.
+        const message =
+          status === 0
+            ? "Network error — please check your internet connection and try again."
+            : typeof msg === "string" && msg
+              ? msg
+              : "Verification failed. Please try again.";
+        return { access: "error" as const, canResume: false, message };
       }
     },
     []
@@ -246,86 +257,6 @@ export function useInterviewSession(): InterviewSessionHook {
         return { success: data.success, message: data.message };
       } catch (e: any) {
         return { success: false, message: e instanceof ApiError ? e.detail : (e.message || "Application failed") };
-      }
-    },
-    []
-  );
-
-  const registerCandidate = useCallback(
-    async (
-      token: string,
-      name: string,
-      email: string,
-      phone: string | undefined,
-      resumePath: string
-    ): Promise<true | false | null> => {
-      try {
-        const data = await apiPost<any>(`/interview/${token}/register`, {
-          name,
-          email,
-          phone,
-          resume_path: resumePath,
-        });
-        setSessionId(data.session_id);
-        setCandidateId(data.candidate_id);
-        if (data.session_token) setSessionToken(data.session_token);
-        setIsExistingUser(data.is_existing_user ?? false);
-        setAlreadyCompleted(data.already_completed ?? false);
-        setCanResume(data.can_resume ?? false);
-        setSessionStatus(data.session_status ?? null);
-        if (data.already_completed) return null;
-        return true;
-      } catch (e: any) {
-        setError(e instanceof ApiError ? e.detail : e.message);
-        return false;
-      }
-    },
-    []
-  );
-
-  const autoRegister = useCallback(
-    async (token: string, email: string): Promise<true | false | null> => {
-      try {
-        const data = await apiPost<any>(
-          `/interview/${token}/auto-register?email=${encodeURIComponent(email)}`,
-          {}
-        );
-        setSessionId(data.session_id);
-        setCandidateId(data.candidate_id);
-        if (data.session_token) setSessionToken(data.session_token);
-        setIsExistingUser(data.is_existing_user ?? false);
-        setAlreadyCompleted(data.already_completed ?? false);
-        setCanResume(data.can_resume ?? false);
-        setSessionStatus(data.session_status ?? null);
-        if (data.already_completed) return null;
-        return true;
-      } catch (e: any) {
-        setError(e instanceof ApiError ? e.detail : e.message);
-        return false;
-      }
-    },
-    []
-  );
-
-  const loginCandidate = useCallback(
-    async (token: string, email: string): Promise<"ok" | "resume" | "completed" | "not_found" | "error"> => {
-      try {
-        const data = await apiPost<any>(`/interview/${token}/login`, { email });
-        setSessionId(data.session_id);
-        setCandidateId(data.candidate_id);
-        if (data.session_token) setSessionToken(data.session_token);
-        setIsExistingUser(true);
-        setCanResume(data.can_resume ?? false);
-        setSessionStatus(data.session_status ?? null);
-        if (data.already_completed) {
-          setAlreadyCompleted(true);
-          return "completed";
-        }
-        return data.can_resume ? "resume" : "ok";
-      } catch (e: any) {
-        if (e instanceof ApiError && e.status === 404) return "not_found";
-        setError(e instanceof ApiError ? e.detail : e.message);
-        return "error";
       }
     },
     []
@@ -648,7 +579,14 @@ export function useInterviewSession(): InterviewSessionHook {
       );
 
       if (recordingId) {
-        await updateRecordingMeta(recordingId, { sessionId: sid, duration });
+        // Keep the session token with the chunks: if every attempt below fails,
+        // orphan recovery needs it to authenticate the upload on a later load.
+        const st = getSessionToken();
+        await updateRecordingMeta(recordingId, {
+          sessionId: sid,
+          duration,
+          ...(st ? { sessionToken: st } : {}),
+        });
       }
 
       // Refuse to confirm success for an empty blob — the server might accept
@@ -775,8 +713,6 @@ export function useInterviewSession(): InterviewSessionHook {
     questionStates,
     isAiThinking,
     isInterviewComplete,
-    isExistingUser,
-    alreadyCompleted,
     canResume,
     sessionStatus,
     evaluation,
@@ -787,9 +723,6 @@ export function useInterviewSession(): InterviewSessionHook {
     loadJobConfig,
     verifyAccess,
     applyForJob,
-    registerCandidate,
-    autoRegister,
-    loginCandidate,
     resumeSession,
     startInterview,
     sendMessage,

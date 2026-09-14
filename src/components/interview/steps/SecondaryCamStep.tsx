@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Camera, CheckCircle, Loader2, Smartphone, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, sessionTokenHeader } from "@/lib/api";
 
 interface Props {
   sessionId: number;
@@ -25,6 +25,7 @@ export default function SecondaryCamStep({ sessionId, onVerified }: Props) {
       try {
         const res = await fetch(`${API_BASE}/secondary-cam/${sessionId}/init`, {
           method: "POST",
+          headers: sessionTokenHeader(),
         });
         if (!res.ok) throw new Error("Failed to initialize pairing");
         const data = await res.json();
@@ -51,7 +52,9 @@ export default function SecondaryCamStep({ sessionId, onVerified }: Props) {
 
     const poll = async () => {
       try {
-        const res = await fetch(`${API_BASE}/secondary-cam/${sessionId}/status`);
+        const res = await fetch(`${API_BASE}/secondary-cam/${sessionId}/status`, {
+          headers: sessionTokenHeader(),
+        });
         if (!res.ok) return;
         const data = await res.json();
         const newStatus = data.status;

@@ -22,7 +22,7 @@ import {
   Zap,
 } from "lucide-react";
 import { notifySuccess, notifyError } from "@/lib/notify";
-import { api, apiUpload, API_BASE } from "@/lib/api";
+import { api, apiDownload, apiUpload, saveBlob } from "@/lib/api";
 
 const BATCH_SIZE = 100;
 
@@ -176,8 +176,14 @@ export default function BulkUploadModal({
     onDone();
   };
 
-  const handleDownloadFailed = () => {
-    window.open(`${API_BASE}/resume-database/failed/download`, "_blank");
+  const handleDownloadFailed = async () => {
+    // Authenticated endpoint — fetch with the Bearer token instead of window.open.
+    try {
+      const blob = await apiDownload("/resume-database/failed/download");
+      saveBlob(blob, "failed_resumes.csv");
+    } catch (err: any) {
+      notifyError(err?.message || "Failed to download the failed-resumes report");
+    }
   };
 
   const processed = parsed + failed;

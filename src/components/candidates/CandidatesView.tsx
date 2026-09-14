@@ -76,13 +76,15 @@ import EditCandidateModal from "./EditCandidateModal";
 import RetakeInterviewModal from "./RetakeInterviewModal";
 import MatchCandidatesModal from "./MatchCandidatesModal";
 import ObserverLinkButton from "./ObserverLinkButton";
-import { api, apiPost, apiUpload, ApiError, API_BASE } from "@/lib/api";
+import { api, apiPost, apiUpload, apiDownload, saveBlob, mediaUrl, ApiError } from "@/lib/api";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type ResumeFitScore = string | null;
 
 interface Candidate {
   id: number;
+  /** Opaque id used in page URLs (e.g. /evaluation/{ref}) instead of `id`. */
+  ref: string;
   name: string;
   email: string;
   phone: string;
@@ -97,7 +99,8 @@ interface Candidate {
   resume_fit_score: ResumeFitScore;
   fit_score_reasoning: string | null;
   fit_score_details: string | null;
-  resume_path: string | null;
+  /** Signed, expiring API-relative resume URL (null when there is no file). */
+  resume_url: string | null;
   score: number | null;
   trust_score: number | null;
   grammar_score: number | null;
@@ -107,7 +110,10 @@ interface Candidate {
   enthusiasm_score: number | null;
   conciseness_score: number | null;
   ai_cheating_score: number | null;
-  recording_link: string | null;
+  /** Signed, expiring API-relative recording URL (null when there is none). */
+  recording_url: string | null;
+  /** Personal invite URL once scheduled (older rows: the job link or null). */
+  interview_link: string | null;
   video_duration: string | null;
   mail_contact_history: boolean | null;
   added_by: string | null;
@@ -213,7 +219,17 @@ function ScoreCell({ value }: { value: number | null }) {
   return <span>{value.toFixed(1)}</span>;
 }
 
-export default function CandidatesView({ jobId }: { jobId: number }) {
+/** Link a recruiter copies for a scheduled candidate: the personal invite link
+ *  once the backend has minted one, otherwise the legacy `?candidate=<email>`
+ *  link (candidates scheduled before personal invites existed). */
+function candidateInterviewLink(c: Candidate, interviewUrl: string | null): string | null {
+  if (c.interview_link && c.interview_link.includes("invite=")) return c.interview_link;
+  return interviewUrl ? `${interviewUrl}?candidate=${encodeURIComponent(c.email)}` : null;
+}
+
+/** `jobId` is the job's opaque ref (validated by the page); it is passed as-is
+ *  wherever the API expects a job id. */
+export default function CandidatesView({ jobId }: { jobId: string }) {
   const router = useRouter();
   const { user } = useAuth();
   const canSeeFitPercent = user?.role === "super_admin" || user?.allow_fit_score === true;
@@ -301,7 +317,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
     if (!silent) setLoading(true);
     try {
       // Always fetch all candidates for this job; filtering is done client-side
-      const params = new URLSearchParams({ job_id: String(jobId) });
+      const params = new URLSearchParams({ job_id: jobId });
       const data = await api<Candidate[]>(`/candidates/?${params}`);
       // Background polls write a fresh array every 15s even when nothing
       // meaningful changed, which forces a full re-render of the table and
@@ -609,7 +625,9 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
   const handleExportCandidates = useCallback(() => {
     if (candidates.length === 0) return;
 
-    const staticBase = API_BASE.replace(/\/api$/, "");
+    // Resume / recording columns link to the admin evaluation page: media URLs
+    // are signed and expire, while the page re-checks access and signs fresh ones.
+    const reportLink = (c: Candidate) => `${window.location.origin}/evaluation/${c.ref}`;
     const headers = [
       "Name", "Email", "Phone", "Role", "Location", "Stage",
       "Interview Status", "Interview Date", "Score", "Trust Score",
@@ -629,8 +647,8 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
       c.trust_score ?? "",
       c.ai_cheating_score ?? "",
       c.resume_fit_score || "",
-      c.resume_path ? `${staticBase}/${c.resume_path}` : "",
-      c.recording_link ? `${staticBase}/${c.recording_link}` : "",
+      c.resume_url ? reportLink(c) : "",
+      c.recording_url ? reportLink(c) : "",
     ]);
 
     const csvContent = [
@@ -654,6 +672,18 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
     URL.revokeObjectURL(url);
     notifySuccess("Candidates exported successfully!");
   }, [candidates, job]);
+
+  // ── Download JD (Word) — needs the Bearer token, so fetch it as a Blob
+  //    instead of window.open (which can't send auth headers). ──────────────
+  const handleDownloadJd = useCallback(async () => {
+    try {
+      const blob = await apiDownload(`/jobs/${jobId}/download-jd`);
+      const safeTitle = (job?.title || "").replace(/[\\/:*?"<>|]+/g, "").trim() || "JD";
+      saveBlob(blob, `${safeTitle} - Job Description.docx`);
+    } catch (err: any) {
+      notifyError(err instanceof ApiError ? err.detail : "Failed to download the job description");
+    }
+  }, [jobId, job]);
 
   // ── Stage move options — any stage except the current one. "Candidates" is
   //    included so a candidate can be moved BACK to the initial stage (e.g. a
@@ -803,11 +833,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                 <DropdownMenuItem onClick={() => setShowJdModal(true)}>
                   <Eye className="mr-2 h-4 w-4" /> View Job Description
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => {
-                    window.open(`${API_BASE}/jobs/${jobId}/download-jd`, "_blank");
-                  }}
-                >
+                <DropdownMenuItem onClick={handleDownloadJd}>
                   <Download className="mr-2 h-4 w-4" /> Download JD (Word)
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleExportCandidates}>
@@ -1068,6 +1094,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                     : null;
                   // Promote options exclude the candidate's current stage
                   const promoteOptions = getPromoteOptions(c.candidate_stage);
+                  const shareLink = candidateInterviewLink(c, interviewUrl);
 
                   return (
                     <TableRow key={c.id}>
@@ -1218,7 +1245,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                       {/* View Report */}
                       <TableCell className="px-3">
                         <button
-                          onClick={() => router.push(`/evaluation/${c.id}`)}
+                          onClick={() => router.push(`/evaluation/${c.ref}`)}
                           title="View Report"
                           className="w-9 h-9 rounded-full bg-blue-100 hover:bg-blue-200 flex items-center justify-center transition-colors"
                         >
@@ -1228,13 +1255,9 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
 
                       {/* Resume */}
                       <TableCell className="px-3">
-                        {c.resume_path ? (
+                        {c.resume_url ? (
                           <a
-                            href={
-                              c.resume_path.startsWith("http")
-                                ? c.resume_path
-                                : `${API_BASE.replace(/\/api$/, "")}${c.resume_path.startsWith("/") ? "" : "/"}${c.resume_path}`
-                            }
+                            href={mediaUrl(c.resume_url)}
                             target="_blank"
                             rel="noreferrer"
                             title="View Resume"
@@ -1296,13 +1319,12 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                               >
                                 <CalendarDays className="w-3 h-3" /> Reschedule
                               </Button>
-                              {interviewUrl && (
+                              {shareLink && (
                                 <Button
                                   size="sm"
                                   className="h-7 text-xs bg-blue-500 hover:bg-blue-600 text-white gap-1 whitespace-nowrap"
                                   onClick={() => {
-                                    const candidateLink = `${interviewUrl}?candidate=${encodeURIComponent(c.email)}`;
-                                    navigator.clipboard.writeText(candidateLink);
+                                    navigator.clipboard.writeText(shareLink);
                                     notifySuccess("Interview link copied (no registration required)!");
                                   }}
                                 >
@@ -1327,13 +1349,9 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
 
                       {/* Recording */}
                       <TableCell className="px-3">
-                        {c.recording_link ? (
+                        {c.recording_url ? (
                           <a
-                            href={
-                              c.recording_link.startsWith("/")
-                                ? `${API_BASE.replace(/\/api$/, "")}${c.recording_link}`
-                                : c.recording_link
-                            }
+                            href={mediaUrl(c.recording_url)}
                             target="_blank"
                             rel="noreferrer"
                             title="Play Recording"
@@ -1497,7 +1515,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                     onCancelSchedule={() => setCancelTarget(c.id)}
                     onRemove={() => setRemoveTarget(c.id)}
                     onOpenMailHistory={() => openEmailHistory(c.id, c.name)}
-                    onViewReport={() => router.push(`/evaluation/${c.id}`)}
+                    onViewReport={() => router.push(`/evaluation/${c.ref}`)}
                     onRecomputeFit={
                       c.job_id !== null ? () => handleRecomputeFit(c.id) : undefined
                     }
@@ -1695,9 +1713,7 @@ export default function CandidatesView({ jobId }: { jobId: number }) {
                     variant="outline"
                     size="sm"
                     className="gap-2"
-                    onClick={() => {
-                      window.open(`${API_BASE}/jobs/${jobId}/download-jd`, "_blank");
-                    }}
+                    onClick={handleDownloadJd}
                   >
                     <Download className="w-4 h-4" />
                     Download Original JD File
@@ -1918,11 +1934,8 @@ function CandidateGridCard({
   const statusClass =
     STATUS_COLORS[c.interview_status] || "bg-gray-100 text-gray-600";
 
-  const resumeHref = c.resume_path
-    ? c.resume_path.startsWith("http")
-      ? c.resume_path
-      : `${API_BASE.replace(/\/api$/, "")}${c.resume_path.startsWith("/") ? "" : "/"}${c.resume_path}`
-    : null;
+  const resumeHref = mediaUrl(c.resume_url) ?? null;
+  const shareLink = candidateInterviewLink(c, interviewUrl);
 
   const resumeButton = resumeHref ? (
     <a href={resumeHref} target="_blank" rel="noreferrer" className="contents">
@@ -2028,11 +2041,10 @@ function CandidateGridCard({
                   {recomputing ? "Refreshing…" : "Refresh Fit Score"}
                 </DropdownMenuItem>
               )}
-              {isScheduled && interviewUrl && (
+              {isScheduled && shareLink && (
                 <DropdownMenuItem
                   onClick={() => {
-                    const candidateLink = `${interviewUrl}?candidate=${encodeURIComponent(c.email)}`;
-                    navigator.clipboard.writeText(candidateLink);
+                    navigator.clipboard.writeText(shareLink);
                     notifySuccess("Interview link copied!");
                   }}
                 >

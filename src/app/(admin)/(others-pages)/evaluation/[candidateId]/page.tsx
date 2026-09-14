@@ -52,11 +52,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import VideoPlayer from "@/components/evaluation/VideoPlayer";
-import { api, API_BASE } from "@/lib/api";
+import { api, apiDownload, mediaUrl, saveBlob } from "@/lib/api";
+import { isRef } from "@/lib/refs";
 import { notifySuccess, notifyError } from "@/lib/notify";
 import { FIT_LEVEL_HIGH, FIT_LEVEL_MEDIUM } from "@/lib/fitScore";
-
-const API_STATIC = API_BASE.replace(/\/api$/, "");
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -118,9 +117,12 @@ interface CodingSubmission {
   submitted_at: string | null;
 }
 
+// Media fields named *url are signed, expiring API-relative "/media/..." links
+// (null when there is no servable file) — always pass them through mediaUrl().
 interface EvaluationData {
   candidate: {
     id: number;
+    ref: string;
     name: string;
     email: string;
     phone: string;
@@ -131,9 +133,17 @@ interface EvaluationData {
     interview_date: string | null;
     interview_timezone: string | null;
     image: string | null;
+    image_url: string | null;
   };
-  job: { title: string; experience_min: number; experience_max: number } | null;
-  resume: { path: string | null; url: string | null };
+  job: { ref?: string; title: string; experience_min: number; experience_max: number } | null;
+  resume: {
+    path: string | null;
+    url: string | null;
+    /** Inline (preview / open in new tab). */
+    signed_url: string | null;
+    /** Attachment (download). */
+    download_url: string | null;
+  };
   fit_score: {
     level: string | null;
     reasoning: {
@@ -154,7 +164,16 @@ interface EvaluationData {
     conciseness: number | null;
     ai_cheating: number | null;
   };
-  recording: { link: string | null; duration: string | null };
+  recording: {
+    link: string | null;
+    duration: string | null;
+    /** Inline (player). */
+    url: string | null;
+    /** Attachment, original file. */
+    download_url: string | null;
+    /** Attachment, converted to mp4. */
+    mp4_download_url: string | null;
+  };
   transcript: TranscriptPair[];
   full_transcript: FullTranscriptMessage[];
   evaluation: {
@@ -174,7 +193,7 @@ interface EvaluationData {
     skills_ratings: SkillRating[];
   } | null;
   violations: ViolationEntry[];
-  screenshots: { file_path: string; captured_at: string | null; face_count?: number | null }[];
+  screenshots: { file_path: string; url: string | null; captured_at: string | null; face_count?: number | null }[];
   session: {
     id: number;
     started_at: string | null;
@@ -246,6 +265,19 @@ function computeDuration(start: string | null, end: string | null) {
   return `${h} hours ${m} minutes`;
 }
 
+/**
+ * Signed media URLs carry an expiry that rolls forward between fetches. Keep the
+ * URL already handed to an element until the underlying file changes (compared
+ * without the query string), so a re-fetch of the evaluation doesn't reload the
+ * video mid-playback.
+ */
+function useStableMediaUrl(url: string | undefined): string | undefined {
+  const [stable, setStable] = useState(url);
+  const samePath = !!url && !!stable && url.split("?")[0] === stable.split("?")[0];
+  if (!samePath && url !== stable) setStable(url);
+  return samePath ? stable : url;
+}
+
 // ── Score Circle ────────────────────────────────────────────────────────────
 
 function ScoreCircle({ value, size = 64 }: { value: number | null; size?: number }) {
@@ -283,9 +315,16 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
   const [expandedQA, setExpandedQA] = useState<Set<number>>(new Set());
   const [generatingEval, setGeneratingEval] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  // Photo URL that failed to load (e.g. expired link) — show the placeholder instead.
+  const [failedAvatarSrc, setFailedAvatarSrc] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
+  // The URL segment is a candidate ref (never a numeric id). Anything else shows
+  // the not-found state below without calling the API.
+  const validRef = isRef(candidateId);
+
   useEffect(() => {
+    if (!isRef(candidateId)) return;
     (async () => {
       setLoading(true);
       try {
@@ -365,13 +404,24 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
   }, [candidateId]);
 
   const copyRecordingUrl = useCallback(() => {
-    if (!data?.recording.link) return;
-    const url = data.recording.link.startsWith("/")
-      ? `${API_STATIC}${data.recording.link}`
-      : data.recording.link;
+    const url = mediaUrl(data?.recording.url);
+    if (!url) return;
     navigator.clipboard.writeText(url);
-    notifySuccess("Recording URL copied!");
+    // Signed media links are short-lived; say so before someone shares it.
+    notifySuccess("Recording URL copied. The link expires in a few hours.");
   }, [data]);
+
+  // The DOCX / transcript exports need the Bearer token, so fetch them as a Blob
+  // (window.open can't send auth headers).
+  const downloadExport = useCallback(async (kind: "docx" | "transcript") => {
+    try {
+      const blob = await apiDownload(`/candidates/${candidateId}/evaluation/download-${kind}`);
+      const safeName = (data?.candidate.name || "candidate").replace(/ /g, "_");
+      saveBlob(blob, kind === "docx" ? `${safeName}_Evaluation.docx` : `${safeName}_Transcript.txt`);
+    } catch (err: any) {
+      notifyError(err?.message || "Download failed. Please try again.");
+    }
+  }, [candidateId, data]);
 
   const downloadPdf = useCallback(async () => {
     if (!contentRef.current || !data) return;
@@ -389,7 +439,10 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
 
       const element = contentRef.current;
 
-      // Convert all images to inline base64 to avoid tainted canvas / CORS issues
+      // Convert all images to inline base64 to avoid tainted canvas / CORS issues.
+      // Photos and screenshots are signed /media URLs (credential in the URL, no
+      // cookies needed); that route sends CORS headers for the app origin, so an
+      // anonymous CORS load of the same URL can be drawn to a canvas.
       const images = element.querySelectorAll("img");
       const origSrcs: { el: HTMLImageElement; src: string }[] = [];
       await Promise.all(
@@ -397,17 +450,9 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
           try {
             if (!img.src || img.src.startsWith("data:")) return;
             origSrcs.push({ el: img, src: img.src });
+            const fetchUrl = img.src;
 
-            // For images served from our API backend, proxy through the API
-            // to ensure proper CORS headers
-            let fetchUrl = img.src;
-            if (img.src.includes("/uploads/")) {
-              // Extract the path after the domain and use API_BASE to proxy
-              const uploadPath = img.src.substring(img.src.indexOf("/uploads/"));
-              fetchUrl = `${API_BASE.replace(/\/api$/, "")}${uploadPath}`;
-            }
-
-            // Convert to base64 using canvas (avoids CORS fetch issues entirely)
+            // Convert to base64 using canvas
             const dataUrl = await new Promise<string>((resolve, reject) => {
               const tempImg = new Image();
               tempImg.crossOrigin = "anonymous";
@@ -428,22 +473,8 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
             });
             img.src = dataUrl;
           } catch {
-            // If image conversion fails, try direct fetch as fallback
-            try {
-              const resp = await fetch(img.src, { credentials: "include" });
-              if (resp.ok) {
-                const blob = await resp.blob();
-                if (blob.size > 0) {
-                  const dataUrl = await new Promise<string>((resolve) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result as string);
-                    reader.readAsDataURL(blob);
-                  });
-                  img.src = dataUrl;
-                  return;
-                }
-              }
-            } catch {}
+            // Unreadable (e.g. an expired link) — leave the image out of the PDF
+            // rather than failing the whole export.
             img.style.visibility = "hidden";
           }
         })
@@ -523,6 +554,16 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
     return m;
   }, [data?.evaluation]);
 
+  // Recording player source — must also be before any early returns.
+  const recordingHref = useStableMediaUrl(mediaUrl(data?.recording.url));
+
+  if (!validRef) return (
+    <div className="p-6 text-center text-gray-500">
+      <p>Candidate not found.</p>
+      <Button variant="outline" onClick={() => router.back()} className="mt-4">Go Back</Button>
+    </div>
+  );
+
   if (loading) return (
     <div className="space-y-4 p-6 max-w-7xl mx-auto">
       <Skeleton className="h-8 w-48" />
@@ -543,8 +584,13 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
 
   const { candidate, job, scores, recording, transcript, full_transcript, evaluation, violations, screenshots, session } = data;
 
-  const recordingHref = recording.link?.startsWith("/")
-    ? `${API_STATIC}${recording.link}` : recording.link ?? undefined;
+  const recordingDownloadHref = mediaUrl(recording.download_url);
+  const recordingMp4Href = mediaUrl(recording.mp4_download_url);
+  const avatarSrc = mediaUrl(candidate.image_url);
+  // Link printed in the exported PDF. Signed media links expire within hours, so
+  // point at this (login-protected) evaluation page instead.
+  const evaluationPageUrl =
+    typeof window !== "undefined" ? `${window.location.origin}/evaluation/${candidateId}` : "";
 
   const tz = candidate.interview_timezone ?? "Asia/Kolkata";
   const interviewDateStr = session?.started_at
@@ -634,11 +680,12 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
         <div className="relative flex flex-col gap-5 sm:flex-row sm:items-start">
           {/* Avatar */}
           <div className="shrink-0">
-            {candidate.image ? (
+            {avatarSrc && failedAvatarSrc !== avatarSrc ? (
               <img
-                src={candidate.image.startsWith("/") ? `${API_STATIC}${candidate.image}` : candidate.image}
+                src={avatarSrc}
                 alt={candidate.name}
                 crossOrigin="anonymous"
+                onError={() => setFailedAvatarSrc(avatarSrc)}
                 className="h-28 w-28 sm:h-32 sm:w-32 rounded-2xl object-cover shadow-md ring-4 ring-white dark:ring-white/10"
               />
             ) : (
@@ -733,7 +780,7 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
               <div className="mt-4">
                 {generatingPdf ? (
                   <p className="break-all text-xs text-indigo-600">
-                    Recording: {`${API_STATIC}${recording.link}`}
+                    Recording: {evaluationPageUrl}
                   </p>
                 ) : (
                   <Button variant="outline" size="sm" onClick={copyRecordingUrl} className="gap-1.5 rounded-xl bg-white/80 backdrop-blur dark:bg-gray-900/60">
@@ -838,10 +885,10 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
               <DropdownMenuItem onClick={downloadPdf} disabled={generatingPdf}>
                 <FileText className="mr-2 h-4 w-4" /> {generatingPdf ? "Generating PDF…" : "Download Evaluation PDF"}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => window.open(`${API_BASE}/candidates/${candidateId}/evaluation/download-docx`, "_blank")}>
+              <DropdownMenuItem onClick={() => downloadExport("docx")}>
                 <FileText className="mr-2 h-4 w-4" /> Download Evaluation as Docx
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => window.open(`${API_BASE}/candidates/${candidateId}/evaluation/download-transcript`, "_blank")}>
+              <DropdownMenuItem onClick={() => downloadExport("transcript")}>
                 <MessageSquare className="mr-2 h-4 w-4" /> Download Interview Transcript
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -1200,27 +1247,47 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
                   )}
                 </div>
               </div>
-              {recordingHref && (
+              {(recordingHref || recordingDownloadHref || recordingMp4Href) && (
                 <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={copyRecordingUrl}
-                    className="h-8 gap-1.5 rounded-lg border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-                  >
-                    <Copy className="h-3.5 w-3.5" /> Copy URL
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      const recFile = recording.link?.split("/").pop() || "recording.webm";
-                      const downloadUrl = `${API_STATIC}/recordings/${recFile}/download?format=original`;
-                      window.open(downloadUrl, "_blank");
-                    }}
-                    className="h-8 gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600"
-                  >
-                    <Download className="h-3.5 w-3.5" /> Download
-                  </Button>
+                  {recordingHref && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={copyRecordingUrl}
+                      className="h-8 gap-1.5 rounded-lg border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                    >
+                      <Copy className="h-3.5 w-3.5" /> Copy URL
+                    </Button>
+                  )}
+                  {/* Signed attachment links. A new tab keeps this page intact if a link has expired. */}
+                  {recordingDownloadHref && (
+                    <Button
+                      size="sm"
+                      asChild
+                      className="h-8 gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600"
+                    >
+                      <a href={recordingDownloadHref} target="_blank" rel="noopener noreferrer">
+                        <Download className="h-3.5 w-3.5" /> Download
+                      </a>
+                    </Button>
+                  )}
+                  {recordingMp4Href && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      asChild
+                      className="h-8 gap-1.5 rounded-lg border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                    >
+                      <a
+                        href={recordingMp4Href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Download as MP4 (converted on first download, which can take a minute)"
+                      >
+                        <Download className="h-3.5 w-3.5" /> MP4
+                      </a>
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
@@ -1348,8 +1415,8 @@ export default function EvaluationPage({ params }: { params: Promise<{ candidate
           <ResumePortfolioTab
             candidate={candidate}
             job={job}
-            resumeUrl={data.resume.url}
-            resumePath={data.resume.path}
+            resumeUrl={data.resume.signed_url}
+            resumeDownloadUrl={data.resume.download_url}
             fitPct={fitPct}
             fitSummary={data.fit_score.reasoning?.summary ?? null}
           />
@@ -1416,26 +1483,21 @@ function ResumePortfolioTab({
   candidate,
   job,
   resumeUrl,
-  resumePath,
+  resumeDownloadUrl,
   fitPct,
   fitSummary,
 }: {
   candidate: EvaluationData["candidate"];
   job: EvaluationData["job"];
+  /** Signed inline link (preview / open). */
   resumeUrl: string | null;
-  resumePath: string | null;
+  /** Signed attachment link (download). */
+  resumeDownloadUrl: string | null;
   fitPct: number | null;
   fitSummary: string | null;
 }) {
-  const resumeHref = resumeUrl
-    ? resumeUrl.startsWith("http")
-      ? resumeUrl
-      : `${API_STATIC}${resumeUrl.startsWith("/") ? "" : "/"}${resumeUrl}`
-    : resumePath
-    ? resumePath.startsWith("http")
-      ? resumePath
-      : `${API_STATIC}${resumePath.startsWith("/") ? "" : "/"}${resumePath}`
-    : null;
+  const resumeHref = mediaUrl(resumeUrl);
+  const resumeDownloadHref = mediaUrl(resumeDownloadUrl);
 
   const fitTheme =
     fitPct === null
@@ -1460,16 +1522,22 @@ function ResumePortfolioTab({
               <p className="text-xs text-gray-500 dark:text-gray-400">Candidate&apos;s submitted resume document</p>
             </div>
           </div>
-          {resumeHref && (
+          {(resumeHref || resumeDownloadHref) && (
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" className="h-8 gap-1.5 rounded-lg" onClick={() => window.open(resumeHref, "_blank")}>
-                <ExternalLink className="h-3.5 w-3.5" /> Open in new tab
-              </Button>
-              <Button size="sm" className="h-8 gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600" asChild>
-                <a href={resumeHref} download>
-                  <Download className="h-3.5 w-3.5" /> Download
-                </a>
-              </Button>
+              {resumeHref && (
+                <Button size="sm" variant="outline" className="h-8 gap-1.5 rounded-lg" asChild>
+                  <a href={resumeHref} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-3.5 w-3.5" /> Open in new tab
+                  </a>
+                </Button>
+              )}
+              {resumeDownloadHref && (
+                <Button size="sm" className="h-8 gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600" asChild>
+                  <a href={resumeDownloadHref} target="_blank" rel="noopener noreferrer">
+                    <Download className="h-3.5 w-3.5" /> Download
+                  </a>
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -1532,9 +1600,11 @@ function ResumePortfolioTab({
               variant="outline"
               size="sm"
               className="mt-4 w-full gap-1.5 rounded-lg"
-              onClick={() => window.open(resumeHref, "_blank")}
+              asChild
             >
-              <Eye className="h-3.5 w-3.5" /> View resume PDF
+              <a href={resumeHref} target="_blank" rel="noopener noreferrer">
+                <Eye className="h-3.5 w-3.5" /> View resume PDF
+              </a>
             </Button>
           )}
         </div>
@@ -1573,6 +1643,9 @@ function ActivityTab({
   evaluationStatus: string | null;
   timezone: string;
 }) {
+  // Frame URLs that failed to load (usually an expired signed link).
+  const [failedFrames, setFailedFrames] = useState<Set<string>>(new Set());
+
   const formatTs = (iso: string | null) => {
     if (!iso) return "—";
     return new Date(iso).toLocaleString("en-US", {
@@ -1760,17 +1833,29 @@ function ActivityTab({
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-              {screenshots.map((ss, idx) => (
+              {screenshots.map((ss, idx) => {
+                const frameSrc = mediaUrl(ss.url);
+                return (
                 <div
                   key={idx}
                   className="group relative aspect-video overflow-hidden rounded-xl border border-gray-200 bg-gray-100 transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-white/10 dark:bg-white/5"
                 >
-                  <img
-                    src={`${API_STATIC}${ss.file_path}`}
-                    alt={`Frame ${idx + 1}`}
-                    className="h-full w-full object-cover"
-                    loading="lazy"
-                  />
+                  {frameSrc && !failedFrames.has(frameSrc) ? (
+                    // crossOrigin so the PDF export can draw the (already cached) frame to a canvas.
+                    <img
+                      src={frameSrc}
+                      alt={`Frame ${idx + 1}`}
+                      crossOrigin="anonymous"
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                      onError={() => setFailedFrames((prev) => new Set(prev).add(frameSrc))}
+                    />
+                  ) : (
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-gray-400">
+                      <ImageIcon className="h-6 w-6 opacity-50" />
+                      <span className="text-[10px]">{frameSrc ? "Link expired, reload the page" : "Not available"}</span>
+                    </div>
+                  )}
                   <span className="absolute left-2 top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
                     {ss.face_count ?? 1} Face
                   </span>
@@ -1780,7 +1865,8 @@ function ActivityTab({
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

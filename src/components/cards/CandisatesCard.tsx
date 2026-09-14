@@ -25,20 +25,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { api, API_BASE } from "@/lib/api";
+import { api, mediaUrl } from "@/lib/api";
 import { notifySuccess, notifyError } from "@/lib/notify";
-
-const API_STATIC = API_BASE.replace(/\/api$/, "");
-
-/** Resolve a candidate image URL (handles relative paths + default placeholder). */
-function resolveCandidateImage(src?: string | null): string | null {
-  if (!src) return null;
-  // Treat the old placeholder as "no image"
-  if (src.includes("user-01")) return null;
-  if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("data:")) return src;
-  if (src.startsWith("/")) return `${API_STATIC}${src}`;
-  return `${API_STATIC}/${src}`;
-}
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -53,7 +41,8 @@ type Candidate = {
   location: string;
   applied_date: string;
   status: CandidateStatus;
-  image: string;
+  /** Signed, expiring photo URL (API-relative) or null. */
+  image_url: string | null;
   job_id: number | null;
   job_title: string | null;
   candidate_stage: string | null;
@@ -209,7 +198,8 @@ function CandidateCard({
 }) {
   const theme = STATUS_THEME[c.status];
   const avatarGradient = AVATAR_PALETTE[c.id % AVATAR_PALETTE.length];
-  const resolvedImage = resolveCandidateImage(c.image);
+  // Signed photo URL from the API; null (no photo / placeholder) → initials.
+  const resolvedImage = mediaUrl(c.image_url) ?? null;
   const [imageFailed, setImageFailed] = useState(false);
   const showImage = resolvedImage && !imageFailed;
   const initials = getInitials(c.name);

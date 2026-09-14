@@ -50,6 +50,10 @@ export default function VideoPlayer({ src }: Props) {
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [resolving, setResolving] = useState(true);
+  // The recording is a signed /media URL; once it expires (or the file can't
+  // be fetched) the element errors instead of playing — show why.
+  const [loadError, setLoadError] = useState(false);
+  const lastSourceRef = useRef<HTMLSourceElement>(null);
   // For un-remuxed WebMs where duration=Infinity and seeking fails,
   // track the buffered range end as a fallback "known duration"
   const [bufferedEnd, setBufferedEnd] = useState(0);
@@ -257,9 +261,20 @@ export default function VideoPlayer({ src }: Props) {
 
     resolvedRef.current = false;
     setResolving(true);
+    setLoadError(false);
     setDuration(0);
     setCurrentTime(0);
     v.load();
+
+    // With <source> children a failed fetch (e.g. 403 from an expired link)
+    // fires "error" on each <source>, not the <video>; once the last one fails
+    // there is nothing left to try. A failure after playback started (a seek
+    // range request) fires on the <video> itself.
+    const onLoadError = () => {
+      setLoadError(true);
+      setResolving(false);
+    };
+    const lastSource = lastSourceRef.current;
 
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
@@ -299,6 +314,8 @@ export default function VideoPlayer({ src }: Props) {
     v.addEventListener("timeupdate", onTime);
     v.addEventListener("loadedmetadata", onMeta);
     v.addEventListener("durationchange", onDurationChange);
+    v.addEventListener("error", onLoadError);
+    lastSource?.addEventListener("error", onLoadError);
     document.addEventListener("fullscreenchange", onFsChange);
 
     return () => {
@@ -307,6 +324,8 @@ export default function VideoPlayer({ src }: Props) {
       v.removeEventListener("timeupdate", onTime);
       v.removeEventListener("loadedmetadata", onMeta);
       v.removeEventListener("durationchange", onDurationChange);
+      v.removeEventListener("error", onLoadError);
+      lastSource?.removeEventListener("error", onLoadError);
       document.removeEventListener("fullscreenchange", onFsChange);
     };
   }, [src, resolveDuration]);
@@ -357,11 +376,32 @@ export default function VideoPlayer({ src }: Props) {
       <video ref={videoRef} className="w-full block" preload="auto" crossOrigin="anonymous">
         <source src={src} type="video/webm;codecs=vp9,opus" />
         <source src={src} type="video/webm;codecs=vp8,opus" />
-        <source src={src} type="video/webm" />
+        <source ref={lastSourceRef} src={src} type="video/webm" />
       </video>
 
+      {/* Load failure (expired signed link, missing file, unsupported format) */}
+      {loadError && (
+        <div data-controls className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 p-4">
+          <div className="text-center">
+            <p className="text-white text-sm font-medium">The recording couldn&apos;t be loaded.</p>
+            <p className="text-white/60 text-xs mt-1">
+              If this page has been open for a while, the link may have expired — reload the page.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.location.reload()}
+              className="mt-3 h-8 border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+            >
+              <RotateCw className="w-3.5 h-3.5 mr-1.5" />
+              Reload page
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Loading overlay */}
-      {resolving && (
+      {resolving && !loadError && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/60">
           <div className="text-center">
             <div className="w-8 h-8 rounded-full border-2 border-blue-500 border-t-transparent animate-spin mx-auto mb-2" />

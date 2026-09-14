@@ -56,7 +56,8 @@ interface MatchedCandidate {
 interface MatchCandidatesModalProps {
   open: boolean;
   onClose: () => void;
-  jobId: number;
+  /** The job's opaque ref (the API accepts it wherever a job id is expected). */
+  jobId: string;
   onAdded: () => void;
 }
 

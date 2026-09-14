@@ -73,7 +73,7 @@ export default function RetakeInterviewModal({
         method: "POST",
       });
       onReset(updated);
-      notifySuccess("Interview reset. The candidate can now retake it using the same link.");
+      notifySuccess("Interview reset. Schedule the interview again to send the candidate a new link.");
       onClose();
     } catch (err: any) {
       notifyError(err?.message || "Failed to reset the interview.");
@@ -94,9 +94,9 @@ export default function RetakeInterviewModal({
 
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
-            This lets the candidate take the interview again using the{" "}
-            <span className="font-medium">same link</span> — their resume and details are kept,
-            nothing needs to be re-uploaded.
+            This lets the candidate take the interview again — their resume and details are kept,
+            nothing needs to be re-uploaded. The old interview link stops working;{" "}
+            <span className="font-medium">schedule the interview again</span> to send them a new one.
           </p>
 
           {/* Step 1 — download backup */}

@@ -29,7 +29,7 @@ export type MessageRole = "user" | "assistant";
 export type AIMessage =
   | { id: string; role: MessageRole; type: "text"; content: string; ts: number }
   | { id: string; role: "assistant"; type: "preview"; jd: AIGeneratedJD; draft: JobDraft; ts: number }
-  | { id: string; role: "assistant"; type: "success"; jobId: number; jobTitle: string; ts: number }
+  | { id: string; role: "assistant"; type: "success"; jobRef: string; jobTitle: string; ts: number }
   | { id: string; role: "assistant"; type: "typing"; ts: number };
 
 // ── Flow steps ─────────────────────────────────────────────────────────────
@@ -463,7 +463,7 @@ export function AIAssistantProvider({ children }: { children: React.ReactNode })
           upload_jd: "",
         };
 
-        const created = await api<{ id: number; title: string }>("/jobs/", {
+        const created = await api<{ id: number; ref: string; title: string }>("/jobs/", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -482,7 +482,7 @@ export function AIAssistantProvider({ children }: { children: React.ReactNode })
             id: uid(),
             role: "assistant",
             type: "success",
-            jobId: created.id,
+            jobRef: created.ref,
             jobTitle: created.title,
             ts: Date.now(),
           },

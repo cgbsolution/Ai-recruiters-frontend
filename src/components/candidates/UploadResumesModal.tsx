@@ -14,7 +14,8 @@ import { api, apiUpload } from "@/lib/api";
 interface UploadResumesModalProps {
   open: boolean;
   onClose: () => void;
-  jobId: number;
+  /** The job's opaque ref (the API accepts it wherever a job id is expected). */
+  jobId: string;
   onUploaded: (candidates: any[]) => void;
 }
 
@@ -223,7 +224,7 @@ export default function UploadResumesModal({
 
     try {
       const formData = new FormData();
-      formData.append("job_id", String(jobId));
+      formData.append("job_id", jobId);
       files.forEach((f) => formData.append("files", f));
 
       const data = await apiUpload<any[]>("/candidates/upload-resume", formData, {

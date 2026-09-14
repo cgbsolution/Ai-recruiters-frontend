@@ -8,6 +8,9 @@ export default function InterviewPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const token = params?.token as string;
+  // Personal invite link: /interview/{token}?invite={secret}. Older links carry
+  // ?candidate={email} instead and still work for already-scheduled candidates.
+  const inviteToken = searchParams?.get("invite") || undefined;
   const candidateEmail = searchParams?.get("candidate") || undefined;
 
   if (!token) {
@@ -20,7 +23,7 @@ export default function InterviewPage() {
 
   return (
     <ErrorBoundary name="interview" reloadOnRecover>
-      <InterviewFlow token={token} candidateEmail={candidateEmail} />
+      <InterviewFlow token={token} inviteToken={inviteToken} candidateEmail={candidateEmail} />
     </ErrorBoundary>
   );
 }

@@ -15,6 +15,13 @@ const STORE_META = "meta";
 export interface RecordingMeta {
   recordingId: string;
   sessionId: number | null;
+  /** Session token for `sessionId` — upload-recording requires it, and orphan
+   *  recovery runs on a later load where sessionStorage no longer has it.
+   *  Absent on recordings stored before tokens were persisted. */
+  sessionToken?: string | null;
+  /** Set when the server refused a recovery upload (401/403). Recovery skips
+   *  the recording (chunks are kept) until a different token is attached. */
+  authRejectedAt?: number | null;
   duration: string;
   mimeType: string;
   createdAt: number;
@@ -155,7 +162,7 @@ export async function saveChunk(
 
 export async function updateMeta(
   recordingId: string,
-  patch: Partial<Pick<RecordingMeta, "sessionId" | "duration" | "uploaded">>,
+  patch: Partial<Pick<RecordingMeta, "sessionId" | "sessionToken" | "duration" | "uploaded">>,
 ): Promise<void> {
   try {
     await tx(STORE_META, "readwrite", async (t) => {
@@ -167,6 +174,10 @@ export async function updateMeta(
         ...patch,
         updatedAt: Date.now(),
       };
+      // A different token makes a recording the server refused worth retrying.
+      if (patch.sessionToken && patch.sessionToken !== existing.sessionToken) {
+        next.authRejectedAt = null;
+      }
       store.put(next);
     });
   } catch (err) {
@@ -290,6 +301,43 @@ export async function listPendingRecordings(): Promise<RecordingMeta[]> {
     });
   } catch {
     return [];
+  }
+}
+
+/**
+ * Record that the server refused a recovery upload made with `triedToken`
+ * (null = sent without one). No-op when a different token was attached in the
+ * meantime, so that one still gets tried.
+ */
+export async function markAuthRejected(recordingId: string, triedToken: string | null): Promise<void> {
+  try {
+    await tx(STORE_META, "readwrite", async (t) => {
+      const store = t.objectStore(STORE_META);
+      const existing = (await req(store.get(recordingId))) as RecordingMeta | undefined;
+      if (!existing || (existing.sessionToken || null) !== triedToken) return;
+      const now = Date.now();
+      store.put({ ...existing, authRejectedAt: now, updatedAt: now });
+    });
+  } catch (err) {
+    console.warn("[recordingStorage] markAuthRejected failed:", err);
+  }
+}
+
+/**
+ * Store `sessionToken` on every not-yet-uploaded recording of `sessionId` —
+ * e.g. one a crashed tab left behind before tokens were persisted — so orphan
+ * recovery can authenticate its upload when the candidate rejoins that session.
+ */
+export async function attachSessionToken(sessionId: number, sessionToken: string): Promise<void> {
+  try {
+    const pending = await listPendingRecordings();
+    for (const m of pending) {
+      if (m.sessionId === sessionId && m.sessionToken !== sessionToken) {
+        await updateMeta(m.recordingId, { sessionToken });
+      }
+    }
+  } catch {
+    // best-effort only
   }
 }
 

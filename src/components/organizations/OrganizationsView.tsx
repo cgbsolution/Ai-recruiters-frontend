@@ -32,6 +32,8 @@ import {
 
 interface Organization {
   id: number;
+  /** Opaque id used in the dashboard URL (/organizations/{ref}). */
+  ref: string;
   name: string;
   domain: string;
   is_active: boolean;
@@ -360,7 +362,7 @@ export default function OrganizationsView() {
                         variant="ghost"
                         size="icon"
                         title="View dashboard"
-                        onClick={() => router.push(`/organizations/${org.id}`)}
+                        onClick={() => router.push(`/organizations/${org.ref}`)}
                         className="h-8 w-8 text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/30"
                       >
                         <Eye className="w-4 h-4" />

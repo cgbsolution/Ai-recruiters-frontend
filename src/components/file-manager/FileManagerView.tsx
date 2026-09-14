@@ -1,11 +1,9 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { api, mediaUrl } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Modal } from "@/components/ui/modal";
-
-const API_STATIC = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 const FOLDERS = ["jd", "photos", "recordings", "resumes", "screenshots"] as const;
 type Folder = (typeof FOLDERS)[number];
@@ -20,7 +18,10 @@ const FOLDER_LABELS: Record<Folder, string> = {
 
 interface FileInfo {
   name: string;
+  /** "/uploads/..." — selection and delete key only, never a URL. */
   path: string;
+  /** Signed, expiring "/media/..." link; null for files that can't be previewed (e.g. jd). */
+  url: string | null;
   size: number;
   modified: string;
   is_dir: boolean;
@@ -79,8 +80,20 @@ export default function FileManagerView() {
   const [confirmDelete, setConfirmDelete] = useState<{ type: "single" | "bulk"; file?: FileInfo } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // Signed URLs that failed to load (usually expired after the page sat open) —
+  // those files fall back to the "no preview" placeholder.
+  const [brokenUrls, setBrokenUrls] = useState<Set<string>>(new Set());
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSuperAdmin = hasRole("super_admin");
+
+  const previewUrl = (file: FileInfo): string | undefined =>
+    file.url && !brokenUrls.has(file.url) ? mediaUrl(file.url) : undefined;
+
+  const markBroken = (file: FileInfo) => {
+    if (!file.url) return;
+    const url = file.url;
+    setBrokenUrls((prev) => (prev.has(url) ? prev : new Set(prev).add(url)));
+  };
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -186,6 +199,8 @@ export default function FileManagerView() {
     () => stats.find((s) => s.folder === activeFolder),
     [stats, activeFolder]
   );
+
+  const modalUrl = previewFile ? previewUrl(previewFile) : undefined;
 
   // Only super_admin
   if (!isSuperAdmin) {
@@ -297,6 +312,7 @@ export default function FileManagerView() {
           {files.map((file) => {
             const isSelected = selected.has(file.path);
             const fileType = getFileType(file.name);
+            const thumbUrl = previewUrl(file);
 
             return (
               <div
@@ -322,13 +338,19 @@ export default function FileManagerView() {
                   className="h-32 flex items-center justify-center bg-gray-50 dark:bg-gray-900/50 cursor-pointer overflow-hidden"
                   onClick={() => setPreviewFile(file)}
                 >
-                  {fileType === "image" ? (
+                  {fileType === "image" && thumbUrl ? (
                     <img
-                      src={`${API_STATIC}${file.path}`}
+                      src={thumbUrl}
                       alt={file.name}
                       className="w-full h-full object-cover"
                       loading="lazy"
+                      onError={() => markBroken(file)}
                     />
+                  ) : fileType === "image" ? (
+                    <div className="text-center">
+                      <GenericFileIcon />
+                      <p className="text-[10px] text-gray-400 mt-1">No preview</p>
+                    </div>
                   ) : fileType === "pdf" ? (
                     <div className="text-center">
                       <PdfIcon />
@@ -405,41 +427,48 @@ export default function FileManagerView() {
               </div>
             </div>
             <div className="max-h-[70vh] overflow-auto rounded-lg bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-              {getFileType(previewFile.name) === "image" ? (
+              {modalUrl && getFileType(previewFile.name) === "image" ? (
                 <img
-                  src={`${API_STATIC}${previewFile.path}`}
+                  src={modalUrl}
                   alt={previewFile.name}
                   className="max-w-full max-h-[70vh] object-contain"
+                  onError={() => markBroken(previewFile)}
                 />
-              ) : getFileType(previewFile.name) === "pdf" ? (
+              ) : modalUrl && getFileType(previewFile.name) === "pdf" ? (
                 <iframe
-                  src={`${API_STATIC}${previewFile.path}`}
+                  src={modalUrl}
                   className="w-full h-[70vh]"
                   title={previewFile.name}
                 />
-              ) : getFileType(previewFile.name) === "video" ? (
+              ) : modalUrl && getFileType(previewFile.name) === "video" ? (
                 <video
-                  src={`${API_STATIC}${previewFile.path}`}
+                  src={modalUrl}
                   controls
                   className="max-w-full max-h-[70vh]"
+                  onError={() => markBroken(previewFile)}
                 />
-              ) : getFileType(previewFile.name) === "audio" ? (
+              ) : modalUrl && getFileType(previewFile.name) === "audio" ? (
                 <div className="p-8">
                   <AudioIcon large />
-                  <audio src={`${API_STATIC}${previewFile.path}`} controls className="mt-4 w-full" />
+                  <audio src={modalUrl} controls className="mt-4 w-full" onError={() => markBroken(previewFile)} />
                 </div>
               ) : (
                 <div className="p-12 text-center text-gray-400">
                   <GenericFileIcon large />
                   <p className="mt-3">No preview available</p>
-                  <a
-                    href={`${API_STATIC}${previewFile.path}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-3 inline-block text-sm text-brand-600 hover:underline"
-                  >
-                    Download file
-                  </a>
+                  {previewFile.url && brokenUrls.has(previewFile.url) && (
+                    <p className="mt-1 text-xs">The link may have expired — reload the page.</p>
+                  )}
+                  {modalUrl && (
+                    <a
+                      href={modalUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-3 inline-block text-sm text-brand-600 hover:underline"
+                    >
+                      Download file
+                    </a>
+                  )}
                 </div>
               )}
             </div>

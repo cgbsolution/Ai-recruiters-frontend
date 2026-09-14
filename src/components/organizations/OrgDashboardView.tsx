@@ -49,7 +49,8 @@ interface OrgDetail {
   }>;
 }
 
-export default function OrgDashboardView({ orgId }: { orgId: number }) {
+/** `orgId` is the org ref from the URL (validated with isRef() by the page). */
+export default function OrgDashboardView({ orgId }: { orgId: string }) {
   const { hasRole } = useAuth();
   const router = useRouter();
   const [org, setOrg] = useState<OrgDetail | null>(null);

@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useRef } from "react";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, getSessionToken } from "@/lib/api";
 
 interface Options {
   sessionId: number | null;
@@ -32,7 +32,10 @@ interface PCEntry {
 function buildWsUrl(sessionId: number, interviewToken: string): string {
   const base = (API_BASE || "").replace(/\/$/, "");
   const wsBase = base.replace(/^http/, "ws");
-  return `${wsBase}/observe/publish/${sessionId}?interview_token=${encodeURIComponent(interviewToken)}`;
+  // The job-wide interview token doesn't prove which candidate is publishing —
+  // the server also requires this session's token (?st=; a WebSocket can't set headers).
+  const st = getSessionToken();
+  return `${wsBase}/observe/publish/${sessionId}?interview_token=${encodeURIComponent(interviewToken)}${st ? `&st=${encodeURIComponent(st)}` : ""}`;
 }
 
 export function useObserverPublisher({

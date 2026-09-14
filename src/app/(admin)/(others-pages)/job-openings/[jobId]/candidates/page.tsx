@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import React from "react";
+import { notFound } from "next/navigation";
 import CandidatesView from "@/components/candidates/CandidatesView";
+import { isRef } from "@/lib/refs";
 
 export const metadata: Metadata = {
   title: "CGB Solutions - Candidates",
@@ -13,5 +15,8 @@ export default async function CandidatesPage({
   params: Promise<{ jobId: string }>;
 }) {
   const { jobId } = await params;
-  return <CandidatesView jobId={Number(jobId)} />;
+  // The URL segment is the job's opaque ref; numeric ids (or anything else)
+  // are "not found" and never reach the API.
+  if (!isRef(jobId)) notFound();
+  return <CandidatesView jobId={jobId} />;
 }

@@ -22,7 +22,8 @@ import { apiPost, apiUpload } from "@/lib/api";
 interface AddCandidateModalProps {
   open: boolean;
   onClose: () => void;
-  jobId: number;
+  /** The job's opaque ref (the API accepts it wherever a job id is expected). */
+  jobId: string;
   onCreated: (candidate: any) => void;
 }
 

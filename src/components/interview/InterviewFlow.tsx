@@ -8,6 +8,7 @@ import { useLiveRecordingUpload } from "@/hooks/interview/useLiveRecordingUpload
 import {
   updateMeta as updateRecordingMeta,
   deleteRecording as deleteStoredRecording,
+  attachSessionToken as attachRecordingSessionToken,
 } from "@/lib/recordingStorage";
 import { reportClientEvent, BUILD_ID } from "@/lib/clientTelemetry";
 import { checkInterviewCapabilities } from "@/lib/browserCapabilities";
@@ -58,12 +59,20 @@ type FlowStep =
 
 interface Props {
   token: string;
+  /** Personal invite secret from ?invite= — verifies this candidate on load. */
+  inviteToken?: string;
+  /** Legacy ?candidate= email — auto-verify / prefill for older links. */
   candidateEmail?: string;
 }
 
-export default function InterviewFlow({ token, candidateEmail }: Props) {
+export default function InterviewFlow({ token, inviteToken, candidateEmail }: Props) {
   const [step, setStep] = useState<FlowStep>("LOADING");
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Set alongside loadError when its text alone can't classify the ERROR
+  // screen: a refused invite link, or a verify failure worth retrying.
+  const [loadErrorKind, setLoadErrorKind] = useState<"invalid_invite" | "retryable" | null>(null);
+  // Shown inline on the verify form (e.g. "use your personal link").
+  const [verifyNotice, setVerifyNotice] = useState<string | undefined>();
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
   const [jobConfig, setJobConfig] = useState<JobConfig | null>(null);
@@ -143,10 +152,25 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   // recording's meta with sessionId=null. That silently disabled orphan
   // recovery, so any tab/laptop close at the very end lost the video with no
   // error. This was the root cause of the "3-4 lost videos" report.
+  //
+  // The session token is stored with it: upload-recording requires the token,
+  // and recovery runs on a later load where sessionStorage no longer has it.
   useEffect(() => {
     if (!activeRecordingId || !session.sessionId) return;
-    void updateRecordingMeta(activeRecordingId, { sessionId: session.sessionId });
+    const st = getSessionToken();
+    void updateRecordingMeta(activeRecordingId, {
+      sessionId: session.sessionId,
+      ...(st ? { sessionToken: st } : {}),
+    });
   }, [session.sessionId, activeRecordingId]);
+
+  // Rejoining a session: recordings a crashed tab left for it (possibly stored
+  // before tokens were kept) get the token too, so recovery can upload them.
+  useEffect(() => {
+    if (!session.sessionId) return;
+    const st = getSessionToken();
+    if (st) void attachRecordingSessionToken(session.sessionId, st);
+  }, [session.sessionId]);
   const isCompletingRef = useRef(false);
   const isResumingRef = useRef(false);
   const autoVerifiedRef = useRef(false);
@@ -247,7 +271,8 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
   useEffect(() => {
     console.log("[Interview] Initializing interview flow", {
       token: token.slice(0, 8) + "...",
-      candidateEmail: candidateEmail || "(none — will show verify form)",
+      invite: inviteToken ? "(personal invite link)" : "(none)",
+      candidateEmail: candidateEmail || (inviteToken ? "(none)" : "(none — will show verify form)"),
       userAgent: navigator.userAgent,
       timestamp: new Date().toISOString(),
     });
@@ -284,10 +309,14 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
           return;
         }
 
-        // Auto-verify if candidateEmail is in the URL (?candidate=email)
-        if (candidateEmail && !autoVerifiedRef.current) {
+        // Auto-verify from the link: the personal invite (?invite=) or, for
+        // older links, the candidate's email (?candidate=email)
+        if ((inviteToken || candidateEmail) && !autoVerifiedRef.current) {
           autoVerifiedRef.current = true;
-          const accessResult = await session.verifyAccess(token, candidateEmail);
+          const accessResult = await session.verifyAccess(
+            token,
+            inviteToken ? { invite: inviteToken } : { email: candidateEmail },
+          );
           console.log("[Interview] Auto-verify result:", accessResult.access, accessResult.message);
 
           if (accessResult.access === "granted") {
@@ -320,9 +349,31 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
             setLoadError(accessResult.message);
             setStep("ERROR");
             return;
+          } else if (accessResult.access === "invalid_invite") {
+            // Wrong / rotated / other-job invite. The email form can't help —
+            // the candidate needs their current personal link.
+            console.warn("[Interview] Invite link refused:", accessResult.message);
+            setLoadError(accessResult.message);
+            setLoadErrorKind("invalid_invite");
+            setStep("ERROR");
+            return;
+          } else if (accessResult.access === "error" && inviteToken) {
+            // Verify request failed (network / timeout / server). A personal-link
+            // candidate can't fall back to the email form (it answers
+            // "invite_required"), so offer a retry — reload keeps ?invite=.
+            console.warn("[Interview] Invite verification failed:", accessResult.message);
+            setLoadError(accessResult.message);
+            setLoadErrorKind("retryable");
+            setStep("ERROR");
+            return;
+          } else if (accessResult.access === "invite_required") {
+            // Legacy ?candidate= link for a candidate who now has a personal link.
+            setVerifyNotice(
+              accessResult.message || "Please open the personal interview link from your invitation email.",
+            );
           }
-          // access === "apply" — fall through to verify
-          console.log("[Interview] Candidate not invited — showing verify/apply form");
+          // "apply" / "invite_required" / a failed legacy verify — fall through to verify
+          console.log("[Interview] Candidate not verified from link — showing verify/apply form");
         }
 
         setStep("VERIFY_EMAIL");
@@ -341,7 +392,8 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     setStep("CAPTURE_PHOTO");
   }, []);
 
-  // When webcam is not required, request mic-only and skip device test
+  // When webcam is not required, request mic-only and skip photo capture — the
+  // mic still goes through the device test (mic check) after screen share.
   // Store the mic stream so recording can use its audio tracks
   const handleMicOnlyGranted = useCallback((stream: MediaStream) => {
     setWebcamStream(stream); // contains mic audio tracks even without video
@@ -355,7 +407,7 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
 
   const handleVerifyAccess = useCallback(
     async (email: string) => {
-      return session.verifyAccess(token, email);
+      return session.verifyAccess(token, { email });
     },
     [token, session]
   );
@@ -602,14 +654,20 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     const isUnsupportedBrowser = errLower.includes("browser is not supported");
     const isNotFound = errLower.includes("not found") || errLower.includes("no longer active");
     const isScheduled = errLower.includes("scheduled for") || errLower.includes("come back");
-    const canRetry = isNetwork || isTimeout;
+    const isInvalidInvite = loadErrorKind === "invalid_invite";
+    const canRetry = isNetwork || isTimeout || loadErrorKind === "retryable";
 
     let icon = ":/";
     let title = "Something Went Wrong";
     let subtitle = loadError || "An unexpected error occurred.";
     let hint: string | null = null;
 
-    if (isNetwork) {
+    if (isInvalidInvite) {
+      icon = "🔗";
+      title = "Invalid Interview Link";
+      subtitle = loadError || "This interview link is not valid.";
+      hint = "Please open the most recent interview link from your invitation email. If it still doesn't work, contact your recruiter.";
+    } else if (isNetwork) {
       icon = "📡";
       title = "Connection Error";
       subtitle = "Unable to connect to the interview server.";
@@ -656,7 +714,7 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
     }
 
     // Log full error details to console for debugging
-    console.error("[Interview] Error screen shown:", { title, error: loadError, isNetwork, isTimeout, isExpired, isCompleted, isTerminated, isNotFound });
+    console.error("[Interview] Error screen shown:", { title, error: loadError, isInvalidInvite, isNetwork, isTimeout, isExpired, isCompleted, isTerminated, isNotFound });
 
     return (
       <div className="flex items-center justify-center min-h-screen px-6 text-center bg-white">
@@ -692,6 +750,7 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
           // the link emailed by the recruiter doesn't have to retype their
           // address (and so that submit just works once they hit it).
           initialEmail={candidateEmail}
+          initialError={verifyNotice}
           onVerify={handleVerifyAccess}
           onAccessGranted={handleAccessGranted}
           onShowApply={handleShowApply}
@@ -781,13 +840,19 @@ export default function InterviewFlow({ token, candidateEmail }: Props) {
       }
       return (
         <PreInterviewLayout currentStep={6}>
-          <DeviceTestStep stream={webcamStream} onNext={() => {
-            if (jobConfig.secondary_cam) {
-              setStep("SECONDARY_CAM");
-            } else {
-              setStep("PRACTICE_ROUND");
-            }
-          }} />
+          <DeviceTestStep
+            stream={webcamStream}
+            sessionId={session.sessionId}
+            language={interviewLanguage}
+            managerEmail={jobConfig.manager_email}
+            onNext={() => {
+              if (jobConfig.secondary_cam) {
+                setStep("SECONDARY_CAM");
+              } else {
+                setStep("PRACTICE_ROUND");
+              }
+            }}
+          />
         </PreInterviewLayout>
       );
 

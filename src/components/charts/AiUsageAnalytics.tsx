@@ -128,13 +128,15 @@ const barChartConfig: ChartConfig = Object.fromEntries(
   FEATURES.map((f) => [f.key, { label: f.label, color: f.color }])
 );
 
-export default function AiUsageAnalytics({ orgId }: { orgId?: number } = {}) {
+export default function AiUsageAnalytics({ orgId }: { orgId?: string } = {}) {
   const [mode, setMode] = useState<ViewMode>("monthly");
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [barData, setBarData] = useState<Record<string, string | number>[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const orgParam = orgId ? `&org_id=${orgId}` : "";
+  // orgId is an org ref. Only the global dashboard (no orgId at all) is unfiltered —
+  // never silently drop the filter for an org page.
+  const orgParam = orgId !== undefined ? `&org_id=${encodeURIComponent(orgId)}` : "";
 
   const fetchData = useCallback(async () => {
     setLoading(true);
