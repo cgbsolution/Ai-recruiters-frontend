@@ -59,6 +59,19 @@ interface OrgStats {
   users_by_role: Record<string, number>;
 }
 
+interface UnassignedCounts {
+  jobs: number;
+  candidates: number;
+  questions: number;
+  resumes: number;
+  ai_credit_usage: number;
+}
+
+interface ClaimPreview {
+  data: UnassignedCounts;
+  users: { id: number; name: string; email: string; role: string; organization_name: string | null }[];
+}
+
 export default function OrganizationsView() {
   const { hasRole } = useAuth();
   const router = useRouter();
@@ -80,6 +93,14 @@ export default function OrganizationsView() {
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Unassigned data (organization_id NULL) and the "assign to organization" dialog
+  const [unassigned, setUnassigned] = useState<UnassignedCounts | null>(null);
+  const [claimOpen, setClaimOpen] = useState(false);
+  const [claimOrgRef, setClaimOrgRef] = useState("");
+  const [claimPreview, setClaimPreview] = useState<ClaimPreview | null>(null);
+  const [claimUserIds, setClaimUserIds] = useState<number[]>([]);
+  const [claiming, setClaiming] = useState(false);
+
   const fetchOrgs = useCallback(async () => {
     try {
       const params = search ? `?search=${encodeURIComponent(search)}` : "";
@@ -99,9 +120,58 @@ export default function OrganizationsView() {
     }
   }, []);
 
+  const fetchUnassigned = useCallback(async () => {
+    try {
+      setUnassigned(await api<UnassignedCounts>("/organizations/unassigned/summary"));
+    } catch {
+      // silently fail — the banner just stays hidden
+    }
+  }, []);
+
   useEffect(() => {
-    Promise.all([fetchOrgs(), fetchStats()]).finally(() => setLoading(false));
-  }, [fetchOrgs, fetchStats]);
+    Promise.all([fetchOrgs(), fetchStats(), fetchUnassigned()]).finally(() => setLoading(false));
+  }, [fetchOrgs, fetchStats, fetchUnassigned]);
+
+  const selectClaimOrg = async (orgRef: string) => {
+    setClaimOrgRef(orgRef);
+    setClaimPreview(null);
+    setClaimUserIds([]);
+    if (!orgRef) return;
+    try {
+      const preview = await api<ClaimPreview>(`/organizations/${orgRef}/unassigned`);
+      setClaimPreview(preview);
+      setClaimUserIds(preview.users.map((u) => u.id));
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to load preview");
+    }
+  };
+
+  const handleClaim = async () => {
+    const org = orgs.find((o) => o.ref === claimOrgRef);
+    if (!org) return;
+    setClaiming(true);
+    try {
+      const moved = await api<{ jobs: number; questions: number; resumes: number; users: number }>(
+        `/organizations/${org.ref}/claim-unassigned`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_ids: claimUserIds }),
+        }
+      );
+      toast.success(
+        `Assigned to ${org.name}: ${moved.jobs} jobs, ${moved.questions} questions, ${moved.resumes} resumes, ${moved.users} users`
+      );
+      setClaimOpen(false);
+      await Promise.all([fetchOrgs(), fetchStats(), fetchUnassigned()]);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to assign data");
+    } finally {
+      setClaiming(false);
+    }
+  };
+
+  const unassignedTotal = unassigned ? unassigned.jobs + unassigned.questions + unassigned.resumes : 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -256,6 +326,27 @@ export default function OrganizationsView() {
           Add Organization
         </Button>
       </div>
+
+      {unassigned && unassignedTotal > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+          <p>
+            <span className="font-semibold">
+              {unassigned.jobs} jobs, {unassigned.candidates} candidates, {unassigned.questions} questions and{" "}
+              {unassigned.resumes} resumes
+            </span>{" "}
+            don&apos;t belong to any organization, so admins and recruiters can&apos;t see them.
+          </p>
+          <Button
+            size="sm"
+            onClick={() => {
+              setClaimOpen(true);
+              selectClaimOrg("");
+            }}
+          >
+            Assign to organization
+          </Button>
+        </div>
+      )}
 
       {/* Stats Cards */}
       {stats && (
@@ -541,6 +632,90 @@ export default function OrganizationsView() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign Unassigned Data Dialog */}
+      <Dialog open={claimOpen} onOpenChange={setClaimOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Assign unassigned data</DialogTitle>
+            <DialogDescription>
+              Move every job, question and resume that has no organization into the organization you pick.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Organization</Label>
+              <select
+                value={claimOrgRef}
+                onChange={(e) => selectClaimOrg(e.target.value)}
+                className="h-11 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs dark:bg-input/30"
+              >
+                <option value="">Select an organization</option>
+                {orgs.filter((o) => o.is_active).map((o) => (
+                  <option key={o.id} value={o.ref}>{o.name} (@{o.domain})</option>
+                ))}
+              </select>
+            </div>
+
+            {claimPreview && (
+              <>
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  Will move <strong>{claimPreview.data.jobs}</strong> jobs (with{" "}
+                  <strong>{claimPreview.data.candidates}</strong> candidates),{" "}
+                  <strong>{claimPreview.data.questions}</strong> questions and{" "}
+                  <strong>{claimPreview.data.resumes}</strong> resumes.
+                </p>
+
+                {claimPreview.users.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Also link these users to the organization</Label>
+                    <div className="max-h-56 space-y-2 overflow-y-auto rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                      {claimPreview.users.map((u) => (
+                        <label key={u.id} className="flex cursor-pointer items-start gap-3 text-sm">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 h-4 w-4 rounded border-gray-300"
+                            checked={claimUserIds.includes(u.id)}
+                            onChange={(e) =>
+                              setClaimUserIds((ids) =>
+                                e.target.checked ? [...ids, u.id] : ids.filter((id) => id !== u.id)
+                              )
+                            }
+                          />
+                          <span>
+                            <span className="font-medium text-gray-900 dark:text-white">{u.name}</span>{" "}
+                            <span className="text-gray-500">{u.email}</span>
+                            <span className="block text-xs text-gray-500">
+                              {u.role.replace("_", " ")} · currently {u.organization_name ?? "not linked"}
+                            </span>
+                            {u.role === "super_admin" && (
+                              <span className="block text-xs text-amber-600 dark:text-amber-400">
+                                Recommended if this account creates jobs — otherwise its new jobs will again have no
+                                organization. It will then see only this organization&apos;s jobs and candidates
+                                (managing organizations and users is unchanged).
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setClaimOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleClaim} disabled={!claimPreview || claiming}>
+              {claiming ? "Assigning..." : "Assign"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
