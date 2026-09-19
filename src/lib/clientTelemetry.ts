@@ -93,7 +93,10 @@ export function reportClientEvent(evt: ClientEvent): void {
       ...evt,
       buildId: BUILD_ID,
       at: now,
-      url: window.location?.href,
+      // Path only: the query string carries secrets (?invite=<personal link
+      // token>, ?token= reset links) and this endpoint is unauthenticated
+      // storage that ends up in logs. An observer link's path IS its secret.
+      url: window.location?.pathname?.replace(/^\/observe\/[^/]+/, "/observe/[redacted]"),
       userAgent: navigator.userAgent,
       deviceMemoryGb: (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? null,
       hardwareConcurrency: navigator.hardwareConcurrency ?? null,

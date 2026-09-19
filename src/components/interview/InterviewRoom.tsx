@@ -260,7 +260,7 @@ export default function InterviewRoom({
 
   /* ── Hooks ── */
   const { transcript, interimTranscript, finalTranscript, isListening, isSupported, lastFinalAt, micStream, error: sttError, start, stop, reset, getSnapshot } = useDeepgramSTT(interviewLanguage, sessionId);
-  const { speak, cancel, isSpeaking, isLipSyncing, audioElement, error: ttsError } = useGoogleTTS(interviewLanguage);
+  const { speak, cancel, isSpeaking, isLipSyncing, audioElement, error: ttsError } = useGoogleTTS(interviewLanguage, sessionId);
 
   // Watch the JS heap so we can shed load BEFORE Chrome force-kills the tab.
   // intervalMs=1500 — polls every 1.5 s so the avatar swap to VoiceVisualizer

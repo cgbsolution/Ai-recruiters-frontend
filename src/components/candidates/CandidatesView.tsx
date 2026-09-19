@@ -655,7 +655,12 @@ export default function CandidatesView({ jobId }: { jobId: string }) {
       headers.join(","),
       ...rows.map((row) =>
         row.map((cell) => {
-          const str = String(cell);
+          let str = String(cell);
+          // Formula injection: an applicant can name themselves
+          // `=HYPERLINK(...)` through the public apply form, and Excel runs
+          // any cell starting with = + - @ as a formula. Negative numbers
+          // (scores) are left alone.
+          if (/^[=+\-@\t\r]/.test(str) && !/^-\d+(\.\d+)?$/.test(str)) str = `'${str}`;
           return str.includes(",") || str.includes('"') || str.includes("\n")
             ? `"${str.replace(/"/g, '""')}"`
             : str;

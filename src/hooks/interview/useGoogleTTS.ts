@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, sessionTokenHeader } from "@/lib/api";
 
 interface SpeechSynthesisHook {
   speak: (text: string) => void;
@@ -49,7 +49,11 @@ function cleanForSpeech(text: string): string {
  * Backend calls Google TTS API and returns base64 MP3.
  * Voice: en-IN-Wavenet-A (Indian female).
  */
-export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
+export function useGoogleTTS(language: string = "en", sessionId?: number): SpeechSynthesisHook {
+  // The backend only speaks for a live session: it needs the session id and
+  // its X-Session-Token (the endpoint used to be open to anyone).
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLipSyncing, setIsLipSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,9 +94,10 @@ export function useGoogleTTS(language: string = "en"): SpeechSynthesisHook {
     let lastErr: unknown = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const res = await fetch(`${API_BASE}/interview/tts`, {
+        const sid = sessionIdRef.current;
+        const res = await fetch(`${API_BASE}/interview/tts${sid ? `?session_id=${sid}` : ""}`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...sessionTokenHeader() },
           body: JSON.stringify({ text: text.trim(), language: langRef.current }),
         });
         if (!res.ok) throw new Error(`TTS API error: ${res.status}`);

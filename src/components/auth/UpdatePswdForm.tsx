@@ -9,7 +9,7 @@ import { Eye, EyeOff, Loader2, Lock } from "lucide-react";
 import { apiPost } from "@/lib/api";
 
 export default function UpdatePswdForm() {
-  const { user } = useAuth();
+  const { user, replaceToken } = useAuth();
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -28,8 +28,8 @@ export default function UpdatePswdForm() {
       return;
     }
 
-    if (newPassword.length < 6) {
-      setError("New password must be at least 6 characters");
+    if (newPassword.length < 8) {
+      setError("New password must be at least 8 characters");
       return;
     }
 
@@ -37,10 +37,12 @@ export default function UpdatePswdForm() {
     setError(null);
 
     try {
-      await apiPost("/auth/change-password", {
+      const res = await apiPost<{ access_token?: string; expires_in?: number }>("/auth/change-password", {
         current_password: currentPassword,
         new_password: newPassword,
       });
+      // The password change invalidates every earlier token, this one included.
+      if (res?.access_token) replaceToken(res.access_token, res.expires_in);
       setSuccess(true);
       setCurrentPassword("");
       setNewPassword("");

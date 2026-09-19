@@ -9,6 +9,13 @@ const TOKEN_KEY = "auth_token";
 const USER_KEY = "auth_user";
 const EXPIRES_AT_KEY = "auth_expires_at"; // epoch ms when token expires
 
+// `secure` keeps the session cookies off plain-http requests; it is only
+// possible on an https origin, so local http dev keeps working.
+function cookieOptions(days: number): Cookies.CookieAttributes {
+  const secure = typeof window !== "undefined" && window.location.protocol === "https:";
+  return { expires: days, sameSite: "Lax", secure };
+}
+
 // How often to check if session is still valid (ms)
 const SESSION_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
 // Inactivity timeout — log out if no mouse/keyboard/touch for this long
@@ -42,6 +49,9 @@ interface AuthContextType {
   logout: () => void;
   hasRole: (...roles: UserRole[]) => boolean;
   updateUser: (updates: Partial<AuthUser>) => void;
+  /** Swap in a freshly issued token (e.g. after a password change, which
+   *  invalidates every earlier token). */
+  replaceToken: (accessToken: string, expiresInSec?: number) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -182,7 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 google_connected: data.google_connected ?? false,
                 google_email: data.google_email ?? null,
               };
-              Cookies.set(USER_KEY, JSON.stringify(fresh), { expires: 1, sameSite: "Lax" });
+              Cookies.set(USER_KEY, JSON.stringify(fresh), cookieOptions(1));
               setUser(fresh);
             }
           })
@@ -201,22 +211,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const saveSession = useCallback((accessToken: string, userData: AuthUser, expiresInSec?: number) => {
     // Cookie expires when token expires (default 1 day)
     const cookieDays = expiresInSec ? expiresInSec / 86400 : 1;
-    Cookies.set(TOKEN_KEY, accessToken, { expires: cookieDays, sameSite: "Lax" });
-    Cookies.set(USER_KEY, JSON.stringify(userData), { expires: cookieDays, sameSite: "Lax" });
+    Cookies.set(TOKEN_KEY, accessToken, cookieOptions(cookieDays));
+    Cookies.set(USER_KEY, JSON.stringify(userData), cookieOptions(cookieDays));
     if (expiresInSec) {
       const expiresAt = Date.now() + expiresInSec * 1000;
-      Cookies.set(EXPIRES_AT_KEY, String(expiresAt), { expires: cookieDays, sameSite: "Lax" });
+      Cookies.set(EXPIRES_AT_KEY, String(expiresAt), cookieOptions(cookieDays));
     }
     setToken(accessToken);
     setUser(userData);
     lastActivityRef.current = Date.now();
   }, []);
 
+  const replaceToken = useCallback((accessToken: string, expiresInSec?: number) => {
+    const cookieDays = expiresInSec ? expiresInSec / 86400 : 1;
+    Cookies.set(TOKEN_KEY, accessToken, cookieOptions(cookieDays));
+    if (expiresInSec) {
+      Cookies.set(EXPIRES_AT_KEY, String(Date.now() + expiresInSec * 1000), cookieOptions(cookieDays));
+    }
+    setToken(accessToken);
+  }, []);
+
   const updateUser = useCallback((updates: Partial<AuthUser>) => {
     setUser((prev) => {
       if (!prev) return prev;
       const updated = { ...prev, ...updates };
-      Cookies.set(USER_KEY, JSON.stringify(updated), { expires: 1, sameSite: "Lax" });
+      Cookies.set(USER_KEY, JSON.stringify(updated), cookieOptions(1));
       return updated;
     });
   }, []);
@@ -273,7 +292,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, signup, logout, hasRole, updateUser }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, signup, logout, hasRole, updateUser, replaceToken }}>
       {children}
     </AuthContext.Provider>
   );

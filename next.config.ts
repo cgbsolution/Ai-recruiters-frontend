@@ -13,6 +13,25 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // Baseline hardening for every page. frame-ancestors / X-Frame-Options
+        // stop other sites from framing the app (clickjacking the admin UI or
+        // the candidate's interview); the referrer policy keeps secrets in
+        // URLs (?invite=, /observe/<token>, reset links) from being sent to
+        // other origins; the permissions policy limits camera, microphone and
+        // screen capture to this origin.
+        source: "/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=()",
+          },
+        ],
+      },
+      {
         source: "/models/:path*",
         headers: [
           { key: "Content-Type", value: "model/gltf-binary" },
