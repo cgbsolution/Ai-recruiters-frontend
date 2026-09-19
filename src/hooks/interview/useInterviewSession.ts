@@ -19,7 +19,11 @@ export interface CodingQuestion {
 
 export interface Message {
   role: "ai" | "candidate";
+  /** For AI turns: the question (or closing line) alone. */
   content: string;
+  /** AI turns only: Nira's reaction to the previous answer. Spoken first, then
+   *  a short pause, then `content` — shown as its own chat bubble. */
+  feedback?: string;
   questionIndex?: number;
   codingQuestion?: CodingQuestion;
   /** True for AI messages fabricated locally when the backend was unreachable.
@@ -270,6 +274,7 @@ export function useInterviewSession(): InterviewSessionHook {
       const restored: Message[] = data.messages.map((m: any) => ({
         role: m.role as "ai" | "candidate",
         content: m.content,
+        feedback: m.feedback || undefined,
         questionIndex: m.question_index,
       }));
       setMessages(restored);
@@ -343,7 +348,7 @@ export function useInterviewSession(): InterviewSessionHook {
         method: "POST",
         timeout: 60_000,
       });
-      const aiMsg: Message = { role: "ai", content: data.message, questionIndex: data.question_index, codingQuestion: data.coding_question || undefined };
+      const aiMsg: Message = { role: "ai", content: data.message, feedback: data.feedback || undefined, questionIndex: data.question_index, codingQuestion: data.coding_question || undefined };
       setMessages([aiMsg]);
       updateQuestionStates(data.message, data.question_index, data.is_complete);
       if (data.is_complete) setIsInterviewComplete(true);
@@ -411,6 +416,7 @@ export function useInterviewSession(): InterviewSessionHook {
         const aiMsg: Message = {
           role: "ai",
           content: data.message,
+          feedback: data.feedback || undefined,
           questionIndex: data.question_index,
           codingQuestion: data.coding_question || undefined,
         };

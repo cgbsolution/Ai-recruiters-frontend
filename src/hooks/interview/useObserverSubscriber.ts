@@ -15,6 +15,8 @@ export interface ObserverMessage {
   id?: number;
   role: "ai" | "candidate";
   content: string;
+  /** AI turns: Nira's feedback on the previous answer, said before `content`. */
+  feedback?: string | null;
   question_index?: number | null;
   created_at?: string | null;
 }

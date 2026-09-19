@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { Fragment, useEffect, useMemo, useRef } from "react";
 import { useParams } from "next/navigation";
 import { useObserverSubscriber, type CodingSubmissionPayload } from "@/hooks/interview/useObserverSubscriber";
 import { useObserverFrameReceiver } from "@/hooks/interview/useObserverFrameReceiver";
@@ -365,13 +365,22 @@ export default function ObserverPage() {
               </div>
             )}
             {messages.map((m, idx) => (
-              <MessageBubble
-                key={m.id ?? idx}
-                role={m.role}
-                content={m.content}
-                createdAt={m.created_at}
-                candidateName={candidateName}
-              />
+              <Fragment key={m.id ?? idx}>
+                {m.role === "ai" && m.feedback && (
+                  <MessageBubble
+                    role="ai"
+                    content={m.feedback}
+                    createdAt={m.created_at}
+                    candidateName={candidateName}
+                  />
+                )}
+                <MessageBubble
+                  role={m.role}
+                  content={m.content}
+                  createdAt={m.created_at}
+                  candidateName={candidateName}
+                />
+              </Fragment>
             ))}
             <div ref={transcriptEndRef} />
           </div>

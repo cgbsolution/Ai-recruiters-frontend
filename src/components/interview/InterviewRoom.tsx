@@ -80,6 +80,10 @@ const INTRO_SILENCE_TIMEOUT_MS = 8000;
 /** Delay after TTS finishes before starting STT — prevents echo pickup */
 const POST_SPEECH_DELAY_MS = 1200;
 
+/** Pause between Nira's feedback on an answer and the next question, so the
+ *  two land as separate utterances instead of one run-on line. */
+const FEEDBACK_TO_QUESTION_PAUSE_MS = 1500;
+
 /** If PROCESSING phase lasts longer than this, force-recover.
  *  MUST exceed sendMessage's worst case (2 attempts × 45 s + 2 s backoff ≈ 92 s):
  *  recovering EARLIER re-enabled the submit UI while the session-level
@@ -220,6 +224,11 @@ export default function InterviewRoom({
   /* ── Coding Mode State ── */
   const [activeCodingQuestion, setActiveCodingQuestion] = useState<CodingQuestion | null>(null);
   const [showCodeEditor, setShowCodeEditor] = useState(false);
+
+  /* ── Feedback → pause → question ── */
+  // AI message whose feedback is being spoken; its question is spoken (and its
+  // question bubble shown) only after the feedback and a short pause.
+  const [pendingQuestionMsg, setPendingQuestionMsg] = useState<Message | null>(null);
 
   /* ── Refs ── */
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -510,7 +519,16 @@ export default function InterviewRoom({
       cancelSilenceAnim();
       processingStartRef.current = null;
       setPhase("SPEAKING");
-      speak(aiMsgs[latestIdx].content);
+      const latestAiMsg = aiMsgs[latestIdx];
+      if (latestAiMsg.feedback) {
+        // Feedback on the answer first; Effect 2 speaks the question after a
+        // short pause so the two don't run together.
+        setPendingQuestionMsg(latestAiMsg);
+        speak(latestAiMsg.feedback);
+      } else {
+        setPendingQuestionMsg(null);
+        speak(latestAiMsg.content);
+      }
 
       // Coding-question handoff (only when the editor feature is enabled).
       // Three cases:
@@ -522,7 +540,6 @@ export default function InterviewRoom({
       //   3. New coding question, editor already open → swap the question in
       //      place. This is the multi-coding-question case: candidate just
       //      submitted, AI returns the next problem, editor stays open.
-      const latestAiMsg = aiMsgs[latestIdx];
       if (jobConfig.code_editor_required) {
         if (latestAiMsg.codingQuestion) {
           setActiveCodingQuestion(latestAiMsg.codingQuestion);
@@ -548,6 +565,20 @@ export default function InterviewRoom({
   useEffect(() => {
     if (phase !== "SPEAKING") return;
     if (isSpeaking || isThinking) return;
+
+    // Feedback finished → pause, then speak the question as its own utterance.
+    // Stay in SPEAKING throughout so the mic doesn't open in the gap.
+    if (pendingQuestionMsg) {
+      // Screen share dropped mid-turn: hold the question until it's restored
+      // rather than asking it behind the modal.
+      if (showScreenShareModal) return;
+      const pauseTimer = setTimeout(() => {
+        if (phaseRef.current !== "SPEAKING") return;
+        setPendingQuestionMsg(null);
+        speak(pendingQuestionMsg.content);
+      }, FEEDBACK_TO_QUESTION_PAUSE_MS);
+      return () => clearTimeout(pauseTimer);
+    }
 
     // Interview complete & avatar finished speaking → auto-trigger completion
     if (isInterviewComplete) {
@@ -580,7 +611,7 @@ export default function InterviewRoom({
     }, POST_SPEECH_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [phase, isSpeaking, isThinking, isInterviewComplete, showCodeEditor, reset, onComplete]);
+  }, [phase, isSpeaking, isThinking, isInterviewComplete, showCodeEditor, reset, onComplete, pendingQuestionMsg, showScreenShareModal, speak]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  EFFECT 2b: SPEAKING hard-ceiling safety net                   */
@@ -594,6 +625,7 @@ export default function InterviewRoom({
       if (phaseRef.current !== "SPEAKING") return;
       console.warn("[InterviewRoom] SPEAKING exceeded ceiling — TTS likely hung; recovering");
       cancel(); // stop any stuck audio
+      setPendingQuestionMsg(null); // show the question so it can be read
       if (isInterviewComplete) {
         if (!isAutoCompletingRef.current) {
           isAutoCompletingRef.current = true;
@@ -1420,6 +1452,7 @@ export default function InterviewRoom({
                 messages={messages}
                 isThinking={isThinking}
                 liveTranscript={liveText}
+                pendingQuestionMsg={pendingQuestionMsg}
               />
             </div>
 
