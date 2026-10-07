@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -22,9 +22,22 @@ import {
   Zap,
 } from "lucide-react";
 import { notifySuccess, notifyError } from "@/lib/notify";
-import { api, apiDownload, apiUpload, saveBlob } from "@/lib/api";
+import { api, ApiError, apiDownload, apiUpload, saveBlob } from "@/lib/api";
+import { holdSessionAlive } from "@/lib/sessionActivity";
 
 const BATCH_SIZE = 100;
+// Batches on the server at once: one parsing while the next is already
+// queued, so the parse workers never sit idle during the next upload.
+const MAX_BATCHES_IN_FLIGHT = 2;
+const POLL_INTERVAL_MS = 3000;
+// One resume is bounded server-side (read + AI timeouts), so a batch whose
+// counts have not moved for this long is not going to; stop waiting on it.
+const STALL_TIMEOUT_MS = 20 * 60 * 1000;
+// A batch the server has never heard of (404) this many polls in a row.
+const MAX_MISSING_POLLS = 10;
+// 100 resumes can be 100s of MB on a slow uplink; the 2-min default dropped batches.
+const UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
+const UPLOAD_ATTEMPTS = 3;
 
 type ParseMode = "fast" | "ai";
 
@@ -38,7 +51,79 @@ interface BatchProgress {
   total: number;
   completed: number;
   failed: number;
+  replaced?: number;
   status: string;
+}
+
+interface UploadResponse {
+  batch_id: string;
+  queued: number;
+  total_files: number;
+  message: string;
+}
+
+interface BatchCounts {
+  completed: number;
+  failed: number;
+  replaced: number;
+}
+
+type BatchEnd = "done" | "stalled" | "lost" | "aborted";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Upload one batch, retrying network errors / timeouts / 5xx. A retried batch
+ * the server had in fact received is harmless: re-uploaded identical files
+ * replace their earlier copy instead of duplicating it.
+ */
+async function uploadBatch(path: string, batch: File[]): Promise<UploadResponse> {
+  for (let attempt = 1; ; attempt++) {
+    const formData = new FormData();
+    batch.forEach((f) => formData.append("files", f));
+    try {
+      return await apiUpload<UploadResponse>(path, formData, { timeout: UPLOAD_TIMEOUT_MS });
+    } catch (err) {
+      const status = err instanceof ApiError ? err.status : 0;
+      const retryable = status === 0 || status === 408 || status === 429 || status >= 500;
+      if (!retryable || attempt >= UPLOAD_ATTEMPTS) throw err;
+      await sleep(attempt * 10_000);
+    }
+  }
+}
+
+/**
+ * Poll a batch until the server reports it completed. Unlike before, this
+ * always ends: a batch that stops progressing or that the server no longer
+ * knows is given up on (the server keeps working on whatever it has), instead
+ * of spinning forever and blocking every batch after it.
+ */
+async function waitForBatch(
+  batchId: string,
+  onProgress: (counts: BatchCounts) => void,
+  isAborted: () => boolean,
+): Promise<{ counts: BatchCounts; end: BatchEnd }> {
+  let counts: BatchCounts = { completed: 0, failed: 0, replaced: 0 };
+  let lastChange = Date.now();
+  let missing = 0;
+  for (;;) {
+    if (isAborted()) return { counts, end: "aborted" };
+    try {
+      const bp = await api<BatchProgress>(`/resume-database/batch/${batchId}`);
+      missing = 0;
+      if (bp.completed !== counts.completed || bp.failed !== counts.failed) lastChange = Date.now();
+      counts = { completed: bp.completed, failed: bp.failed, replaced: bp.replaced ?? 0 };
+      onProgress(counts);
+      if (bp.status === "completed") return { counts, end: "done" };
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404 && ++missing >= MAX_MISSING_POLLS) {
+        return { counts, end: "lost" };
+      }
+      // Network blips / timeouts: keep polling; the stall timer still bounds this.
+    }
+    if (Date.now() - lastChange > STALL_TIMEOUT_MS) return { counts, end: "stalled" };
+    await sleep(POLL_INTERVAL_MS);
+  }
 }
 
 export default function BulkUploadModal({
@@ -57,6 +142,7 @@ export default function BulkUploadModal({
   const [totalFiles, setTotalFiles] = useState(0);
   const [parsed, setParsed] = useState(0);
   const [failed, setFailed] = useState(0);
+  const [replaced, setReplaced] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
 
@@ -84,90 +170,135 @@ export default function BulkUploadModal({
     addFiles(e.dataTransfer.files);
   }, []);
 
+  // Closing or reloading the tab mid-upload loses every batch not yet sent.
+  useEffect(() => {
+    if (!uploading) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [uploading]);
+
   const handleUpload = async () => {
     if (files.length === 0) return;
 
+    const selected = files;
     abortRef.current = false;
     setUploading(true);
     setShowProgress(true);
     setParsed(0);
     setFailed(0);
+    setReplaced(0);
     setIsComplete(false);
-    setTotalFiles(files.length);
+    setTotalFiles(selected.length);
 
     const batches: File[][] = [];
-    for (let i = 0; i < files.length; i += BATCH_SIZE) {
-      batches.push(files.slice(i, i + BATCH_SIZE));
+    for (let i = 0; i < selected.length; i += BATCH_SIZE) {
+      batches.push(selected.slice(i, i + BATCH_SIZE));
     }
 
     setTotalBatches(batches.length);
     setCurrentBatch(0);
     setFiles([]);
 
-    let totalParsed = 0;
-    let totalFailed = 0;
+    // Latest counts per batch; the totals shown are their sum.
+    const counts = new Map<number, BatchCounts>();
+    const publish = () => {
+      let p = 0;
+      let f = 0;
+      let r = 0;
+      counts.forEach((c) => {
+        p += c.completed;
+        f += c.failed;
+        r += c.replaced;
+      });
+      setParsed(p);
+      setFailed(f);
+      setReplaced(r);
+    };
+    const unfinished: number[] = [];
+    const inFlight = new Set<Promise<void>>();
 
-    for (let i = 0; i < batches.length; i++) {
-      if (abortRef.current) break;
-      setCurrentBatch(i + 1);
+    // A long upload is work in progress: it keeps the session from idling out.
+    const releaseSession = holdSessionAlive();
+    try {
+      for (let i = 0; i < batches.length; i++) {
+        while (inFlight.size >= MAX_BATCHES_IN_FLIGHT) await Promise.race(inFlight);
+        if (abortRef.current) break;
+        setCurrentBatch(i + 1);
 
-      try {
-        const formData = new FormData();
-        batches[i].forEach((f) => formData.append("files", f));
+        let data: UploadResponse;
+        try {
+          data = await uploadBatch(`/resume-database/upload?parse_mode=${parseMode}`, batches[i]);
+        } catch (err: any) {
+          notifyError(
+            `Batch ${i + 1}/${batches.length} could not be uploaded: ${err?.message || "Upload error"}`
+          );
+          counts.set(i, { completed: 0, failed: batches[i].length, replaced: 0 });
+          publish();
+          continue;
+        }
 
-        const data = await apiUpload<{
-          batch_id: string;
-          queued: number;
-          total_files: number;
-          message: string;
-        }>(`/resume-database/upload?parse_mode=${parseMode}`, formData);
-
-        // Poll this batch — update live counts every 2s
-        await new Promise<void>((resolve) => {
-          let resolved = false;
-          const check = setInterval(() => {
-            if (resolved) return;
-            api<BatchProgress>(`/resume-database/batch/${data.batch_id}`)
-              .then((bp) => {
-                if (resolved) return;
-
-                setParsed(totalParsed + bp.completed);
-                setFailed(totalFailed + bp.failed);
-
-                if (bp.status === "completed") {
-                  resolved = true;
-                  clearInterval(check);
-                  totalParsed += bp.completed;
-                  totalFailed += bp.failed;
-                  setParsed(totalParsed);
-                  setFailed(totalFailed);
-                  resolve();
-                }
-              })
-              .catch(() => {});
-          }, 2000);
+        const waiting: Promise<void> = waitForBatch(
+          data.batch_id,
+          (c) => {
+            counts.set(i, c);
+            publish();
+          },
+          () => abortRef.current,
+        ).then(({ counts: c, end }) => {
+          counts.set(i, c);
+          publish();
+          if (end === "stalled" || end === "lost") unfinished.push(i + 1);
+          inFlight.delete(waiting);
         });
-      } catch (err: any) {
-        notifyError(
-          `Batch ${i + 1}/${batches.length} failed: ${err.message || "Upload error"}`
-        );
-        totalFailed += batches[i].length;
-        setFailed(totalFailed);
+        inFlight.add(waiting);
       }
+      await Promise.all(Array.from(inFlight));
+    } finally {
+      releaseSession();
     }
 
     setIsComplete(true);
     setUploading(false);
+
+    let totalParsed = 0;
+    let totalFailed = 0;
+    let totalReplaced = 0;
+    counts.forEach((c) => {
+      totalParsed += c.completed;
+      totalFailed += c.failed;
+      totalReplaced += c.replaced;
+    });
     notifySuccess(
-      `Done! ${totalParsed} parsed, ${totalFailed} failed out of ${files.length || totalParsed + totalFailed}.`
+      `Done! ${totalParsed} parsed${totalReplaced ? ` (${totalReplaced} replaced older copies)` : ""}, ` +
+      `${totalFailed} failed out of ${selected.length}.`
     );
+    if (unfinished.length) {
+      notifyError(
+        `Stopped waiting on batch ${unfinished.join(", ")} — the server keeps processing those ` +
+        `resumes; check the Resume Database list in a while.`
+      );
+    }
   };
 
   const handleClose = () => {
+    // A stray click outside the dialog used to abort an hours-long upload.
+    if (
+      uploading &&
+      !window.confirm(
+        "Stop the upload? Resumes already sent keep processing, but the remaining files won't be uploaded."
+      )
+    ) {
+      return;
+    }
     abortRef.current = true;
     setShowProgress(false);
     setParsed(0);
     setFailed(0);
+    setReplaced(0);
     setIsComplete(false);
     setFiles([]);
     setTotalBatches(0);
@@ -241,6 +372,12 @@ export default function BulkUploadModal({
                   className={`h-3 ${isComplete ? "[&>[data-slot=progress-indicator]]:bg-green-500" : "[&>[data-slot=progress-indicator]]:bg-blue-500"}`}
                 />
 
+                {replaced > 0 && (
+                  <p className="text-xs text-gray-500">
+                    {replaced} duplicate{replaced === 1 ? "" : "s"} replaced an older copy (old record and file removed).
+                  </p>
+                )}
+
                 {!isComplete && (
                   <div className="flex items-center gap-2 text-xs text-gray-500">
                     <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
@@ -257,8 +394,8 @@ export default function BulkUploadModal({
                 {isComplete
                   ? "All resumes have been processed. You can close this dialog."
                   : parseMode === "ai"
-                    ? "Resumes are parsed using Claude AI for high accuracy. Each takes ~3 seconds."
-                    : "Resumes are parsed using fast regex extraction. Each takes less than 1 second."}
+                    ? "Resumes are parsed using Claude AI for high accuracy — a few seconds each, several at a time. Keep this tab open until it finishes."
+                    : "Resumes are parsed using fast regex extraction. Keep this tab open until it finishes."}
               </p>
 
               {isComplete && (
@@ -322,7 +459,7 @@ export default function BulkUploadModal({
               {/* Mode description */}
               <p className="text-xs text-gray-400 -mt-2 px-1">
                 {parseMode === "ai"
-                  ? "Uses Claude AI for near-perfect name, skills, and experience extraction. ~3s per resume."
+                  ? "Uses Claude AI for near-perfect name, skills, and experience extraction. A few seconds per resume."
                   : "Uses regex patterns — fast but may misidentify names or miss fields. < 1s per resume."}
               </p>
 
@@ -352,7 +489,7 @@ export default function BulkUploadModal({
                   Browse files
                 </span>
                 <p className="text-xs text-gray-400 mt-3">
-                  PDF, DOC, DOCX — no limit (auto-batched in groups of {BATCH_SIZE})
+                  PDF, DOC, DOCX — no limit (auto-batched in groups of {BATCH_SIZE}). Re-uploading a resume replaces the older copy.
                 </p>
                 <input
                   id="bulk-resume-file-input"
