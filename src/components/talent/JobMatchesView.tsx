@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Play, Save } from "lucide-react";
+import { Play, Save, Send, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { notifyError, notifySuccess } from "@/lib/notify";
 import {
@@ -9,11 +9,13 @@ import {
   talentGet,
   talentPost,
   talentPut,
+  type ApprovalItem,
   type JobTalentSettings,
   type MatchItem,
   type TalentJob,
 } from "@/lib/talent";
 import { cn } from "@/lib/utils";
+import { ApprovalsPanel } from "./ApprovalsPanel";
 import { MatchCard } from "./MatchCard";
 import { Panel, Pill, TalentShell, quietButton, useTalentOrg } from "./TalentShell";
 
@@ -163,17 +165,20 @@ function JobBody({ jobRef }: { jobRef: string }) {
   const { orgId } = useTalentOrg();
   const [job, setJob] = useState<TalentJob | null>(null);
   const [matches, setMatches] = useState<MatchItem[] | null>(null);
+  const [pending, setPending] = useState<ApprovalItem[]>([]);
   const [filter, setFilter] = useState("");
   const [showSettings, setShowSettings] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [j, m] = await Promise.all([
+      const [j, m, a] = await Promise.all([
         talentGet<TalentJob>(`/jobs/${jobRef}`),
         talentGet<{ items: MatchItem[] }>(`/jobs/${jobRef}/matches?limit=200${filter ? `&status=${filter}` : ""}`),
+        talentGet<ApprovalItem[]>(`/approvals?job_id=${jobRef}&kind=invite`),
       ]);
       setJob(j);
       setMatches(m.items);
+      setPending(a);
     } catch (e) {
       notifyError((e as Error).message);
     }
@@ -191,6 +196,26 @@ function JobBody({ jobRef }: { jobRef: string }) {
   }, [running, load]);
 
   if (!job) return <div className="py-10 text-center text-sm text-gray-500">Loading…</div>;
+
+  const invite = async (m: MatchItem) => {
+    try {
+      await talentPost(`/matches/${m.id}/invite`, {});
+      notifySuccess(`Inviting ${m.profile.name ?? "the candidate"}`);
+      load();
+    } catch (e) {
+      notifyError((e as Error).message);
+    }
+  };
+
+  const plan = async () => {
+    try {
+      await talentPost(`/jobs/${job.ref}/invites/plan`, {});
+      notifySuccess(job.settings.autonomy_mode === "autopilot" ? "Inviting the top matches" : "Approval list being prepared");
+      setTimeout(load, 2500);
+    } catch (e) {
+      notifyError((e as Error).message);
+    }
+  };
 
   const run = async () => {
     try {
@@ -223,6 +248,9 @@ function JobBody({ jobRef }: { jobRef: string }) {
             <Button className={quietButton} variant="outline" onClick={() => setShowSettings(!showSettings)}>
               {showSettings ? "Hide settings" : "Settings"}
             </Button>
+            <Button className={quietButton} variant="outline" disabled={running} onClick={plan}>
+              <Send /> {job.settings.autonomy_mode === "autopilot" ? "Invite top matches" : "Prepare invites"}
+            </Button>
             <Button variant="primary" className="h-9 py-0" disabled={running} onClick={run}>
               <Play /> Run matching
             </Button>
@@ -231,6 +259,8 @@ function JobBody({ jobRef }: { jobRef: string }) {
       </Panel>
 
       {showSettings && <SettingsForm job={job} onSaved={load} />}
+
+      <ApprovalsPanel key={pending.map((p) => p.id).join()} items={pending} onDone={load} />
 
       <Panel title="Ranked matches" description="Ordered by the evidence-based score; fresh profiles first on ties. Thumbs feed the precision@10 report.">
         <div className="mb-4 flex flex-wrap gap-1.5">
@@ -258,7 +288,17 @@ function JobBody({ jobRef }: { jobRef: string }) {
         ) : (
           <div className="space-y-3">
             {matches.map((m) => (
-              <MatchCard key={m.id} m={m} />
+              <MatchCard
+                key={m.id}
+                m={m}
+                actions={
+                  (m.status === "ranked" || m.status === "needs_refresh") && m.ai_score != null ? (
+                    <Button className={quietButton} variant="outline" onClick={() => invite(m)} title="Invite now (records your approval)">
+                      <UserPlus /> Invite
+                    </Button>
+                  ) : null
+                }
+              />
             ))}
           </div>
         )}

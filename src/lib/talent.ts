@@ -310,3 +310,61 @@ export const DIMENSION_LABELS: Record<string, string> = {
   domain_fit: "Domain",
   trajectory: "Trajectory",
 };
+
+// ── Loops C and D ───────────────────────────────────────────────────────────
+
+export interface ApprovalItem {
+  id: string;
+  kind: "invite" | "submit" | "reject_message";
+  job_id: number;
+  requested_at: string;
+  match: MatchItem | null;
+}
+
+export interface InterviewRow {
+  id: string;
+  match_id: string;
+  job_id: number;
+  job_ref: string;
+  job_title: string;
+  candidate: string | null;
+  profile_id: number;
+  mode: string;
+  status: string;
+  scheduled_at: string | null;
+  completed_at: string | null;
+  reschedule_count: number;
+  no_show_count: number;
+  needs_recruiter: boolean;
+  overall_score: number | null;
+  human_review_status: string | null;
+  ai_score: number | null;
+  match_status: string;
+}
+
+export interface InvitePageData {
+  organization: string;
+  first_name: string;
+  job: { title: string; location: string; department: string; type: string; summary: string; experience: string };
+  current: { current_ctc: number | null; expected_ctc: number | null; notice_period_days: number | null };
+  open: boolean;
+}
+
+export interface InterviewState {
+  organization: string;
+  job_title: string;
+  status: string;
+  mode: "async_text" | "async_voice" | "live_voice";
+  question_count: number;
+  time_limit_minutes: number;
+  slots: { id: string; label: string; starts_at: string }[];
+  scheduled_label: string | null;
+  scheduled_at: string | null;
+  opens_at: string | null;
+  can_start: boolean;
+  can_reschedule: boolean;
+  needs_recruiter: boolean;
+  meeting_link: string | null;
+  disclosure: string;
+  consented: boolean;
+}

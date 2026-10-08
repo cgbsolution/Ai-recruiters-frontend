@@ -23,6 +23,7 @@ export const useTalentOrg = () => useContext(TalentOrgContext);
 const TABS = [
   { href: "/talent", label: "Campaigns" },
   { href: "/talent/jobs", label: "Job matches" },
+  { href: "/talent/interviews", label: "Interviews" },
   { href: "/talent/audit", label: "Audit" },
   { href: "/talent/settings", label: "Settings" },
 ];
