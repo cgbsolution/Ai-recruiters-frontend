@@ -25,9 +25,11 @@ function SettingsBody() {
   const { isAdmin, orgId } = useTalentOrg();
   const [s, setS] = useState<TalentSettings | null>(null);
   const [saving, setSaving] = useState(false);
+  const [retention, setRetention] = useState<{ due: number; deletes_enabled: boolean } | null>(null);
 
   useEffect(() => {
     talentGet<TalentSettings>("/settings").then(setS).catch((e) => notifyError(e.message));
+    talentGet<{ due: number; deletes_enabled: boolean }>("/retention").then(setRetention).catch(() => setRetention(null));
   }, [orgId]);
 
   if (!s) return <div className="py-10 text-center text-sm text-gray-500">Loading…</div>;
@@ -129,7 +131,10 @@ function SettingsBody() {
               <input type="number" min={30} max={730} className={input} disabled={!isAdmin} value={s.refresh_after_days}
                 onChange={(e) => set("refresh_after_days", Number(e.target.value))} />
             </Field>
-            <Field label="Keep CVs for (months)" help="Counted from the candidate's last confirmation.">
+            <Field
+              label="Keep CVs for (months)"
+              help={`Counted from the candidate's last confirmation.${retention ? ` ${retention.due.toLocaleString()} profiles are past it now${retention.deletes_enabled ? " and are deleted daily" : " (deleted only if “Retention deletes” is on)"}.` : ""}`}
+            >
               <input type="number" min={1} max={120} className={input} disabled={!isAdmin} value={s.retention_months}
                 onChange={(e) => set("retention_months", Number(e.target.value))} />
             </Field>
