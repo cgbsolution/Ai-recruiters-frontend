@@ -124,12 +124,52 @@ export function InterviewRunner({ token, state, onDone }: { token: string; state
     }
   };
 
+  const [liveUrl, setLiveUrl] = useState<string | null>(null);
+  const joinLive = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const r = await publicPost<{ live_url: string }>(`${base}/start`, { disclosure_acknowledged: true, consent_to_record: true });
+      setLiveUrl(r.live_url);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.detail : "Something went wrong. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const human = (
     <button type="button" onClick={async () => { await publicPost(`${base}/human`, {}); onDone(); }}
       className="inline-flex items-center gap-1.5 text-sm text-gray-600 underline-offset-2 hover:underline">
       <UserRound className="h-4 w-4" /> I&apos;d rather talk to a person
     </button>
   );
+
+  if (state.mode === "live_voice" && (liveUrl || state.status === "in_progress")) {
+    return (
+      <CandidateFrame org={state.organization}>
+        <h1 className="text-2xl font-semibold tracking-tight">Your live interview</h1>
+        <Card className="mt-5 space-y-4">
+          <p className="text-sm text-gray-700">
+            The live voice interview opens in a new page. Use a quiet place, allow your microphone and camera when asked,
+            and keep this page open in case you need to rejoin.
+          </p>
+          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+          {liveUrl ? (
+            <a href={liveUrl} target="_blank" rel="noopener noreferrer"
+              className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-brand-500 px-5 text-sm font-semibold text-white hover:bg-brand-600">
+              Join the live interview
+            </a>
+          ) : (
+            <PrimaryButton className="w-full" disabled={busy} onClick={joinLive}>
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />} Rejoin the live interview
+            </PrimaryButton>
+          )}
+          {human}
+        </Card>
+      </CandidateFrame>
+    );
+  }
 
   if (!progress) {
     return (
@@ -166,7 +206,7 @@ export function InterviewRunner({ token, state, onDone }: { token: string; state
           )}
           {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
           <PrimaryButton className="w-full" disabled={!ack || !consent || busy}
-            onClick={() => run(() => publicPost<InterviewProgress>(`${base}/start`, {
+            onClick={() => state.mode === "live_voice" ? joinLive() : run(() => publicPost<InterviewProgress>(`${base}/start`, {
               disclosure_acknowledged: ack, consent_to_record: consent, answer_mode: mode,
             }))}>
             {busy && <Loader2 className="h-4 w-4 animate-spin" />} Start the interview
