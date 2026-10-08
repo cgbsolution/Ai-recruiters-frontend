@@ -27,6 +27,9 @@ const PUBLIC_PATHS = [
   "/interview",
   "/secondary-cam",
   "/avatar-debug",
+  // Talent Agent candidate pages (refresh, invite, interview, my data): the
+  // emailed magic link is the credential.
+  "/t",
 ];
 
 const AUTH_PAGES = ["/signin", "/signup"];
