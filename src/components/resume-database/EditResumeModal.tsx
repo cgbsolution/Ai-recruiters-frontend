@@ -23,7 +23,25 @@ interface ResumeItem {
   skills: string[];
   location: string | null;
   annual_package: number | null;
+  expected_ctc?: number | null;
+  notice_period_days?: number | null;
+  open_to_relocate?: boolean | null;
 }
+
+// Values a recruiter learns on a call; saving one marks it "Recruiter" (not
+// "From CV") on the profile.
+const NOTICE_OPTIONS = [
+  { value: "", label: "Not stated" },
+  { value: "0", label: "Immediate" },
+  { value: "15", label: "15 days" },
+  { value: "30", label: "30 days" },
+  { value: "45", label: "45 days" },
+  { value: "60", label: "60 days" },
+  { value: "90", label: "90 days" },
+];
+
+const selectClass =
+  "h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring dark:bg-input/30";
 
 interface EditResumeModalProps {
   open: boolean;
@@ -40,6 +58,9 @@ export default function EditResumeModal({ open, onClose, resume, onUpdated }: Ed
   const [skills, setSkills] = useState("");
   const [location, setLocation] = useState("");
   const [annualPackage, setAnnualPackage] = useState("");
+  const [expectedCtc, setExpectedCtc] = useState("");
+  const [notice, setNotice] = useState("");
+  const [relocate, setRelocate] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -51,6 +72,9 @@ export default function EditResumeModal({ open, onClose, resume, onUpdated }: Ed
       setSkills((resume.skills || []).join(", "));
       setLocation(resume.location || "");
       setAnnualPackage(resume.annual_package != null ? String(resume.annual_package) : "");
+      setExpectedCtc(resume.expected_ctc != null ? String(resume.expected_ctc) : "");
+      setNotice(resume.notice_period_days != null ? String(resume.notice_period_days) : "");
+      setRelocate(resume.open_to_relocate == null ? "" : resume.open_to_relocate ? "yes" : "no");
     }
   }, [resume]);
 
@@ -74,6 +98,15 @@ export default function EditResumeModal({ open, onClose, resume, onUpdated }: Ed
 
       const pkgNum = annualPackage ? parseFloat(annualPackage) : null;
       if (pkgNum !== resume.annual_package) body.annual_package = pkgNum;
+
+      const expectedNum = expectedCtc ? parseFloat(expectedCtc) : null;
+      if (expectedNum !== (resume.expected_ctc ?? null)) body.expected_ctc = expectedNum;
+
+      const noticeNum = notice !== "" ? parseInt(notice, 10) : null;
+      if (noticeNum !== (resume.notice_period_days ?? null)) body.notice_period_days = noticeNum;
+
+      const relocateVal = relocate === "" ? null : relocate === "yes";
+      if (relocateVal !== (resume.open_to_relocate ?? null)) body.open_to_relocate = relocateVal;
 
       if (Object.keys(body).length === 0) {
         onClose();
@@ -131,8 +164,35 @@ export default function EditResumeModal({ open, onClose, resume, onUpdated }: Ed
               <Input id="edit-location" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="City, Country" />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="edit-package">Annual Package (LPA)</Label>
+              <Label htmlFor="edit-package">Current CTC (LPA)</Label>
               <Input id="edit-package" type="number" step="0.1" min="0" value={annualPackage} onChange={(e) => setAnnualPackage(e.target.value)} placeholder="e.g. 8.5" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-expected">Expected CTC (LPA)</Label>
+              <Input id="edit-expected" type="number" step="0.1" min="0" value={expectedCtc} onChange={(e) => setExpectedCtc(e.target.value)} placeholder="e.g. 12" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-notice">Notice period</Label>
+              <select id="edit-notice" value={notice} onChange={(e) => setNotice(e.target.value)} className={selectClass}>
+                {/* Keep an unusual stored value selectable */}
+                {notice !== "" && !NOTICE_OPTIONS.some((o) => o.value === notice) && (
+                  <option value={notice}>{notice} days</option>
+                )}
+                {NOTICE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-relocate">Relocation</Label>
+              <select id="edit-relocate" value={relocate} onChange={(e) => setRelocate(e.target.value)} className={selectClass}>
+                <option value="">Not stated</option>
+                <option value="yes">Open to relocate</option>
+                <option value="no">Not open</option>
+              </select>
             </div>
           </div>
 

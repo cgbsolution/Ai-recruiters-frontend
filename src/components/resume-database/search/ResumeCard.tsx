@@ -55,8 +55,12 @@ export default function ResumeCard({
 
   return (
     <article
+      // The whole card opens the profile; its own buttons and links act alone.
+      onClick={(e) => {
+        if (!(e.target as HTMLElement).closest("button, a, input, label, [role=checkbox]")) onOpen();
+      }}
       className={cn(
-        "group relative flex flex-col gap-4 rounded-2xl border bg-white p-4 shadow-sm transition-all sm:flex-row sm:p-5",
+        "group relative flex cursor-pointer flex-col gap-4 rounded-2xl border bg-white p-4 shadow-sm transition-all sm:flex-row sm:p-5",
         "hover:border-violet-200 hover:shadow-md dark:bg-gray-900/40 dark:hover:border-violet-500/30",
         selected ? "border-violet-300 ring-1 ring-violet-200 dark:border-violet-500/40 dark:ring-violet-500/20" : "border-gray-200 dark:border-white/10",
       )}
