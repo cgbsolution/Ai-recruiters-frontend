@@ -56,6 +56,10 @@ export async function publicUpload<T>(path: string, file: File): Promise<T> {
   return api<T>(`/talent/public${path}`, { method: "POST", body: form, skipAuth: true, timeout: 120_000 });
 }
 
+export function publicForm<T>(path: string, form: FormData): Promise<T> {
+  return api<T>(`/talent/public${path}`, { method: "POST", body: form, skipAuth: true, timeout: 120_000 });
+}
+
 export function publicUrl(path: string): string {
   return `${API_BASE}/talent/public${path}`;
 }
@@ -367,4 +371,69 @@ export interface InterviewState {
   meeting_link: string | null;
   disclosure: string;
   consented: boolean;
+  progress: InterviewProgress | null;
+}
+
+// ── Loop D: interviews ──────────────────────────────────────────────────────
+
+export interface InterviewProgress {
+  status: string;
+  question: { id: string; text: string; follow_up: boolean } | null;
+  answered: number;
+  total: number;
+  deadline: string | null;
+  seconds_left: number | null;
+}
+
+export interface TranscriptTurn {
+  turn: "question" | "answer";
+  question_id: string;
+  text: string;
+  kind?: "text" | "audio";
+  audio_path?: string | null;
+  audio_url?: string | null;
+  transcription?: "ok" | "failed" | null;
+  at?: string;
+}
+
+export interface CriterionScore {
+  criterion: string;
+  weight: number;
+  score: number;
+  confidence: number;
+  evidence: { quote: string; verified: boolean; answer_index: number | null }[];
+  rationale: string;
+  notes: string[];
+  override: { score: number; by: number; at: string; reason: string } | null;
+}
+
+export interface InterviewDetail extends InterviewRow {
+  questions: { id: string; text: string; must_have: string; source: string }[] | null;
+  transcript: TranscriptTurn[] | null;
+  scores: CriterionScore[] | null;
+  summary: string | null;
+  integrity_observations: string[] | null;
+  model: string | null;
+  prompt_version: string | null;
+  consent_recorded_at: string | null;
+  ai_disclosed_at: string | null;
+  started_at: string | null;
+  reviewed_at: string | null;
+  rubric: { criterion: string; description: string; weight: number }[];
+  match: MatchItem;
+}
+
+export interface ShortlistRow {
+  rank: number;
+  match_id: string;
+  interview_id: string;
+  profile_id: number;
+  composite: number;
+  interview_score: number;
+  ai_score: number | null;
+  risk_flags: number;
+  reviewed: boolean;
+  status: string;
+  candidate: string | null;
+  current_designation: string | null;
 }

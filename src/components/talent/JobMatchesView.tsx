@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ApprovalsPanel } from "./ApprovalsPanel";
 import { MatchCard } from "./MatchCard";
+import { ShortlistPanel } from "./ShortlistPanel";
 import { Panel, Pill, TalentShell, quietButton, useTalentOrg } from "./TalentShell";
 
 const input =
@@ -261,6 +262,8 @@ function JobBody({ jobRef }: { jobRef: string }) {
       {showSettings && <SettingsForm job={job} onSaved={load} />}
 
       <ApprovalsPanel key={pending.map((p) => p.id).join()} items={pending} onDone={load} />
+
+      <ShortlistPanel jobRef={job.ref} />
 
       <Panel title="Ranked matches" description="Ordered by the evidence-based score; fresh profiles first on ties. Thumbs feed the precision@10 report.">
         <div className="mb-4 flex flex-wrap gap-1.5">

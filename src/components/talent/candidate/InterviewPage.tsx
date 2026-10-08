@@ -6,6 +6,7 @@ import { ApiError } from "@/lib/api";
 import { fmtDate, publicGet, publicPost, type InterviewState } from "@/lib/talent";
 import { cn } from "@/lib/utils";
 import { Card, CandidateFrame, LinkProblem, PrimaryButton, SecondaryButton } from "./CandidateFrame";
+import { InterviewRunner } from "./InterviewRunner";
 
 function Disclosure({ text }: { text: string }) {
   return (
@@ -51,6 +52,10 @@ export default function InterviewPage({ token }: { token: string }) {
       setBusy(false);
     }
   };
+
+  if (s.status === "in_progress" || (s.status === "scheduled" && s.can_start)) {
+    return <InterviewRunner token={token} state={s} onDone={load} />;
+  }
 
   const human = (
     <button type="button" disabled={busy} onClick={() => act("/human")}
