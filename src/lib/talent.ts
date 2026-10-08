@@ -185,3 +185,128 @@ export function fmtDate(iso?: string | null, withTime = false): string {
     ? d.toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
     : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
+
+// ── Loop B: jobs and matches ────────────────────────────────────────────────
+
+export interface TalentJobRow {
+  id: number;
+  ref: string;
+  title: string;
+  location: string;
+  status: string;
+  autonomy_mode: "autopilot" | "copilot" | null;
+  match_status: string | null;
+  last_matched_at: string | null;
+  matches: Record<string, number>;
+}
+
+export interface RubricCriterion {
+  criterion: string;
+  description: string;
+  weight: number;
+}
+
+export interface JobTalentSettings {
+  autonomy_mode: "autopilot" | "copilot";
+  top_k: number;
+  interview_mode: "async_text" | "async_voice" | "live_voice";
+  question_count: number;
+  time_limit_minutes: number;
+  slot_minutes: number;
+  budget_max_ctc: number | null;
+  max_notice_days: number | null;
+  relocation_ok: boolean;
+  locations: string[] | null;
+  must_haves: string[] | null;
+  nice_to_haves: string[] | null;
+  rubric: RubricCriterion[] | null;
+  panel_user_ids: number[] | null;
+  match_status: string | null;
+  match_error: string | null;
+  last_matched_at: string | null;
+}
+
+export interface TalentJob {
+  id: number;
+  ref: string;
+  title: string;
+  location: string;
+  department: string;
+  experience_min: number | null;
+  experience_max: number | null;
+  status: string;
+  settings: JobTalentSettings;
+  skills: string[];
+  effective_must_haves: string[];
+  matches: Record<string, number>;
+}
+
+export interface MustHave {
+  requirement: string;
+  met: "yes" | "no" | "unclear";
+  evidence: string;
+  evidence_verified: boolean;
+}
+
+export interface MatchItem {
+  id: string;
+  rank: number;
+  profile_id: number;
+  status: string;
+  status_reason: string | null;
+  ai_score: number | null;
+  model_score: number | null;
+  dimension_scores: Record<string, number> | null;
+  stage1_score: number | null;
+  vector_score: number | null;
+  must_haves: MustHave[] | null;
+  gaps: string[] | null;
+  strengths: { strength: string; evidence: string; evidence_verified: boolean }[] | null;
+  risk_flags: { flag: string; evidence: string }[] | null;
+  evidence: { verified_quotes: number; unverified_quotes: number } | null;
+  fields_sent: string[] | null;
+  model: string | null;
+  prompt_version: string | null;
+  recruiter_rating: "relevant" | "not_relevant" | null;
+  response: string | null;
+  confirmed: Record<string, unknown> | null;
+  invited_at: string | null;
+  profile: {
+    name: string | null;
+    current_designation: string | null;
+    current_company: string | null;
+    experience_years: number | null;
+    city: string | null;
+    verification_status: string;
+    last_verified_at: string | null;
+    notice_period_days: number | null;
+    expected_ctc: number | null;
+    email_status: string | null;
+    job_search_status: string | null;
+  };
+}
+
+export interface PrecisionReport {
+  jobs: { job_id: number; ref: string; title: string; rated_in_top_10: number; relevant_in_top_10: number; precision_at_10: number | null; precision_of_rated: number | null }[];
+  jobs_fully_rated: number;
+  mean_precision_at_10: number | null;
+}
+
+export interface BackfillEstimate {
+  profiles: number;
+  model: string;
+  estimated_input_tokens: number;
+  estimated_output_tokens: number;
+  estimated_cost_usd: number;
+  batches: number;
+  prompt_version: string;
+  embeddings_missing: number;
+}
+
+export const DIMENSION_LABELS: Record<string, string> = {
+  must_have_coverage: "Must-haves",
+  relevant_experience: "Experience",
+  skills_depth: "Skills depth",
+  domain_fit: "Domain",
+  trajectory: "Trajectory",
+};

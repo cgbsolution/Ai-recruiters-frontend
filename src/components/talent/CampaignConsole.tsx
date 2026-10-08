@@ -16,6 +16,7 @@ import {
   type Segments,
   type TalentSettings,
 } from "@/lib/talent";
+import { BackfillPanel } from "./BackfillPanel";
 import { FunnelBars, Meter, StatusLine, fmtNum } from "./Charts";
 import { Panel, Pill, Stat, TalentShell, Warnings, quietButton, useTalentOrg } from "./TalentShell";
 
@@ -281,6 +282,8 @@ function ConsoleBody() {
           )}
         </Panel>
       </div>
+
+      <BackfillPanel />
 
       <Panel
         title="Refresh campaigns"
