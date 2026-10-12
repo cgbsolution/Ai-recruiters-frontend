@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { notifyError, notifySuccess } from "@/lib/notify";
 import { LOOP_LABELS, talentGet, talentPut, type TalentSettings } from "@/lib/talent";
+import { EmailBranding } from "./EmailBranding";
 import { Panel, TalentShell, Warnings, useTalentOrg } from "./TalentShell";
 
 const input =
@@ -127,7 +128,7 @@ function SettingsBody() {
 
         <Panel title="Candidates" description="Freshness, retention and what candidates are told.">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Ask to re-confirm after (days)">
+            <Field label="Ask to update every (days)" help="90 = every 3 months (30 to 730).">
               <input type="number" min={30} max={730} className={input} disabled={!isAdmin} value={s.refresh_after_days}
                 onChange={(e) => set("refresh_after_days", Number(e.target.value))} />
             </Field>
@@ -154,6 +155,8 @@ function SettingsBody() {
           </div>
         </Panel>
       </div>
+
+      <EmailBranding branding={s.branding} isAdmin={isAdmin} onSaved={setS} />
 
       <Panel title="Models" description="Set with environment variables on the server (TALENT_*_MODEL, EMBEDDING_PROVIDER).">
         <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-5">

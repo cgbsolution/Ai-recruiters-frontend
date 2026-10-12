@@ -3,11 +3,26 @@
 import React from "react";
 import { cn } from "@/lib/utils";
 
-/** The shell every candidate page shares: a single readable column. */
-export function CandidateFrame({ org, children }: { org?: string; children: React.ReactNode }) {
+export interface Brand {
+  logo_url: string | null;
+  color: string;
+}
+
+/** The shell every candidate page shares: a single readable column, headed by
+ *  the organization's logo (or name in its colour) — the same branding as its emails. */
+export function CandidateFrame({ org, brand, children }: { org?: string; brand?: Brand; children: React.ReactNode }) {
   return (
     <main className="mx-auto max-w-xl px-4 py-8 sm:py-12">
-      {org && <div className="mb-6 text-sm font-semibold tracking-wide text-gray-500">{org}</div>}
+      {brand?.logo_url ? (
+        // eslint-disable-next-line @next/next/no-img-element -- an organization's own https logo, any host
+        <img src={brand.logo_url} alt={org ?? ""} className="mb-6 h-9 w-auto max-w-[220px] object-contain" />
+      ) : (
+        org && (
+          <div className="mb-6 text-sm font-semibold tracking-wide text-gray-500" style={brand ? { color: brand.color } : undefined}>
+            {org}
+          </div>
+        )
+      )}
       {children}
       <p className="mt-10 text-xs leading-5 text-gray-400">
         This page was opened from a private link sent to you. Don&apos;t share it.
@@ -26,8 +41,8 @@ export function LinkProblem() {
       <Card>
         <h1 className="text-lg font-semibold">This link has expired or was already used</h1>
         <p className="mt-2 text-sm text-gray-600">
-          Links in our emails work for a limited time, and some work only once. If you need a new one, reply to the
-          email you received.
+          Links in our emails work for a limited time, and some work only once. Our next email will bring a new one, or
+          you can contact the company that wrote to you.
         </p>
       </Card>
     </CandidateFrame>

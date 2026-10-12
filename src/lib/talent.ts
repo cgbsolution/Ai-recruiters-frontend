@@ -67,7 +67,7 @@ export function publicUrl(path: string): string {
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export const LOOP_LABELS: Record<string, { label: string; help: string }> = {
-  refresh: { label: "Loop A · Refresh", help: "Ask candidates to re-confirm their profile every six months." },
+  refresh: { label: "Loop A · Refresh", help: "Email candidates to update their profile and CV (every 3 months by default)." },
   refresh_rolling: {
     label: "Refresh everyone who is due",
     help: "Off: only pilot campaigns send. On: the daily sweep enrolls every due profile, highest priority first.",
@@ -93,7 +93,27 @@ export interface TalentSettings {
   send_ramp: { from_day: number; cap: number }[];
   models: Record<string, string>;
   embedding_provider: string | null;
+  branding: Branding;
   warnings: string[];
+}
+
+/** Email branding. Empty values fall back to the organization’s name and the defaults. */
+export interface Branding {
+  brand_name: string | null;
+  brand_logo_url: string | null;
+  brand_color: string | null;
+  email_signature: string | null;
+  refresh_message: string | null;
+  default_name: string;
+  default_color: string;
+}
+
+export interface EmailPreview {
+  subject: string;
+  from_name: string;
+  text: string;
+  html: string;
+  refresh_after_days: number;
 }
 
 export interface Funnel {

@@ -4,10 +4,12 @@ import React, { useEffect, useRef, useState } from "react";
 import { CheckCircle2, FileUp, Loader2 } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { publicGet, publicPost, publicUpload } from "@/lib/talent";
-import { Card, CandidateFrame, LinkProblem, PrimaryButton, inputClass } from "./CandidateFrame";
+import { type Brand, Card, CandidateFrame, LinkProblem, PrimaryButton, inputClass } from "./CandidateFrame";
 
 interface RefreshData {
   organization: string;
+  brand: Brand;
+  ask_every_months: number;
   first_name: string;
   fields: {
     current_designation: string | null;
@@ -85,7 +87,7 @@ export default function RefreshPage({ token }: { token: string }) {
 
   if (done) {
     return (
-      <CandidateFrame org={data.organization}>
+      <CandidateFrame org={data.organization} brand={data.brand}>
         <Card className="text-center">
           <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-600" aria-hidden />
           <h1 className="mt-3 text-lg font-semibold">Thank you — your profile is up to date</h1>
@@ -133,7 +135,7 @@ export default function RefreshPage({ token }: { token: string }) {
   const skills = (data.skills as (string | { name: string })[]).map((s) => (typeof s === "string" ? s : s.name));
 
   return (
-    <CandidateFrame org={data.organization}>
+    <CandidateFrame org={data.organization} brand={data.brand}>
       <h1 className="text-2xl font-semibold tracking-tight">
         {data.first_name ? `Hi ${data.first_name}, is this still right?` : "Is your profile still right?"}
       </h1>
@@ -224,7 +226,7 @@ export default function RefreshPage({ token }: { token: string }) {
           <p className="text-xs leading-5 text-gray-500">{data.consent_text}</p>
           {(
             [
-              ["refresh", "Ask me to keep this profile up to date (about twice a year)"],
+              ["refresh", `Ask me to keep this profile up to date (about every ${data.ask_every_months === 1 ? "month" : `${data.ask_every_months} months`})`],
               ["jobs", "Tell me about roles that match my profile"],
               ["interview", "Contact me to arrange interviews I agree to"],
               ["whatsapp", "You may also use WhatsApp for these"],
