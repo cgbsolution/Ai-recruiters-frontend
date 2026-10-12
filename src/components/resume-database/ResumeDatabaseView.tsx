@@ -310,6 +310,46 @@ export default function ResumeDatabaseView() {
     }
   };
 
+  // Read failed resumes again (e.g. legacy Word .doc files, which the server
+  // could not read before). Progress is followed like a bulk-upload batch.
+  const [retrying, setRetrying] = useState(false);
+  const handleRetryFailed = async () => {
+    setRetrying(true);
+    try {
+      const res = await apiPost<{ batch_id: string | null; queued: number; missing_files: number }>(
+        "/resume-database/retry-failed",
+        {},
+      );
+      if (!res.batch_id || !res.queued) {
+        notifySuccess(res.missing_files ? `Nothing to retry — ${res.missing_files} failed file(s) are no longer stored.` : "Nothing to retry.");
+        return;
+      }
+      notifySuccess(`Reading ${res.queued.toLocaleString()} failed resume(s) again…`);
+      fetchStats();
+      const started = Date.now();
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 3000));
+        let bp: { completed: number; failed: number; status: string } | null = null;
+        try {
+          bp = await api(`/resume-database/batch/${res.batch_id}`);
+        } catch {
+          // keep polling through a blip
+        }
+        if (bp?.status === "completed" || Date.now() - started > 30 * 60 * 1000) {
+          if (bp) notifySuccess(`Retry done: ${bp.completed.toLocaleString()} now parsed, ${bp.failed.toLocaleString()} still failed.`);
+          break;
+        }
+        fetchStats();
+      }
+      refresh();
+      fetchStats();
+    } catch (err: any) {
+      notifyError(err?.message || "Retry failed");
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   const handleCleanup = async () => {
     try {
       const result = await apiPost<{ deleted: number; message: string }>("/resume-database/cleanup", {});
@@ -371,9 +411,23 @@ export default function ResumeDatabaseView() {
                   <>
                     {" · "}
                     {hasWriteAccess ? (
-                      <button type="button" onClick={handleCleanup} className="font-medium text-amber-700 hover:underline dark:text-amber-300" title="Remove failed placeholder records">
-                        {stats.failed.toLocaleString()} failed — clean up
-                      </button>
+                      <>
+                        <span className="font-medium text-amber-700 dark:text-amber-300">{stats.failed.toLocaleString()} failed</span>
+                        {" — "}
+                        <button
+                          type="button"
+                          onClick={handleRetryFailed}
+                          disabled={retrying}
+                          className="font-medium text-violet-700 hover:underline disabled:opacity-60 dark:text-violet-300"
+                          title="Read the failed resumes again with the latest file readers"
+                        >
+                          {retrying ? "retrying…" : "retry"}
+                        </button>
+                        {" · "}
+                        <button type="button" onClick={handleCleanup} disabled={retrying} className="font-medium text-amber-700 hover:underline disabled:opacity-60 dark:text-amber-300" title="Remove failed placeholder records">
+                          clean up
+                        </button>
+                      </>
                     ) : (
                       <>{stats.failed.toLocaleString()} failed</>
                     )}
