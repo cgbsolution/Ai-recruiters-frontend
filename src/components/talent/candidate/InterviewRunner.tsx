@@ -147,7 +147,7 @@ export function InterviewRunner({ token, state, onDone }: { token: string; state
 
   if (state.mode === "live_voice" && (liveUrl || state.status === "in_progress")) {
     return (
-      <CandidateFrame org={state.organization}>
+      <CandidateFrame org={state.organization} brand={state.brand}>
         <h1 className="text-2xl font-semibold tracking-tight">Your live interview</h1>
         <Card className="mt-5 space-y-4">
           <p className="text-sm text-gray-700">
@@ -173,7 +173,7 @@ export function InterviewRunner({ token, state, onDone }: { token: string; state
 
   if (!progress) {
     return (
-      <CandidateFrame org={state.organization}>
+      <CandidateFrame org={state.organization} brand={state.brand}>
         <h1 className="text-2xl font-semibold tracking-tight">Before you start</h1>
         <Card className="mt-5 space-y-4">
           <div className="flex gap-3 text-sm text-gray-700">
@@ -219,7 +219,7 @@ export function InterviewRunner({ token, state, onDone }: { token: string; state
 
   if (progress.status !== "in_progress" || !progress.question) {
     return (
-      <CandidateFrame org={state.organization}>
+      <CandidateFrame org={state.organization} brand={state.brand}>
         <Card className="text-center">
           <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-600" aria-hidden />
           <h2 className="mt-3 text-lg font-semibold">Interview submitted</h2>
@@ -240,7 +240,7 @@ export function InterviewRunner({ token, state, onDone }: { token: string; state
     });
 
   return (
-    <CandidateFrame org={state.organization}>
+    <CandidateFrame org={state.organization} brand={state.brand}>
       <div className="flex items-center justify-between text-sm text-gray-600">
         <span>
           Question {Math.min(progress.answered + 1, progress.total)} of {progress.total}

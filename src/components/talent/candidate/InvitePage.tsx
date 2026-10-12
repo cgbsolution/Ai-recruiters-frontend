@@ -37,7 +37,7 @@ export default function InvitePage({ token }: { token: string }) {
   }
   if (declined) {
     return (
-      <CandidateFrame org={data.organization}>
+      <CandidateFrame org={data.organization} brand={data.brand}>
         <Card className="text-center">
           <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-600" aria-hidden />
           <h1 className="mt-3 text-lg font-semibold">Thanks for letting us know</h1>
@@ -69,7 +69,7 @@ export default function InvitePage({ token }: { token: string }) {
   };
 
   return (
-    <CandidateFrame org={data.organization}>
+    <CandidateFrame org={data.organization} brand={data.brand}>
       <h1 className="text-2xl font-semibold tracking-tight">{data.job.title}</h1>
       <p className="mt-1 text-sm text-gray-600">
         {[data.job.location, data.job.type, data.job.experience].filter(Boolean).join(" · ")}

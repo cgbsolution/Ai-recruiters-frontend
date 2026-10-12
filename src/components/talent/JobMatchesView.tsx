@@ -296,9 +296,18 @@ function JobBody({ jobRef }: { jobRef: string }) {
                 m={m}
                 actions={
                   (m.status === "ranked" || m.status === "needs_refresh") && m.ai_score != null ? (
-                    <Button className={quietButton} variant="outline" onClick={() => invite(m)} title="Invite now (records your approval)">
-                      <UserPlus /> Invite
-                    </Button>
+                    m.contact && !m.contact.allowed ? (
+                      <div className="flex max-w-[260px] flex-col items-end gap-1 text-right">
+                        <Button className={quietButton} variant="outline" disabled title={m.contact.reason ?? undefined}>
+                          <UserPlus /> Invite
+                        </Button>
+                        <span className="text-xs text-warning-600 dark:text-warning-400">Can’t email: {m.contact.reason}</span>
+                      </div>
+                    ) : (
+                      <Button className={quietButton} variant="outline" onClick={() => invite(m)} title="Invite now (records your approval)">
+                        <UserPlus /> Invite
+                      </Button>
+                    )
                   ) : null
                 }
               />

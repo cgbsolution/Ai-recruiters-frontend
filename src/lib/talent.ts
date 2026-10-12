@@ -276,6 +276,8 @@ export interface MatchItem {
   id: string;
   rank: number;
   profile_id: number;
+  /** Whether an invite email could reach them, and why not (planning skips them). */
+  contact?: { allowed: boolean; reason: string | null };
   status: string;
   status_reason: string | null;
   ai_score: number | null;
@@ -366,8 +368,15 @@ export interface InterviewRow {
   match_status: string;
 }
 
+/** An organization's look on candidate pages (the same as its emails). */
+export interface CandidateBrand {
+  logo_url: string | null;
+  color: string;
+}
+
 export interface InvitePageData {
   organization: string;
+  brand?: CandidateBrand;
   first_name: string;
   job: { title: string; location: string; department: string; type: string; summary: string; experience: string };
   current: { current_ctc: number | null; expected_ctc: number | null; notice_period_days: number | null };
@@ -376,6 +385,7 @@ export interface InvitePageData {
 
 export interface InterviewState {
   organization: string;
+  brand?: CandidateBrand;
   job_title: string;
   status: string;
   mode: "async_text" | "async_voice" | "live_voice";

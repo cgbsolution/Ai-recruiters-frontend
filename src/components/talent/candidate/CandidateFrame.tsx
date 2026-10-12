@@ -1,12 +1,10 @@
 "use client";
 
 import React from "react";
+import type { CandidateBrand } from "@/lib/talent";
 import { cn } from "@/lib/utils";
 
-export interface Brand {
-  logo_url: string | null;
-  color: string;
-}
+export type Brand = CandidateBrand;
 
 /** The shell every candidate page shares: a single readable column, headed by
  *  the organization's logo (or name in its colour) — the same branding as its emails. */

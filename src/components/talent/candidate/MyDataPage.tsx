@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Download, Loader2, ShieldOff, Trash2 } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { fmtDate, publicGet, publicPost, publicUrl } from "@/lib/talent";
-import { Card, CandidateFrame, LinkProblem, PrimaryButton, SecondaryButton, inputClass } from "./CandidateFrame";
+import { type Brand, Card, CandidateFrame, LinkProblem, PrimaryButton, SecondaryButton, inputClass } from "./CandidateFrame";
 
 interface Consent {
   channel: string;
@@ -14,6 +14,7 @@ interface Consent {
 
 interface MyData {
   organization: string;
+  brand?: Brand;
   profile: Record<string, string | number | null>;
   consents: Consent[];
   cv_versions: { version: number; received_at: string; source: string; current: boolean }[];
@@ -106,7 +107,7 @@ export default function MyDataPage({ token }: { token: string }) {
     data.consents.some((c) => c.channel === channel && c.purpose === purpose && c.status === "granted");
 
   return (
-    <CandidateFrame org={data.organization}>
+    <CandidateFrame org={data.organization} brand={data.brand}>
       <h1 className="text-2xl font-semibold tracking-tight">Your data</h1>
       <p className="mt-2 text-sm text-gray-600">
         Everything {data.organization || "we"} hold about you, and controls for it.

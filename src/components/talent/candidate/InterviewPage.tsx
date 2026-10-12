@@ -65,7 +65,7 @@ export default function InterviewPage({ token }: { token: string }) {
   );
 
   return (
-    <CandidateFrame org={s.organization}>
+    <CandidateFrame org={s.organization} brand={s.brand}>
       <h1 className="text-2xl font-semibold tracking-tight">Interview · {s.job_title}</h1>
       <p className="mt-1 text-sm text-gray-600">
         About {s.question_count} questions, up to {s.time_limit_minutes} minutes.{" "}
