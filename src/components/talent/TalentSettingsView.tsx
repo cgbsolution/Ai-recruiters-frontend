@@ -3,22 +3,44 @@
 import React, { useEffect, useState } from "react";
 import { Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { notifyError, notifySuccess } from "@/lib/notify";
 import { LOOP_LABELS, talentGet, talentPut, type TalentSettings } from "@/lib/talent";
+import { cn } from "@/lib/utils";
 import { EmailBranding } from "./EmailBranding";
 import { Panel, TalentShell, Warnings, useTalentOrg } from "./TalentShell";
 
-const input =
-  "h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 disabled:opacity-60 dark:border-white/10 dark:bg-gray-900 dark:text-gray-100";
-
-function Field({ label, help, children }: { label: string; help?: string; children: React.ReactNode }) {
+/** Label + control + optional help. The control must carry `id`, and `aria-describedby={`${id}-help`}` when there is help. */
+function Field({
+  id,
+  label,
+  help,
+  hideLabel,
+  children,
+}: {
+  id: string;
+  label: string;
+  help?: string;
+  hideLabel?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <label className="block space-y-1.5">
-      <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{label}</span>
+    <div className="space-y-1.5">
+      <Label htmlFor={id} className={cn(hideLabel && "sr-only")}>
+        {label}
+      </Label>
       {children}
-      {help && <span className="block text-xs text-gray-500 dark:text-gray-400">{help}</span>}
-    </label>
+      {help && (
+        <p id={`${id}-help`} className="text-xs text-muted-foreground">
+          {help}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -33,7 +55,18 @@ function SettingsBody() {
     talentGet<{ due: number; deletes_enabled: boolean }>("/retention").then(setRetention).catch(() => setRetention(null));
   }, [orgId]);
 
-  if (!s) return <div className="py-10 text-center text-sm text-gray-500">Loading…</div>;
+  if (!s) {
+    return (
+      <div className="space-y-6" role="status" aria-label="Loading">
+        <Skeleton className="h-48 w-full" />
+        <div className="grid gap-6 xl:grid-cols-2">
+          <Skeleton className="h-80 w-full" />
+          <Skeleton className="h-80 w-full" />
+        </div>
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
+  }
 
   const set = <K extends keyof TalentSettings>(k: K, v: TalentSettings[K]) => setS({ ...s, [k]: v });
 
@@ -72,12 +105,12 @@ function SettingsBody() {
             : "The master switch (TALENT_AGENT_ENABLED) is off on the server, so nothing runs whatever these say."
         }
       >
-        <div className="divide-y divide-gray-100 dark:divide-white/5">
+        <div className="divide-y divide-border">
           {Object.entries(LOOP_LABELS).map(([key, { label, help }]) => (
             <div key={key} className="flex items-start justify-between gap-6 py-3">
               <div>
                 <div className="text-sm font-medium text-gray-900 dark:text-white">{label}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">{help}</div>
+                <div className="text-xs text-muted-foreground">{help}</div>
               </div>
               <Switch
                 checked={!!s.flags[key]}
@@ -93,33 +126,66 @@ function SettingsBody() {
       <div className="grid gap-6 xl:grid-cols-2">
         <Panel title="Outreach" description="When and how much the agent may send.">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Time zone">
-              <input className={input} disabled={!isAdmin} value={s.timezone} onChange={(e) => set("timezone", e.target.value)} />
+            <Field id="settings-timezone" label="Time zone">
+              <Input id="settings-timezone" disabled={!isAdmin} value={s.timezone} onChange={(e) => set("timezone", e.target.value)} />
             </Field>
-            <Field label="Sender domain" help="The From address's domain; caps and warm-up are counted per domain.">
-              <input className={input} disabled={!isAdmin} value={s.sender_domain} onChange={(e) => set("sender_domain", e.target.value)} />
+            <Field id="settings-sender-domain" label="Sender domain" help="The From address's domain; caps and warm-up are counted per domain.">
+              <Input
+                id="settings-sender-domain"
+                aria-describedby="settings-sender-domain-help"
+                disabled={!isAdmin}
+                value={s.sender_domain}
+                onChange={(e) => set("sender_domain", e.target.value)}
+              />
             </Field>
-            <Field label="Quiet hours start (local hour)">
-              <input type="number" min={0} max={23} className={input} disabled={!isAdmin} value={s.quiet_hours_start}
-                onChange={(e) => set("quiet_hours_start", Number(e.target.value))} />
+            <Field id="settings-quiet-start" label="Quiet hours start (local hour)">
+              <Input
+                id="settings-quiet-start"
+                type="number"
+                min={0}
+                max={23}
+                disabled={!isAdmin}
+                value={s.quiet_hours_start}
+                onChange={(e) => set("quiet_hours_start", Number(e.target.value))}
+              />
             </Field>
-            <Field label="Quiet hours end (local hour)" help="Same start and end turns quiet hours off.">
-              <input type="number" min={0} max={23} className={input} disabled={!isAdmin} value={s.quiet_hours_end}
-                onChange={(e) => set("quiet_hours_end", Number(e.target.value))} />
+            <Field id="settings-quiet-end" label="Quiet hours end (local hour)" help="Same start and end turns quiet hours off.">
+              <Input
+                id="settings-quiet-end"
+                aria-describedby="settings-quiet-end-help"
+                type="number"
+                min={0}
+                max={23}
+                disabled={!isAdmin}
+                value={s.quiet_hours_end}
+                onChange={(e) => set("quiet_hours_end", Number(e.target.value))}
+              />
             </Field>
           </div>
           <div className="mt-4 space-y-2">
             <div className="text-sm font-medium text-gray-800 dark:text-gray-200">Daily send cap ramp</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">A new domain starts low and earns volume.</div>
+            <div className="text-xs text-muted-foreground">A new domain starts low and earns volume.</div>
             {s.send_ramp.map((step, i) => (
               <div key={i} className="grid grid-cols-2 gap-3">
-                <Field label={i === 0 ? "From day" : ""}>
-                  <input type="number" min={0} className={input} disabled={!isAdmin || i === 0} value={step.from_day}
-                    onChange={(e) => set("send_ramp", s.send_ramp.map((x, j) => (j === i ? { ...x, from_day: Number(e.target.value) } : x)))} />
+                <Field id={`settings-ramp-from-${i}`} label="From day" hideLabel={i > 0}>
+                  <Input
+                    id={`settings-ramp-from-${i}`}
+                    type="number"
+                    min={0}
+                    disabled={!isAdmin || i === 0}
+                    value={step.from_day}
+                    onChange={(e) => set("send_ramp", s.send_ramp.map((x, j) => (j === i ? { ...x, from_day: Number(e.target.value) } : x)))}
+                  />
                 </Field>
-                <Field label={i === 0 ? "Messages per day" : ""}>
-                  <input type="number" min={0} className={input} disabled={!isAdmin} value={step.cap}
-                    onChange={(e) => set("send_ramp", s.send_ramp.map((x, j) => (j === i ? { ...x, cap: Number(e.target.value) } : x)))} />
+                <Field id={`settings-ramp-cap-${i}`} label="Messages per day" hideLabel={i > 0}>
+                  <Input
+                    id={`settings-ramp-cap-${i}`}
+                    type="number"
+                    min={0}
+                    disabled={!isAdmin}
+                    value={step.cap}
+                    onChange={(e) => set("send_ramp", s.send_ramp.map((x, j) => (j === i ? { ...x, cap: Number(e.target.value) } : x)))}
+                  />
                 </Field>
               </div>
             ))}
@@ -128,29 +194,61 @@ function SettingsBody() {
 
         <Panel title="Candidates" description="Freshness, retention and what candidates are told.">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Ask to update every (days)" help="90 = every 3 months (30 to 730).">
-              <input type="number" min={30} max={730} className={input} disabled={!isAdmin} value={s.refresh_after_days}
-                onChange={(e) => set("refresh_after_days", Number(e.target.value))} />
+            <Field id="settings-refresh-days" label="Ask to update every (days)" help="90 = every 3 months (30 to 730).">
+              <Input
+                id="settings-refresh-days"
+                aria-describedby="settings-refresh-days-help"
+                type="number"
+                min={30}
+                max={730}
+                disabled={!isAdmin}
+                value={s.refresh_after_days}
+                onChange={(e) => set("refresh_after_days", Number(e.target.value))}
+              />
             </Field>
             <Field
+              id="settings-retention"
               label="Keep CVs for (months)"
               help={`Counted from the candidate's last confirmation.${retention ? ` ${retention.due.toLocaleString()} profiles are past it now${retention.deletes_enabled ? " and are deleted daily" : " (deleted only if “Retention deletes” is on)"}.` : ""}`}
             >
-              <input type="number" min={1} max={120} className={input} disabled={!isAdmin} value={s.retention_months}
-                onChange={(e) => set("retention_months", Number(e.target.value))} />
+              <Input
+                id="settings-retention"
+                aria-describedby="settings-retention-help"
+                type="number"
+                min={1}
+                max={120}
+                disabled={!isAdmin}
+                value={s.retention_months}
+                onChange={(e) => set("retention_months", Number(e.target.value))}
+              />
             </Field>
-            <Field label="Default autonomy for new jobs" help="Copilot: you approve invites. Submissions and rejections always need you.">
-              <select className={input} disabled={!isAdmin} value={s.default_autonomy}
-                onChange={(e) => set("default_autonomy", e.target.value as "autopilot" | "copilot")}>
-                <option value="copilot">Copilot</option>
-                <option value="autopilot">Autopilot</option>
-              </select>
+            <Field id="settings-autonomy" label="Default autonomy for new jobs" help="Copilot: you approve invites. Submissions and rejections always need you.">
+              <Select
+                disabled={!isAdmin}
+                value={s.default_autonomy}
+                onValueChange={(v) => set("default_autonomy", v as "autopilot" | "copilot")}
+              >
+                <SelectTrigger id="settings-autonomy" aria-describedby="settings-autonomy-help" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="copilot">Copilot</SelectItem>
+                  <SelectItem value="autopilot">Autopilot</SelectItem>
+                </SelectContent>
+              </Select>
             </Field>
           </div>
           <div className="mt-4">
-            <Field label="Consent text" help="Shown next to the consent choices on the refresh page.">
-              <textarea rows={4} className={`${input} h-auto py-2`} disabled={!isAdmin} value={s.consent_text}
-                onChange={(e) => set("consent_text", e.target.value)} />
+            <Field id="settings-consent" label="Consent text" help="Shown next to the consent choices on the refresh page.">
+              <Textarea
+                id="settings-consent"
+                aria-describedby="settings-consent-help"
+                rows={4}
+                className="min-h-24"
+                disabled={!isAdmin}
+                value={s.consent_text}
+                onChange={(e) => set("consent_text", e.target.value)}
+              />
             </Field>
           </div>
         </Panel>
@@ -162,12 +260,12 @@ function SettingsBody() {
         <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-5">
           {Object.entries(s.models).map(([k, v]) => (
             <div key={k}>
-              <dt className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{k}</dt>
+              <dt className="text-xs uppercase tracking-wide text-muted-foreground">{k}</dt>
               <dd className="font-mono text-gray-900 dark:text-gray-100">{v}</dd>
             </div>
           ))}
           <div>
-            <dt className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">embeddings</dt>
+            <dt className="text-xs uppercase tracking-wide text-muted-foreground">embeddings</dt>
             <dd className="font-mono text-gray-900 dark:text-gray-100">{s.embedding_provider ?? "off"}</dd>
           </div>
         </dl>
@@ -175,7 +273,7 @@ function SettingsBody() {
 
       {isAdmin && (
         <div className="flex justify-end">
-          <Button variant="primary" className="h-10 py-0" disabled={saving} onClick={() => save()}>
+          <Button variant="primary" size="lg" disabled={saving} onClick={() => save()}>
             <Save /> Save settings
           </Button>
         </div>

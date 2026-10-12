@@ -4,12 +4,16 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { notifyError } from "@/lib/notify";
 import { fmtDate, talentGet, type AuditPage } from "@/lib/talent";
-import { Panel, TalentShell, quietButton, useTalentOrg } from "./TalentShell";
+import { Panel, TalentShell, useTalentOrg } from "./TalentShell";
 
-const input =
-  "h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 dark:border-white/10 dark:bg-gray-900 dark:text-gray-100";
+/** Select items cannot carry an empty value, so "no filter" is this sentinel in the UI and "" in state. */
+const ALL = "__all__";
 
 function describeActor(actor: string) {
   if (actor.startsWith("user:")) return `Recruiter #${actor.slice(5)}`;
@@ -50,9 +54,10 @@ function AuditBody() {
       description="Every message sent, every AI score, every human decision and every deletion. Ids and counts only — no contact details."
     >
       <div className="mb-4 flex flex-wrap gap-2">
-        <input
-          className={`${input} w-40`}
+        <Input
+          className="w-40"
           placeholder="Candidate (profile id)"
+          aria-label="Candidate (profile id)"
           inputMode="numeric"
           value={profileId}
           onChange={(e) => {
@@ -60,73 +65,108 @@ function AuditBody() {
             setProfileId(e.target.value.replace(/\D/g, ""));
           }}
         />
-        <select className={input} value={action} onChange={(e) => { setPage(1); setAction(e.target.value); }}>
-          <option value="">All actions</option>
-          {data?.actions.map((a) => (
-            <option key={a} value={a}>{a}</option>
-          ))}
-        </select>
-        <select className={input} value={actor} onChange={(e) => { setPage(1); setActor(e.target.value); }}>
-          <option value="">Anyone</option>
-          {data?.actors.map((a) => (
-            <option key={a} value={a}>{describeActor(a)}</option>
-          ))}
-        </select>
+        <Select
+          value={action || ALL}
+          onValueChange={(v) => {
+            setPage(1);
+            setAction(v === ALL ? "" : v);
+          }}
+        >
+          <SelectTrigger aria-label="Action">
+            <SelectValue placeholder="All actions" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All actions</SelectItem>
+            {data?.actions.map((a) => (
+              <SelectItem key={a} value={a}>
+                {a}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={actor || ALL}
+          onValueChange={(v) => {
+            setPage(1);
+            setActor(v === ALL ? "" : v);
+          }}
+        >
+          <SelectTrigger aria-label="Actor">
+            <SelectValue placeholder="Anyone" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>Anyone</SelectItem>
+            {data?.actors.map((a) => (
+              <SelectItem key={a} value={a}>
+                {describeActor(a)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500 dark:border-white/10 dark:text-gray-400">
-              <th className="py-2 pr-4 font-medium">When</th>
-              <th className="py-2 pr-4 font-medium">Who</th>
-              <th className="py-2 pr-4 font-medium">Action</th>
-              <th className="py-2 pr-4 font-medium">Subject</th>
-              <th className="py-2 font-medium">Candidate</th>
-            </tr>
-          </thead>
-          <tbody>
+      <div>
+        <Table className="text-left">
+          <TableHeader>
+            <TableRow className="border-border hover:bg-transparent">
+              <TableHead className="pl-0 pr-4 text-xs uppercase tracking-wide text-muted-foreground">When</TableHead>
+              <TableHead className="pl-0 pr-4 text-xs uppercase tracking-wide text-muted-foreground">Who</TableHead>
+              <TableHead className="pl-0 pr-4 text-xs uppercase tracking-wide text-muted-foreground">Action</TableHead>
+              <TableHead className="pl-0 pr-4 text-xs uppercase tracking-wide text-muted-foreground">Subject</TableHead>
+              <TableHead className="px-0 text-xs uppercase tracking-wide text-muted-foreground">Candidate</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {!data &&
+              Array.from({ length: 8 }, (_, i) => (
+                <TableRow key={i} className="border-border hover:bg-transparent">
+                  <TableCell colSpan={5} className="px-0">
+                    <Skeleton className="h-5 w-full" />
+                  </TableCell>
+                </TableRow>
+              ))}
             {data?.items.map((r) => (
               <React.Fragment key={r.id}>
-                <tr
-                  className="cursor-pointer border-b border-gray-100 hover:bg-gray-50 dark:border-white/5 dark:hover:bg-white/[0.03]"
+                <TableRow
+                  className="cursor-pointer border-border"
+                  data-state={open === r.id ? "selected" : undefined}
                   onClick={() => setOpen(open === r.id ? null : r.id)}
                 >
-                  <td className="whitespace-nowrap py-2 pr-4 tabular-nums text-gray-600 dark:text-gray-300">{fmtDate(r.at, true)}</td>
-                  <td className="py-2 pr-4 text-gray-800 dark:text-gray-200">{describeActor(r.actor)}</td>
-                  <td className="py-2 pr-4 font-mono text-xs text-gray-900 dark:text-gray-100">{r.action}</td>
-                  <td className="py-2 pr-4 text-gray-600 dark:text-gray-300">
+                  <TableCell className="pl-0 pr-4 tabular-nums text-gray-600 dark:text-gray-300">{fmtDate(r.at, true)}</TableCell>
+                  <TableCell className="pl-0 pr-4 text-gray-800 dark:text-gray-200">{describeActor(r.actor)}</TableCell>
+                  <TableCell className="pl-0 pr-4 font-mono text-xs text-gray-900 dark:text-gray-100">{r.action}</TableCell>
+                  <TableCell className="pl-0 pr-4 text-gray-600 dark:text-gray-300">
                     {r.subject_type}
-                    {r.subject_id ? <span className="ml-1 font-mono text-xs text-gray-400">{r.subject_id.slice(0, 12)}</span> : null}
-                  </td>
-                  <td className="py-2 tabular-nums text-gray-600 dark:text-gray-300">{r.profile_id ?? "—"}</td>
-                </tr>
+                    {r.subject_id ? <span className="ml-1 font-mono text-xs text-muted-foreground">{r.subject_id.slice(0, 12)}</span> : null}
+                  </TableCell>
+                  <TableCell className="px-0 tabular-nums text-gray-600 dark:text-gray-300">{r.profile_id ?? "—"}</TableCell>
+                </TableRow>
                 {open === r.id && r.detail && (
-                  <tr className="border-b border-gray-100 dark:border-white/5">
-                    <td colSpan={5} className="bg-gray-50 px-3 py-2 dark:bg-white/[0.03]">
+                  <TableRow className="border-border hover:bg-transparent">
+                    <TableCell colSpan={5} className="whitespace-normal bg-muted/50 px-3 py-2">
                       <pre className="whitespace-pre-wrap break-all font-mono text-xs text-gray-700 dark:text-gray-300">
                         {JSON.stringify(r.detail, null, 2)}
                       </pre>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
               </React.Fragment>
             ))}
-          </tbody>
-        </table>
-        {data && data.items.length === 0 && <p className="py-8 text-center text-sm text-gray-500">Nothing matches.</p>}
+          </TableBody>
+        </Table>
+        {data && data.items.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">Nothing matches.</p>}
       </div>
 
       {data && data.total > data.page_size && (
-        <div className="mt-4 flex items-center justify-between text-sm text-gray-600 dark:text-gray-300">
+        <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
           <span>
             {data.total.toLocaleString()} entries · page {page} of {pages}
           </span>
           <div className="flex gap-2">
-            <Button className={quietButton} variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page">
+            <Button variant="outline" size="icon" disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page">
               <ChevronLeft />
             </Button>
-            <Button className={quietButton} variant="outline" disabled={page >= pages} onClick={() => setPage(page + 1)} aria-label="Next page">
+            <Button variant="outline" size="icon" disabled={page >= pages} onClick={() => setPage(page + 1)} aria-label="Next page">
               <ChevronRight />
             </Button>
           </div>

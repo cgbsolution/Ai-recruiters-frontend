@@ -1,10 +1,19 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { CheckCircle2, FileUp, Loader2 } from "lucide-react";
+import { CheckCircle2, CircleAlert, FileUp, Loader2 } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { publicGet, publicPost, publicUpload } from "@/lib/talent";
-import { type Brand, Card, CandidateFrame, LinkProblem, PrimaryButton, inputClass } from "./CandidateFrame";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { type Brand, CandidateFrame, LinkProblem } from "./CandidateFrame";
 
 interface RefreshData {
   organization: string;
@@ -36,19 +45,16 @@ const NOTICE = [
   { v: 90, l: "90 days" },
 ];
 
+/** Select values can't be empty strings, so "Not sure" (no notice period) uses a sentinel. */
+const NOTICE_UNSURE = "unsure";
+
 const SEARCH = [
   { v: "active", l: "Actively looking" },
   { v: "open", l: "Open to the right role" },
   { v: "not_looking", l: "Not looking right now" },
 ];
 
-function Label({ children, htmlFor }: { children: React.ReactNode; htmlFor?: string }) {
-  return (
-    <label htmlFor={htmlFor} className="mb-1.5 block text-sm font-medium text-gray-800">
-      {children}
-    </label>
-  );
-}
+const fieldLabel = "leading-snug text-gray-800";
 
 export default function RefreshPage({ token }: { token: string }) {
   const [data, setData] = useState<RefreshData | null>(null);
@@ -88,14 +94,16 @@ export default function RefreshPage({ token }: { token: string }) {
   if (done) {
     return (
       <CandidateFrame org={data.organization} brand={data.brand}>
-        <Card className="text-center">
-          <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-600" aria-hidden />
-          <h1 className="mt-3 text-lg font-semibold">Thank you — your profile is up to date</h1>
-          <p className="mt-2 text-sm text-gray-600">
-            {f.job_search_status === "not_looking"
-              ? "We won't suggest roles while you're not looking. You can change that any time from the link in our emails."
-              : "We'll only contact you about roles that fit what you told us."}
-          </p>
+        <Card>
+          <CardContent className="text-center">
+            <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-600" aria-hidden />
+            <h1 className="mt-3 text-lg font-semibold">Thank you — your profile is up to date</h1>
+            <p className="mt-2 text-sm text-gray-600">
+              {f.job_search_status === "not_looking"
+                ? "We won't suggest roles while you're not looking. You can change that any time from the link in our emails."
+                : "We'll only contact you about roles that fit what you told us."}
+            </p>
+          </CardContent>
         </Card>
       </CandidateFrame>
     );
@@ -133,6 +141,7 @@ export default function RefreshPage({ token }: { token: string }) {
   };
 
   const skills = (data.skills as (string | { name: string })[]).map((s) => (typeof s === "string" ? s : s.name));
+  const customNotice = f.notice_period_days != null && !NOTICE.some((n) => n.v === f.notice_period_days);
 
   return (
     <CandidateFrame org={data.organization} brand={data.brand}>
@@ -142,108 +151,143 @@ export default function RefreshPage({ token }: { token: string }) {
       <p className="mt-2 text-sm text-gray-600">Check the details below, change anything that's out of date, and confirm. It takes about a minute.</p>
 
       <form onSubmit={submit} className="mt-6 space-y-5">
-        <Card className="space-y-4">
-          <div>
-            <Label htmlFor="role">Current role</Label>
-            <input id="role" className={inputClass} value={f.current_designation ?? ""} onChange={(e) => set("current_designation", e.target.value)} />
-          </div>
-          <div>
-            <Label htmlFor="company">Current company</Label>
-            <input id="company" className={inputClass} value={f.current_company ?? ""} onChange={(e) => set("current_company", e.target.value)} />
-          </div>
-          <div>
-            <Label htmlFor="location">Where you're based</Label>
-            <input id="location" className={inputClass} value={f.location ?? ""} onChange={(e) => set("location", e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="ctc">Current salary (LPA)</Label>
-              <input id="ctc" type="number" min={0} max={1000} step="0.1" inputMode="decimal" className={inputClass}
-                value={f.current_ctc ?? ""} onChange={(e) => set("current_ctc", num(e.target.value))} />
-            </div>
-            <div>
-              <Label htmlFor="ectc">Expected salary (LPA)</Label>
-              <input id="ectc" type="number" min={0} max={1000} step="0.1" inputMode="decimal" className={inputClass}
-                value={f.expected_ctc ?? ""} onChange={(e) => set("expected_ctc", num(e.target.value))} />
-            </div>
-          </div>
-          <div>
-            <Label htmlFor="notice">Notice period</Label>
-            <select id="notice" className={inputClass} value={f.notice_period_days ?? ""}
-              onChange={(e) => set("notice_period_days", num(e.target.value))}>
-              <option value="">Not sure</option>
-              {NOTICE.map((n) => (
-                <option key={n.v} value={n.v}>{n.l}</option>
-              ))}
-              {f.notice_period_days != null && !NOTICE.some((n) => n.v === f.notice_period_days) && (
-                <option value={f.notice_period_days}>{f.notice_period_days} days</option>
-              )}
-            </select>
-          </div>
-          <fieldset>
-            <legend className="mb-1.5 text-sm font-medium text-gray-800">Are you looking for a new role?</legend>
+        <Card>
+          <CardContent className="space-y-4">
             <div className="grid gap-2">
-              {SEARCH.map((s) => (
-                <label key={s.v} className="flex items-center gap-3 rounded-xl border border-gray-200 px-3 py-2.5 text-sm has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50">
-                  <input type="radio" name="search" value={s.v} checked={f.job_search_status === s.v} onChange={() => set("job_search_status", s.v)} className="accent-brand-500" />
-                  {s.l}
-                </label>
-              ))}
+              <Label htmlFor="role" className={fieldLabel}>Current role</Label>
+              <Input id="role" value={f.current_designation ?? ""} onChange={(e) => set("current_designation", e.target.value)} />
             </div>
-          </fieldset>
-          <label className="flex items-center gap-3 text-sm">
-            <input type="checkbox" className="h-4 w-4 accent-brand-500" checked={!!f.open_to_relocate}
-              onChange={(e) => set("open_to_relocate", e.target.checked)} />
-            I'm open to relocating
-          </label>
+            <div className="grid gap-2">
+              <Label htmlFor="company" className={fieldLabel}>Current company</Label>
+              <Input id="company" value={f.current_company ?? ""} onChange={(e) => set("current_company", e.target.value)} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="location" className={fieldLabel}>Where you're based</Label>
+              <Input id="location" value={f.location ?? ""} onChange={(e) => set("location", e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid content-end gap-2">
+                <Label htmlFor="ctc" className={fieldLabel}>Current salary (LPA)</Label>
+                <Input id="ctc" type="number" min={0} max={1000} step="0.1" inputMode="decimal"
+                  value={f.current_ctc ?? ""} onChange={(e) => set("current_ctc", num(e.target.value))} />
+              </div>
+              <div className="grid content-end gap-2">
+                <Label htmlFor="ectc" className={fieldLabel}>Expected salary (LPA)</Label>
+                <Input id="ectc" type="number" min={0} max={1000} step="0.1" inputMode="decimal"
+                  value={f.expected_ctc ?? ""} onChange={(e) => set("expected_ctc", num(e.target.value))} />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="notice" className={fieldLabel}>Notice period</Label>
+              <Select
+                value={f.notice_period_days == null ? NOTICE_UNSURE : String(f.notice_period_days)}
+                onValueChange={(v) => set("notice_period_days", v === NOTICE_UNSURE ? null : num(v))}
+              >
+                <SelectTrigger id="notice" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NOTICE_UNSURE}>Not sure</SelectItem>
+                  {NOTICE.map((n) => (
+                    <SelectItem key={n.v} value={String(n.v)}>{n.l}</SelectItem>
+                  ))}
+                  {customNotice && (
+                    <SelectItem value={String(f.notice_period_days)}>{f.notice_period_days} days</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <fieldset>
+              <legend id="search-legend" className="mb-2 text-sm font-medium text-gray-800">Are you looking for a new role?</legend>
+              <RadioGroup
+                name="search"
+                aria-labelledby="search-legend"
+                className="gap-2"
+                value={f.job_search_status ?? ""}
+                onValueChange={(v) => set("job_search_status", v)}
+              >
+                {SEARCH.map((s) => (
+                  <Label key={s.v} htmlFor={`search-${s.v}`}
+                    className="cursor-pointer gap-3 rounded-xl border border-gray-200 px-3 py-2.5 font-normal leading-snug has-[[data-state=checked]]:border-brand-500 has-[[data-state=checked]]:bg-brand-50">
+                    <RadioGroupItem id={`search-${s.v}`} value={s.v} />
+                    {s.l}
+                  </Label>
+                ))}
+              </RadioGroup>
+            </fieldset>
+            <div className="flex items-center gap-3">
+              <Checkbox id="relocate" checked={!!f.open_to_relocate}
+                onCheckedChange={(v) => set("open_to_relocate", v === true)} />
+              <Label htmlFor="relocate" className="font-normal leading-snug">I'm open to relocating</Label>
+            </div>
+          </CardContent>
         </Card>
 
         {skills.length > 0 && (
-          <Card>
-            <div className="text-sm font-medium text-gray-800">Skills from your CV</div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {skills.map((s) => (
-                <span key={s} className="rounded-lg bg-gray-100 px-2 py-1 text-xs text-gray-700">{s}</span>
-              ))}
-            </div>
-            <p className="mt-3 text-xs text-gray-500">Out of date? Upload your latest CV below and we'll read it again.</p>
+          <Card className="gap-3">
+            <CardHeader>
+              <CardTitle className="text-sm font-medium text-gray-800">Skills from your CV</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-1.5">
+                {skills.map((s) => (
+                  <Badge key={s} variant="secondary" className="max-w-full whitespace-normal break-words font-normal text-gray-700">{s}</Badge>
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-gray-500">Out of date? Upload your latest CV below and we'll read it again.</p>
+            </CardContent>
           </Card>
         )}
 
-        <Card>
-          <div className="text-sm font-medium text-gray-800">Newer CV (optional)</div>
-          <input ref={fileRef} type="file" accept=".pdf,.doc,.docx" className="sr-only"
-            onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
-          <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 px-4 py-4 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-60">
-            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
-            {uploaded ? `Uploaded: ${uploaded} — choose another` : "Upload a PDF or Word file"}
-          </button>
+        <Card className="gap-3">
+          <CardHeader>
+            <CardTitle className="text-sm font-medium text-gray-800">Newer CV (optional)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Input ref={fileRef} type="file" accept=".pdf,.doc,.docx" className="hidden"
+              onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+            <Button type="button" variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading}
+              className="h-auto w-full whitespace-normal border-dashed py-4 font-normal text-gray-600">
+              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
+              <span className="min-w-0 [overflow-wrap:anywhere]">
+                {uploaded ? `Uploaded: ${uploaded} — choose another` : "Upload a PDF or Word file"}
+              </span>
+            </Button>
+          </CardContent>
         </Card>
 
-        <Card className="space-y-3">
-          <div className="text-sm font-medium text-gray-800">How we may contact you</div>
-          <p className="text-xs leading-5 text-gray-500">{data.consent_text}</p>
-          {(
-            [
-              ["refresh", `Ask me to keep this profile up to date (about every ${data.ask_every_months === 1 ? "month" : `${data.ask_every_months} months`})`],
-              ["jobs", "Tell me about roles that match my profile"],
-              ["interview", "Contact me to arrange interviews I agree to"],
-              ["whatsapp", "You may also use WhatsApp for these"],
-            ] as const
-          ).map(([k, label]) => (
-            <label key={k} className="flex items-start gap-3 text-sm">
-              <input type="checkbox" className="mt-0.5 h-4 w-4 accent-brand-500" checked={consents[k]}
-                onChange={(e) => setConsents({ ...consents, [k]: e.target.checked })} />
-              {label}
-            </label>
-          ))}
+        <Card className="gap-4">
+          <CardHeader>
+            <CardTitle className="text-sm font-medium text-gray-800">How we may contact you</CardTitle>
+            <CardDescription className="text-xs leading-5 text-gray-500">{data.consent_text}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {(
+              [
+                ["refresh", `Ask me to keep this profile up to date (about every ${data.ask_every_months === 1 ? "month" : `${data.ask_every_months} months`})`],
+                ["jobs", "Tell me about roles that match my profile"],
+                ["interview", "Contact me to arrange interviews I agree to"],
+                ["whatsapp", "You may also use WhatsApp for these"],
+              ] as const
+            ).map(([k, label]) => (
+              <div key={k} className="flex items-start gap-3">
+                <Checkbox id={`consent-${k}`} checked={consents[k]}
+                  onCheckedChange={(v) => setConsents({ ...consents, [k]: v === true })} />
+                <Label htmlFor={`consent-${k}`} className="font-normal leading-5">{label}</Label>
+              </div>
+            ))}
+          </CardContent>
         </Card>
 
-        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
-        <PrimaryButton type="submit" disabled={saving || uploading} className="w-full">
+        {error && (
+          <Alert variant="destructive">
+            <CircleAlert />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        <Button type="submit" variant="primary" size="lg" disabled={saving || uploading} className="w-full">
           {saving && <Loader2 className="h-4 w-4 animate-spin" />} Confirm my profile
-        </PrimaryButton>
+        </Button>
       </form>
     </CandidateFrame>
   );

@@ -2,15 +2,16 @@
 
 import React from "react";
 import { AlertTriangle, CheckCircle2, OctagonAlert } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 
 const compact = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 });
 export const fmtNum = (n: number) => (Math.abs(n) >= 10_000 ? compact.format(n) : n.toLocaleString());
 
 /**
- * Ordered stages of one series (sent → opened → refreshed): one hue, bars
- * share a baseline, each directly labelled with its count and its share of
- * the first stage. Hover shows the exact numbers.
+ * Ordered stages of one series (sent → opened → refreshed): one shadcn
+ * Progress bar per stage on a shared scale, each labelled with its count and
+ * its share of the first stage. Hover shows the exact numbers.
  */
 export function FunnelBars({ stages }: { stages: { label: string; value: number; hint?: string }[] }) {
   const base = Math.max(stages[0]?.value ?? 0, 1);
@@ -28,18 +29,17 @@ export function FunnelBars({ stages }: { stages: { label: string; value: number;
             title={tip}
             className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[7.5rem_1fr_6.5rem]"
           >
-            <div role="rowheader" className="truncate text-sm text-gray-600 dark:text-gray-300">
+            <div role="rowheader" className="truncate text-sm text-muted-foreground">
               {s.label}
             </div>
-            <div className="order-last col-span-2 h-6 rounded-[4px] bg-brand-50 sm:order-none sm:col-span-1 dark:bg-brand-500/10">
-              <div
-                className="h-6 rounded-r-[4px] bg-brand-500 transition-[width] duration-300 dark:bg-brand-400"
-                style={{ width: `${width}%` }}
-              />
-            </div>
+            <Progress
+              value={width}
+              aria-label={s.label}
+              className="order-last col-span-2 h-6 rounded-[4px] sm:order-none sm:col-span-1 [&>[data-slot=progress-indicator]]:bg-brand-500"
+            />
             <div role="cell" className="text-right text-sm tabular-nums text-gray-900 dark:text-gray-100">
               {fmtNum(s.value)}
-              <span className="ml-1.5 text-xs text-gray-500 dark:text-gray-400">{(share * 100).toFixed(0)}%</span>
+              <span className="ml-1.5 text-xs text-muted-foreground">{(share * 100).toFixed(0)}%</span>
             </div>
           </div>
         );
@@ -48,25 +48,29 @@ export function FunnelBars({ stages }: { stages: { label: string; value: number;
   );
 }
 
-/** A single ratio against a limit. The track is a lighter step of the fill's ramp. */
+/** A single ratio against a limit, as a shadcn Progress bar (amber near the limit). */
 export function Meter({ value, max, label, sub }: { value: number; max: number; label: string; sub?: string }) {
   const ratio = max > 0 ? Math.min(value / max, 1) : 0;
   const severe = ratio >= 0.95;
   return (
     <div title={`${label}: ${value.toLocaleString()} of ${max.toLocaleString()}`}>
       <div className="mb-1.5 flex items-baseline justify-between gap-2 text-sm">
-        <span className="text-gray-600 dark:text-gray-300">{label}</span>
+        <span className="text-muted-foreground">{label}</span>
         <span className="text-gray-900 dark:text-gray-100">
-          {value.toLocaleString()} <span className="text-gray-500 dark:text-gray-400">/ {max.toLocaleString()}</span>
+          {value.toLocaleString()} <span className="text-muted-foreground">/ {max.toLocaleString()}</span>
         </span>
       </div>
-      <div className={cn("h-2.5 rounded-full", severe ? "bg-amber-100 dark:bg-amber-500/15" : "bg-brand-50 dark:bg-brand-500/10")}>
-        <div
-          className={cn("h-2.5 rounded-full", severe ? "bg-amber-500" : "bg-brand-500 dark:bg-brand-400")}
-          style={{ width: `${ratio * 100}%` }}
-        />
-      </div>
-      {sub && <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{sub}</div>}
+      <Progress
+        value={ratio * 100}
+        aria-label={label}
+        className={cn(
+          "h-2.5",
+          severe
+            ? "bg-amber-100 dark:bg-amber-500/15 [&>[data-slot=progress-indicator]]:bg-amber-500"
+            : "[&>[data-slot=progress-indicator]]:bg-brand-500",
+        )}
+      />
+      {sub && <div className="mt-1 text-xs text-muted-foreground">{sub}</div>}
     </div>
   );
 }

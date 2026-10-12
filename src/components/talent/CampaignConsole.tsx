@@ -2,8 +2,13 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { Pause, Play, RefreshCw, Send, Sparkles, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { notifyError, notifySuccess } from "@/lib/notify";
 import {
   fmtDate,
@@ -18,7 +23,7 @@ import {
 } from "@/lib/talent";
 import { BackfillPanel } from "./BackfillPanel";
 import { FunnelBars, Meter, StatusLine, fmtNum } from "./Charts";
-import { Panel, Pill, Stat, TalentShell, Warnings, quietButton, useTalentOrg } from "./TalentShell";
+import { Panel, Pill, Stat, TalentShell, Warnings, useTalentOrg } from "./TalentShell";
 
 function healthLevel(rate: number, limit: number): "good" | "warning" | "critical" {
   if (rate > limit) return "critical";
@@ -42,84 +47,86 @@ function CampaignCard({ c, canEdit, onChange }: { c: CampaignRow; canEdit: boole
     }
   };
   return (
-    <div className="rounded-xl border border-gray-100 p-4 dark:border-white/5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-gray-900 dark:text-white">{c.name}</span>
-            <Pill>{c.status}</Pill>
-            {c.segment?.type === "pilot" && <Pill tone="blue">pilot</Pill>}
+    <Card className="gap-0 border-border py-4 shadow-none">
+      <CardContent className="px-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-gray-900 dark:text-white">{c.name}</span>
+              <Pill>{c.status}</Pill>
+              {c.segment?.type === "pilot" && <Pill tone="blue">pilot</Pill>}
+            </div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              Started {fmtDate(c.created_at)} · {fmtNum(f.members)} people
+            </div>
+            {c.paused_reason && (
+              <div className="mt-2">
+                <StatusLine level="warning">Paused — {c.paused_reason}</StatusLine>
+              </div>
+            )}
           </div>
-          <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-            Started {fmtDate(c.created_at)} · {fmtNum(f.members)} people
-          </div>
-          {c.paused_reason && (
-            <div className="mt-2">
-              <StatusLine level="warning">Paused — {c.paused_reason}</StatusLine>
+          {canEdit && c.status !== "cancelled" && c.status !== "completed" && (
+            <div className="flex gap-2">
+              {c.status === "active" ? (
+                <Button variant="outline" disabled={busy} onClick={() => act("pause")}>
+                  <Pause /> Pause
+                </Button>
+              ) : (
+                <Button variant="outline" disabled={busy} onClick={() => act("resume")}>
+                  <Play /> Resume
+                </Button>
+              )}
+              <Button variant="outline" disabled={busy} onClick={() => act("cancel")}>
+                <X /> Cancel
+              </Button>
             </div>
           )}
         </div>
-        {canEdit && c.status !== "cancelled" && c.status !== "completed" && (
-          <div className="flex gap-2">
-            {c.status === "active" ? (
-              <Button className={quietButton} variant="outline" disabled={busy} onClick={() => act("pause")}>
-                <Pause /> Pause
-              </Button>
-            ) : (
-              <Button className={quietButton} variant="outline" disabled={busy} onClick={() => act("resume")}>
-                <Play /> Resume
-              </Button>
-            )}
-            <Button className={quietButton} variant="ghost" disabled={busy} onClick={() => act("cancel")}>
-              <X /> Cancel
-            </Button>
+
+        {c.segment?.strata && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {c.segment.strata.map((s) => (
+              <Badge key={s.label} variant="secondary" className="font-normal">
+                CV {s.label}: <b>{s.selected}</b> of {s.eligible} eligible
+              </Badge>
+            ))}
           </div>
         )}
-      </div>
 
-      {c.segment?.strata && (
-        <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600 dark:text-gray-300">
-          {c.segment.strata.map((s) => (
-            <span key={s.label} className="rounded-lg bg-gray-50 px-2 py-1 dark:bg-white/5">
-              CV {s.label}: <b>{s.selected}</b> of {s.eligible} eligible
-            </span>
-          ))}
+        <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_16rem]">
+          <FunnelBars
+            stages={[
+              { label: "Enrolled", value: f.members },
+              { label: "Sent", value: f.sent },
+              { label: "Opened", value: f.opened },
+              { label: "Refreshed", value: f.refreshed },
+            ]}
+          />
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            <dt className="text-muted-foreground">Messages sent</dt>
+            <dd className="text-right tabular-nums text-gray-900 dark:text-gray-100">{fmtNum(f.messages_sent)}</dd>
+            <dt className="text-muted-foreground">Unreachable</dt>
+            <dd className="text-right tabular-nums text-gray-900 dark:text-gray-100">{fmtNum(f.unreachable)}</dd>
+            <dt className="text-muted-foreground">Opted out</dt>
+            <dd className="text-right tabular-nums text-gray-900 dark:text-gray-100">{fmtNum(f.opted_out)}</dd>
+            <dt className="text-muted-foreground">No response</dt>
+            <dd className="text-right tabular-nums text-gray-900 dark:text-gray-100">{fmtNum(f.no_response)}</dd>
+            <dt className="text-muted-foreground">Bounce rate</dt>
+            <dd className="text-right tabular-nums text-gray-900 dark:text-gray-100">{pct(f.health.bounce_rate)}</dd>
+            <dt className="text-muted-foreground">Complaints</dt>
+            <dd className="text-right tabular-nums text-gray-900 dark:text-gray-100">{f.health.complaints}</dd>
+          </dl>
         </div>
-      )}
-
-      <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_16rem]">
-        <FunnelBars
-          stages={[
-            { label: "Enrolled", value: f.members },
-            { label: "Sent", value: f.sent },
-            { label: "Opened", value: f.opened },
-            { label: "Refreshed", value: f.refreshed },
-          ]}
-        />
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-          <dt className="text-gray-500 dark:text-gray-400">Messages sent</dt>
-          <dd className="text-right tabular-nums text-gray-900 dark:text-gray-100">{fmtNum(f.messages_sent)}</dd>
-          <dt className="text-gray-500 dark:text-gray-400">Unreachable</dt>
-          <dd className="text-right tabular-nums text-gray-900 dark:text-gray-100">{fmtNum(f.unreachable)}</dd>
-          <dt className="text-gray-500 dark:text-gray-400">Opted out</dt>
-          <dd className="text-right tabular-nums text-gray-900 dark:text-gray-100">{fmtNum(f.opted_out)}</dd>
-          <dt className="text-gray-500 dark:text-gray-400">No response</dt>
-          <dd className="text-right tabular-nums text-gray-900 dark:text-gray-100">{fmtNum(f.no_response)}</dd>
-          <dt className="text-gray-500 dark:text-gray-400">Bounce rate</dt>
-          <dd className="text-right tabular-nums text-gray-900 dark:text-gray-100">{pct(f.health.bounce_rate)}</dd>
-          <dt className="text-gray-500 dark:text-gray-400">Complaints</dt>
-          <dd className="text-right tabular-nums text-gray-900 dark:text-gray-100">{f.health.complaints}</dd>
-        </dl>
-      </div>
-      {Object.keys(f.skipped_reasons).length > 0 && (
-        <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-          Not sent:{" "}
-          {Object.entries(f.skipped_reasons)
-            .map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`)
-            .join(" · ")}
-        </div>
-      )}
-    </div>
+        {Object.keys(f.skipped_reasons).length > 0 && (
+          <div className="mt-3 text-xs text-muted-foreground">
+            Not sent:{" "}
+            {Object.entries(f.skipped_reasons)
+              .map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`)
+              .join(" · ")}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -170,6 +177,8 @@ function ConsoleBody() {
     }
   };
 
+  // The five requests resolve together, so any one of them marks the first load as done.
+  const loaded = settings !== null;
   const vs = segments?.by_verification_status ?? {};
   const usage = deliv?.usage_today;
   const health = deliv?.domain_health_7d;
@@ -179,21 +188,29 @@ function ConsoleBody() {
       {settings && <Warnings items={settings.warnings} />}
 
       <Panel title="Talent pool" description="Freshness is measured from the candidate's last confirmation, or when the CV arrived.">
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-          <Stat label="Profiles" value={fmtNum(segments?.profiles ?? 0)} />
-          <Stat label="Fresh" value={fmtNum(vs.fresh ?? 0)} tone="good" />
-          <Stat label="Stale" value={fmtNum(vs.stale ?? 0)} tone="warn" />
-          <Stat label="Refreshing" value={fmtNum(vs.refreshing ?? 0)} />
-          <Stat label="Unreachable" value={fmtNum(vs.unreachable ?? 0)} tone="bad" />
-          <Stat label="Refresh consent" value={fmtNum(segments?.refresh_consent ?? 0)} hint="may be emailed to refresh" />
-          <Stat label="Due now" value={fmtNum(segments?.due_now ?? 0)} hint="consented, reachable, stale" />
-        </div>
+        {segments ? (
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+            <Stat label="Profiles" value={fmtNum(segments.profiles ?? 0)} />
+            <Stat label="Fresh" value={fmtNum(vs.fresh ?? 0)} tone="good" />
+            <Stat label="Stale" value={fmtNum(vs.stale ?? 0)} tone="warn" />
+            <Stat label="Refreshing" value={fmtNum(vs.refreshing ?? 0)} />
+            <Stat label="Unreachable" value={fmtNum(vs.unreachable ?? 0)} tone="bad" />
+            <Stat label="Refresh consent" value={fmtNum(segments.refresh_consent ?? 0)} hint="may be emailed to refresh" />
+            <Stat label="Due now" value={fmtNum(segments.due_now ?? 0)} hint="consented, reachable, stale" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7" aria-label="Loading">
+            {Array.from({ length: 7 }, (_, i) => (
+              <Skeleton key={i} className="h-24 w-full" />
+            ))}
+          </div>
+        )}
         {segments && (
-          <div className="mt-4 flex flex-wrap gap-2 text-xs text-gray-600 dark:text-gray-300">
+          <div className="mt-4 flex flex-wrap gap-2">
             {Object.entries(segments.cv_age_months).map(([k, v]) => (
-              <span key={k} className="rounded-lg bg-gray-50 px-2 py-1 dark:bg-white/5">
+              <Badge key={k} variant="secondary" className="font-normal">
                 CV age {k} months: <b>{fmtNum(v)}</b>
-              </span>
+              </Badge>
             ))}
           </div>
         )}
@@ -215,7 +232,7 @@ function ConsoleBody() {
             )
           }
         >
-          {phase0 && (
+          {phase0 ? (
             <div className="space-y-3 text-sm">
               <StatusLine level={phase0.invalid_or_unusable_emails ? "warning" : "good"}>
                 {fmtNum(phase0.invalid_or_unusable_emails)} profiles have no usable email (
@@ -246,39 +263,55 @@ function ConsoleBody() {
                 </Button>
               )}
             </div>
+          ) : (
+            <div className="space-y-3" aria-label="Loading">
+              {Array.from({ length: 4 }, (_, i) => (
+                <Skeleton key={i} className="h-5 w-full" />
+              ))}
+            </div>
           )}
         </Panel>
 
         <Panel title="Sending" description={usage ? `Sender domain ${usage.domain}` : undefined}>
-          {usage && deliv && health && (
-            <div className="space-y-4">
-              {usage.paused && (
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <StatusLine level="critical">Sending is paused — {usage.paused_reason}</StatusLine>
-                  {isAdmin && (
-                    <Button
-                      variant="outline"
-                      onClick={() => run("resume-domain", () => talentPost("/sender-domain/resume", {}), "Sending resumed")}
-                    >
-                      Resume sending
-                    </Button>
-                  )}
-                </div>
-              )}
-              <Meter label="Sent today" value={usage.total} max={usage.cap} sub={`Refresh mail may use ${usage.bulk_cap.toLocaleString()} of it (${usage.bulk.toLocaleString()} used); the rest is kept for invites and reminders.`} />
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                Ramp from {fmtDate(deliv.ramp_started_on)}:{" "}
-                {deliv.forecast.map((f) => `${fmtDate(f.day)} ${f.cap.toLocaleString()}/day`).join(" → ")}
-              </div>
-              <StatusLine level={healthLevel(health.bounce_rate, deliv.thresholds.bounce_rate)}>
-                Bounces, last 7 days: {pct(health.bounce_rate)} ({health.bounces} of {health.sent}). Auto-pause above{" "}
-                {pct(deliv.thresholds.bounce_rate, 0)}.
-              </StatusLine>
-              <StatusLine level={healthLevel(health.complaint_rate, deliv.thresholds.complaint_rate)}>
-                Spam complaints, last 7 days: {pct(health.complaint_rate, 2)} ({health.complaints}). Auto-pause above{" "}
-                {pct(deliv.thresholds.complaint_rate, 1)}.
-              </StatusLine>
+          {!deliv ? (
+            <div className="space-y-4" aria-label="Loading">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-5 w-full" />
+              <Skeleton className="h-5 w-full" />
             </div>
+          ) : (
+            usage &&
+            health && (
+              <div className="space-y-4">
+                {usage.paused && (
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <StatusLine level="critical">Sending is paused — {usage.paused_reason}</StatusLine>
+                    {isAdmin && (
+                      <Button
+                        variant="outline"
+                        onClick={() => run("resume-domain", () => talentPost("/sender-domain/resume", {}), "Sending resumed")}
+                      >
+                        Resume sending
+                      </Button>
+                    )}
+                  </div>
+                )}
+                <Meter label="Sent today" value={usage.total} max={usage.cap} sub={`Refresh mail may use ${usage.bulk_cap.toLocaleString()} of it (${usage.bulk.toLocaleString()} used); the rest is kept for invites and reminders.`} />
+                <div className="text-xs text-muted-foreground">
+                  Ramp from {fmtDate(deliv.ramp_started_on)}:{" "}
+                  {deliv.forecast.map((f) => `${fmtDate(f.day)} ${f.cap.toLocaleString()}/day`).join(" → ")}
+                </div>
+                <StatusLine level={healthLevel(health.bounce_rate, deliv.thresholds.bounce_rate)}>
+                  Bounces, last 7 days: {pct(health.bounce_rate)} ({health.bounces} of {health.sent}). Auto-pause above{" "}
+                  {pct(deliv.thresholds.bounce_rate, 0)}.
+                </StatusLine>
+                <StatusLine level={healthLevel(health.complaint_rate, deliv.thresholds.complaint_rate)}>
+                  Spam complaints, last 7 days: {pct(health.complaint_rate, 2)} ({health.complaints}). Auto-pause above{" "}
+                  {pct(deliv.thresholds.complaint_rate, 1)}.
+                </StatusLine>
+              </div>
+            )
           )}
         </Panel>
       </div>
@@ -291,20 +324,22 @@ function ConsoleBody() {
         action={
           isAdmin && (
             <div className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-                Pilot size
-                <input
+              <div className="flex items-center gap-2">
+                <Label htmlFor="talent-pilot-size" className="font-normal text-muted-foreground">
+                  Pilot size
+                </Label>
+                <Input
+                  id="talent-pilot-size"
                   type="number"
                   min={1}
                   max={10000}
                   value={pilotSize}
                   onChange={(e) => setPilotSize(Number(e.target.value))}
-                  className="h-9 w-24 rounded-lg border border-gray-200 bg-white px-2 text-sm dark:border-white/10 dark:bg-gray-900"
+                  className="h-9 w-24 px-2"
                 />
-              </label>
+              </div>
               <Button
                 variant="primary"
-                className="h-9 py-0"
                 disabled={busy === "pilot"}
                 onClick={() =>
                   run("pilot", () => talentPost("/campaigns/pilot", { size: pilotSize }), "Pilot created — the sweep will start sending within the day's budget")
@@ -312,15 +347,20 @@ function ConsoleBody() {
               >
                 <Sparkles /> New pilot
               </Button>
-              <Button className={quietButton} variant="outline" disabled={busy === "sweep"} onClick={() => run("sweep", () => talentPost("/sweep", {}), "Sweep queued")}>
+              <Button variant="outline" disabled={busy === "sweep"} onClick={() => run("sweep", () => talentPost("/sweep", {}), "Sweep queued")}>
                 <Send /> Run sweep now
               </Button>
             </div>
           )
         }
       >
-        {list.length === 0 ? (
-          <p className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+        {!loaded ? (
+          <div className="space-y-4" aria-label="Loading">
+            <Skeleton className="h-48 w-full" />
+            <Skeleton className="h-48 w-full" />
+          </div>
+        ) : list.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
             No refresh campaigns yet. Start with a pilot: it samples consented profiles evenly across CV ages (under 12
             months, 12 to 24, over 24).
           </p>

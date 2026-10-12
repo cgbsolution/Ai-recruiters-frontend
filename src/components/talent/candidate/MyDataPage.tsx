@@ -1,10 +1,16 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Download, Loader2, ShieldOff, Trash2 } from "lucide-react";
+import { CircleAlert, Download, Loader2, ShieldOff, Trash2 } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { fmtDate, publicGet, publicPost, publicUrl } from "@/lib/talent";
-import { type Brand, Card, CandidateFrame, LinkProblem, PrimaryButton, SecondaryButton, inputClass } from "./CandidateFrame";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { type Brand, CandidateFrame, LinkProblem } from "./CandidateFrame";
 
 interface Consent {
   channel: string;
@@ -45,9 +51,13 @@ const KIND_LABELS: Record<string, string> = {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <Card>
-      <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
-      <div className="mt-3">{children}</div>
+    <Card className="gap-3">
+      <CardHeader>
+        <CardTitle>
+          <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
     </Card>
   );
 }
@@ -71,11 +81,15 @@ export default function MyDataPage({ token }: { token: string }) {
     return (
       <CandidateFrame>
         <Card>
-          <h1 className="text-lg font-semibold">Your data has been deleted</h1>
-          <p className="mt-2 text-sm text-gray-600">
-            We removed your profile, every CV we held, and any interview recordings and transcripts. We keep only a
-            scrambled fingerprint of your email and phone so we never contact you again.
-          </p>
+          <CardHeader>
+            <CardTitle className="leading-snug">
+              <h1 className="text-lg font-semibold">Your data has been deleted</h1>
+            </CardTitle>
+            <CardDescription className="mt-1 text-gray-600">
+              We removed your profile, every CV we held, and any interview recordings and transcripts. We keep only a
+              scrambled fingerprint of your email and phone so we never contact you again.
+            </CardDescription>
+          </CardHeader>
         </Card>
       </CandidateFrame>
     );
@@ -128,32 +142,36 @@ export default function MyDataPage({ token }: { token: string }) {
         </Section>
 
         <Section title="What we may contact you about">
-          <div className="space-y-2">
+          <div className="space-y-3">
             {Object.entries(PURPOSES).map(([purpose, label]) => (
-              <label key={purpose} className="flex items-center justify-between gap-3 text-sm">
-                <span>{label} (email)</span>
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-brand-500"
+              <div key={purpose} className="flex items-center justify-between gap-3">
+                <Label htmlFor={`consent-email-${purpose}`} className="font-normal leading-snug">
+                  {label} (email)
+                </Label>
+                <Switch
+                  id={`consent-email-${purpose}`}
                   checked={consentOn("email", purpose)}
                   disabled={busy !== null}
-                  onChange={(e) =>
+                  onCheckedChange={(checked) =>
                     act(`c-${purpose}`, async () => {
-                      await publicPost(`${base}/consent`, { channel: "email", purpose, granted: e.target.checked });
+                      await publicPost(`${base}/consent`, { channel: "email", purpose, granted: checked });
                       load();
                     })
                   }
                 />
-              </label>
+              </div>
             ))}
           </div>
-          <SecondaryButton
-            className="mt-4 w-full"
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            className="mt-4 h-auto min-h-10 w-full whitespace-normal py-2.5"
             disabled={busy !== null}
             onClick={() => act("withdraw", async () => { await publicPost(`${base}/withdraw-all`, {}); load(); })}
           >
             <ShieldOff className="h-4 w-4" /> Withdraw all consent and stop every message
-          </SecondaryButton>
+          </Button>
         </Section>
 
         <Section title="CVs we hold">
@@ -191,26 +209,42 @@ export default function MyDataPage({ token }: { token: string }) {
           </ul>
         </Section>
 
-        <a href={publicUrl(`${base}/export`)} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white text-sm font-medium text-gray-800 hover:bg-gray-50">
-          <Download className="h-4 w-4" /> Download everything (JSON)
-        </a>
+        <Button asChild variant="outline" size="lg" className="w-full">
+          <a href={publicUrl(`${base}/export`)}>
+            <Download className="h-4 w-4" /> Download everything (JSON)
+          </a>
+        </Button>
 
-        <Card className="border-red-200">
-          <h2 className="text-sm font-semibold text-red-700">Delete everything</h2>
-          <p className="mt-1 text-sm text-gray-600">
-            Removes your profile, all CVs, and any interview recordings and transcripts. This can't be undone. Type
-            DELETE to confirm.
-          </p>
-          <input className={`${inputClass} mt-3`} value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="DELETE" aria-label="Type DELETE to confirm" />
-          <PrimaryButton
-            className="mt-3 w-full bg-red-600 hover:bg-red-700"
-            disabled={confirm.trim().toUpperCase() !== "DELETE" || busy !== null}
-            onClick={() => act("delete", async () => { await publicPost(`${base}/delete`, { confirm }); setDeleted(true); })}
-          >
-            <Trash2 className="h-4 w-4" /> Delete my data
-          </PrimaryButton>
+        <Card className="gap-3 border-red-200">
+          <CardHeader>
+            <CardTitle>
+              <h2 className="text-sm font-semibold text-red-700">Delete everything</h2>
+            </CardTitle>
+            <CardDescription className="mt-1 text-gray-600">
+              Removes your profile, all CVs, and any interview recordings and transcripts. This can't be undone. Type
+              DELETE to confirm.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="DELETE" aria-label="Type DELETE to confirm" />
+            <Button
+              type="button"
+              variant="destructive"
+              size="lg"
+              className="w-full"
+              disabled={confirm.trim().toUpperCase() !== "DELETE" || busy !== null}
+              onClick={() => act("delete", async () => { await publicPost(`${base}/delete`, { confirm }); setDeleted(true); })}
+            >
+              <Trash2 className="h-4 w-4" /> Delete my data
+            </Button>
+          </CardContent>
         </Card>
-        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+        {error && (
+          <Alert variant="destructive">
+            <CircleAlert />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
       </div>
     </CandidateFrame>
   );

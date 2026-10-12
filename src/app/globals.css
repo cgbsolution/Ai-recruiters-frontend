@@ -292,6 +292,13 @@
   [role="button"]:not(:disabled) {
     cursor: pointer;
   }
+  /* Talent Agent screens are built from shadcn components, which expect the
+     shadcn border token (correct in dark mode) rather than the gray-200
+     default above. :where() keeps explicit border utilities in charge. */
+  .talent-ui :where([data-slot]),
+  .talent-ui :where([data-slot]) * {
+    border-color: var(--color-border);
+  }
   body {
     @apply relative font-normal font-outfit z-1 bg-gray-50;
   }

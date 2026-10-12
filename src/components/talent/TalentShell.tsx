@@ -3,7 +3,13 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bot } from "lucide-react";
+import { AlertTriangle, Bot } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { setTalentOrg } from "@/lib/talent";
@@ -80,12 +86,14 @@ export function TalentShell({
     }
   };
 
-  const active = (href: string) => (href === "/talent" ? pathname === "/talent" : pathname.startsWith(href));
+  const activeTab =
+    [...TABS].reverse().find((t) => (t.href === "/talent" ? pathname === "/talent" : pathname.startsWith(t.href)))?.href ??
+    "/talent";
   const state: TalentOrgState = { orgId, ready: orgId != null, isAdmin: hasRole("admin", "super_admin") };
 
   return (
     <TalentOrgContext.Provider value={state}>
-      <div className="space-y-6">
+      <div className="talent-ui space-y-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="flex items-start gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-500 dark:bg-brand-500/15">
@@ -93,49 +101,55 @@ export function TalentShell({
             </div>
             <div>
               <h1 className="text-xl font-semibold text-gray-900 dark:text-white">{title}</h1>
-              {subtitle && <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{subtitle}</p>}
+              {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {platformAdmin && (
-              <select
-                aria-label="Organization"
-                value={orgId ?? ""}
-                onChange={(e) => choose(Number(e.target.value))}
-                className="h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm dark:border-white/10 dark:bg-gray-900 dark:text-gray-200"
-              >
-                {orgs.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </select>
+            {platformAdmin && orgs.length > 0 && (
+              <Select value={orgId != null ? String(orgId) : undefined} onValueChange={(v) => choose(Number(v))}>
+                <SelectTrigger aria-label="Organization" className="w-56">
+                  <SelectValue placeholder="Organization" />
+                </SelectTrigger>
+                <SelectContent>
+                  {orgs.map((o) => (
+                    <SelectItem key={o.id} value={String(o.id)}>
+                      {o.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
             {actions}
           </div>
         </div>
-        <nav className="flex gap-1 overflow-x-auto border-b border-gray-200 dark:border-white/10">
-          {TABS.map((t) => (
-            <Link
-              key={t.href}
-              href={t.href}
-              className={cn(
-                "whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors",
-                active(t.href)
-                  ? "border-brand-500 text-brand-600 dark:text-brand-400"
-                  : "border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200",
-              )}
-            >
-              {t.label}
-            </Link>
-          ))}
-        </nav>
-        {state.ready ? children : <div className="py-16 text-center text-sm text-gray-500">Loading…</div>}
+        <Tabs value={activeTab}>
+          <TabsList className="max-w-full justify-start overflow-x-auto">
+            {TABS.map((t) => (
+              <TabsTrigger key={t.href} value={t.href} asChild>
+                <Link href={t.href}>{t.label}</Link>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+        {state.ready ? (
+          children
+        ) : (
+          <div className="space-y-4" aria-label="Loading">
+            <Skeleton className="h-28 w-full" />
+            <Skeleton className="h-48 w-full" />
+          </div>
+        )}
       </div>
     </TalentOrgContext.Provider>
   );
 }
 
+/** CardAction classes that move the actions under the title when the card is
+ *  narrow (phones), instead of squeezing the title into a thin column. */
+export const stackedAction =
+  "flex flex-wrap items-center gap-2 @max-xl/card-header:col-start-1 @max-xl/card-header:row-span-1 @max-xl/card-header:row-start-auto @max-xl/card-header:mt-2 @max-xl/card-header:justify-self-start";
+
+/** A titled section: a shadcn Card with an optional action in the header. */
 export function Panel({
   title,
   description,
@@ -150,55 +164,47 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <section
-      className={cn(
-        "rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-gray-900/40",
-        className,
-      )}
-    >
+    <Card className={cn("gap-4", className)}>
       {(title || action) && (
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            {title && <h2 className="text-base font-semibold text-gray-900 dark:text-white">{title}</h2>}
-            {description && <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{description}</p>}
-          </div>
-          {action}
-        </div>
+        <CardHeader>
+          {title && <CardTitle className="col-start-1">{title}</CardTitle>}
+          {description && <CardDescription className="col-start-1">{description}</CardDescription>}
+          {action && <CardAction className={stackedAction}>{action}</CardAction>}
+        </CardHeader>
       )}
-      {children}
-    </section>
+      <CardContent>{children}</CardContent>
+    </Card>
   );
 }
 
-/** Outline / ghost buttons on talent pages: the shared variant has no dark-mode ink. */
-export const quietButton =
-  "dark:border-white/15 dark:bg-white/5 dark:text-gray-100 dark:hover:bg-white/10 dark:hover:text-white";
-
+/** One number with a label: a compact Card. */
 export function Stat({ label, value, hint, tone }: { label: string; value: React.ReactNode; hint?: string; tone?: "warn" | "bad" | "good" }) {
   return (
-    <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 dark:border-white/5 dark:bg-white/[0.03]">
-      <div className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</div>
-      <div
-        className={cn(
-          "mt-1 text-2xl font-semibold text-gray-900 dark:text-white",
-          tone === "warn" && "text-amber-600 dark:text-amber-400",
-          tone === "bad" && "text-red-600 dark:text-red-400",
-          tone === "good" && "text-emerald-600 dark:text-emerald-400",
-        )}
-      >
-        {value}
-      </div>
-      {hint && <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{hint}</div>}
-    </div>
+    <Card className="gap-1 py-4 shadow-none">
+      <CardContent className="px-4">
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+        <div
+          className={cn(
+            "mt-1 text-2xl font-semibold text-gray-900 dark:text-white",
+            tone === "warn" && "text-amber-600 dark:text-amber-400",
+            tone === "bad" && "text-red-600 dark:text-red-400",
+            tone === "good" && "text-emerald-600 dark:text-emerald-400",
+          )}
+        >
+          {value}
+        </div>
+        {hint && <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
+      </CardContent>
+    </Card>
   );
 }
 
 const PILL_TONES: Record<string, string> = {
-  green: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
-  amber: "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
-  red: "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-300",
-  blue: "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
-  gray: "bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300",
+  green: "border-transparent bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
+  amber: "border-transparent bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+  red: "border-transparent bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+  blue: "border-transparent bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+  gray: "",
 };
 
 const STATUS_TONE: Record<string, keyof typeof PILL_TONES> = {
@@ -208,27 +214,34 @@ const STATUS_TONE: Record<string, keyof typeof PILL_TONES> = {
   scheduled: "blue", interviewed: "blue", shortlisted: "green", submitted: "green", closed: "gray",
   offered: "blue", in_progress: "blue", scored: "green", no_show: "red", human_requested: "amber", expired: "gray",
   pending: "amber", reviewed: "green", yes: "green", no: "red", unclear: "amber",
+  queued: "blue", running: "blue", done: "green", failed: "red", skipped: "amber",
 };
 
+/** A status label: a shadcn Badge, coloured by meaning (always with words). */
 export function Pill({ children, tone }: { children: React.ReactNode; tone?: keyof typeof PILL_TONES }) {
   const key = tone ?? STATUS_TONE[String(children)] ?? "gray";
   return (
-    <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium", PILL_TONES[key])}>
+    <Badge variant="secondary" className={cn("rounded-full", PILL_TONES[key])}>
       {typeof children === "string" ? children.replace(/_/g, " ") : children}
-    </span>
+    </Badge>
   );
 }
 
+/** Configuration problems the server reported. */
 export function Warnings({ items }: { items: string[] }) {
   if (!items.length) return null;
   return (
-    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-      <div className="mb-1 font-medium">Configuration</div>
-      <ul className="list-disc space-y-1 pl-5">
-        {items.map((w) => (
-          <li key={w}>{w}</li>
-        ))}
-      </ul>
-    </div>
+    <Alert variant="warning">
+      <AlertTriangle />
+      <AlertTitle>Configuration</AlertTitle>
+      <AlertDescription>
+        <ul className="list-disc space-y-1 pl-5">
+          {items.map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
+      </AlertDescription>
+    </Alert>
   );
 }
+

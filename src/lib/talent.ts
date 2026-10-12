@@ -202,9 +202,14 @@ export interface AuditPage {
 
 export const pct = (n: number, digits = 1) => `${(n * 100).toFixed(digits)}%`;
 
+/** The API sends naive UTC timestamps (no zone): read them as UTC. */
+export function parseUtc(iso: string): Date {
+  return new Date(iso.endsWith("Z") || iso.includes("+") ? iso : `${iso}Z`);
+}
+
 export function fmtDate(iso?: string | null, withTime = false): string {
   if (!iso) return "—";
-  const d = new Date(iso.endsWith("Z") || iso.includes("+") ? iso : `${iso}Z`);
+  const d = parseUtc(iso);
   return withTime
     ? d.toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
     : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
@@ -245,9 +250,23 @@ export interface JobTalentSettings {
   nice_to_haves: string[] | null;
   rubric: RubricCriterion[] | null;
   panel_user_ids: number[] | null;
-  match_status: string | null;
+  match_status: "queued" | "running" | "done" | "failed" | "skipped" | null;
   match_error: string | null;
   last_matched_at: string | null;
+  match_progress: MatchProgress | null;
+}
+
+/** Live progress of a matching run (written by the worker as it goes). */
+export interface MatchProgress {
+  stage: "queued" | "filtering" | "ranking" | "scoring" | "done" | "failed" | "skipped";
+  requested_at?: string;
+  started_at?: string;
+  finished_at?: string;
+  updated_at?: string;
+  pool?: number | null;
+  total?: number | null;
+  scored?: number;
+  matches?: number;
 }
 
 export interface TalentJob {
@@ -263,6 +282,10 @@ export interface TalentJob {
   skills: string[];
   effective_must_haves: string[];
   matches: Record<string, number>;
+  /** Is the background worker checking in? */
+  worker: { ok: boolean; last_seen_at: string | null };
+  /** Set when a run has waited minutes without starting: why, in words. */
+  stuck_hint: string | null;
 }
 
 export interface MustHave {

@@ -3,6 +3,9 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { notifyError } from "@/lib/notify";
 import { fmtDate, pct, talentGet, type PrecisionReport, type TalentJobRow } from "@/lib/talent";
 import { Panel, Pill, Stat, TalentShell, useTalentOrg } from "./TalentShell";
@@ -31,22 +34,24 @@ function JobsBody() {
       <Link
         key={j.id}
         href={`/talent/jobs/${j.ref}`}
-        className="flex items-center justify-between gap-4 rounded-xl border border-gray-100 px-4 py-3 hover:bg-gray-50 dark:border-white/5 dark:hover:bg-white/[0.03]"
+        className="block rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate font-medium text-gray-900 dark:text-white">{j.title}</span>
-            {j.autonomy_mode && <Pill tone={j.autonomy_mode === "autopilot" ? "blue" : "gray"}>{j.autonomy_mode}</Pill>}
-            {pending > 0 && <Pill tone="amber">{`${pending} awaiting approval`}</Pill>}
+        <Card className="flex-row items-center justify-between gap-4 px-4 py-3 shadow-none transition-colors hover:bg-muted/50">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="truncate font-medium text-gray-900 dark:text-white">{j.title}</span>
+              {j.autonomy_mode && <Pill tone={j.autonomy_mode === "autopilot" ? "blue" : "gray"}>{j.autonomy_mode}</Pill>}
+              {pending > 0 && <Pill tone="amber">{`${pending} awaiting approval`}</Pill>}
+            </div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              {j.location} · {total ? `${total} matches` : "not matched yet"}
+              {j.last_matched_at ? ` · matched ${fmtDate(j.last_matched_at)}` : ""}
+              {j.match_status === "running" || j.match_status === "queued" ? " · matching now…" : ""}
+              {j.match_status === "failed" ? " · last run failed" : ""}
+            </div>
           </div>
-          <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-            {j.location} · {total ? `${total} matches` : "not matched yet"}
-            {j.last_matched_at ? ` · matched ${fmtDate(j.last_matched_at)}` : ""}
-            {j.match_status === "running" || j.match_status === "queued" ? " · matching now…" : ""}
-            {j.match_status === "failed" ? " · last run failed" : ""}
-          </div>
-        </div>
-        <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </Card>
       </Link>
     );
   };
@@ -66,36 +71,42 @@ function JobsBody() {
           <Stat label="Jobs with ratings" value={precision?.jobs.length ?? 0} />
         </div>
         {precision && precision.jobs.length > 0 && (
-          <table className="mt-4 w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500 dark:border-white/10 dark:text-gray-400">
-                <th className="py-2 pr-4 font-medium">Job</th>
-                <th className="py-2 pr-4 text-right font-medium">Rated in top 10</th>
-                <th className="py-2 pr-4 text-right font-medium">Relevant</th>
-                <th className="py-2 text-right font-medium">Precision@10</th>
-              </tr>
-            </thead>
-            <tbody>
-              {precision.jobs.map((j) => (
-                <tr key={j.job_id} className="border-b border-gray-100 dark:border-white/5">
-                  <td className="py-2 pr-4">
-                    <Link className="text-brand-600 hover:underline dark:text-brand-400" href={`/talent/jobs/${j.ref}`}>{j.title}</Link>
-                  </td>
-                  <td className="py-2 pr-4 text-right tabular-nums">{j.rated_in_top_10}</td>
-                  <td className="py-2 pr-4 text-right tabular-nums">{j.relevant_in_top_10}</td>
-                  <td className="py-2 text-right tabular-nums">{j.precision_at_10 != null ? pct(j.precision_at_10, 0) : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="mt-4">
+            <Table>
+              <TableHeader>
+                <TableRow className="text-xs uppercase tracking-wide hover:bg-transparent">
+                  <TableHead className="text-muted-foreground">Job</TableHead>
+                  <TableHead className="text-right text-muted-foreground">Rated in top 10</TableHead>
+                  <TableHead className="text-right text-muted-foreground">Relevant</TableHead>
+                  <TableHead className="text-right text-muted-foreground">Precision@10</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {precision.jobs.map((j) => (
+                  <TableRow key={j.job_id}>
+                    <TableCell>
+                      <Link className="text-brand-600 hover:underline dark:text-brand-400" href={`/talent/jobs/${j.ref}`}>{j.title}</Link>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{j.rated_in_top_10}</TableCell>
+                    <TableCell className="text-right tabular-nums">{j.relevant_in_top_10}</TableCell>
+                    <TableCell className="text-right tabular-nums">{j.precision_at_10 != null ? pct(j.precision_at_10, 0) : "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </Panel>
 
       <Panel title="Open jobs" description="Matching runs when a job is created or changed while the match loop is on, or when you ask.">
         {jobs === null ? (
-          <p className="py-6 text-center text-sm text-gray-500">Loading…</p>
+          <div className="space-y-2" aria-label="Loading">
+            <Skeleton className="h-16 w-full rounded-xl" />
+            <Skeleton className="h-16 w-full rounded-xl" />
+            <Skeleton className="h-16 w-full rounded-xl" />
+          </div>
         ) : open.length === 0 ? (
-          <p className="py-6 text-center text-sm text-gray-500">No open jobs.</p>
+          <p className="py-6 text-center text-sm text-muted-foreground">No open jobs.</p>
         ) : (
           <div className="space-y-2">{open.map(row)}</div>
         )}

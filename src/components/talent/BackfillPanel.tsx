@@ -3,11 +3,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Database, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { notifyError, notifySuccess } from "@/lib/notify";
 import { fmtDate, talentGet, talentPost, type BackfillEstimate } from "@/lib/talent";
 import { fmtNum } from "./Charts";
-import { Panel, Pill, quietButton, useTalentOrg } from "./TalentShell";
+import { Panel, Pill, useTalentOrg } from "./TalentShell";
 
 interface Run {
   id: string;
@@ -54,30 +55,38 @@ export function BackfillPanel() {
       description="Profiles need a vector for semantic matching. A Claude re-parse adds skills with years and last-used dates, per-field confidence and computed experience."
     >
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-gray-100 p-4 text-sm dark:border-white/5">
-          <div className="font-medium text-gray-900 dark:text-white">Embeddings</div>
-          <div className="mt-1 text-gray-600 dark:text-gray-300">{fmtNum(est.embeddings_missing)} current CV versions have no vector yet.</div>
+        <Card className="gap-3 border-border py-4 shadow-none">
+          <CardHeader className="px-4">
+            <CardTitle className="font-medium">Embeddings</CardTitle>
+            <CardDescription>{fmtNum(est.embeddings_missing)} current CV versions have no vector yet.</CardDescription>
+          </CardHeader>
           {isAdmin && (
-            <Button className={`mt-3 ${quietButton}`} variant="outline" disabled={!est.embeddings_missing} onClick={() => start("embed")}>
-              <Database /> Embed profiles
-            </Button>
+            <CardFooter className="px-4">
+              <Button variant="outline" disabled={!est.embeddings_missing} onClick={() => start("embed")}>
+                <Database /> Embed profiles
+              </Button>
+            </CardFooter>
           )}
-        </div>
-        <div className="rounded-xl border border-gray-100 p-4 text-sm dark:border-white/5">
-          <div className="font-medium text-gray-900 dark:text-white">Claude re-parse</div>
-          <div className="mt-1 text-gray-600 dark:text-gray-300">
-            {fmtNum(est.profiles)} CVs not yet parsed by the current prompt. Estimated cost on {est.model} with the Batch API
-            (half price): <b>${est.estimated_cost_usd.toLocaleString()}</b> in {est.batches} batch{est.batches === 1 ? "" : "es"}, done within 24 hours.
-          </div>
+        </Card>
+        <Card className="gap-3 border-border py-4 shadow-none">
+          <CardHeader className="px-4">
+            <CardTitle className="font-medium">Claude re-parse</CardTitle>
+            <CardDescription>
+              {fmtNum(est.profiles)} CVs not yet parsed by the current prompt. Estimated cost on {est.model} with the Batch API
+              (half price): <b>${est.estimated_cost_usd.toLocaleString()}</b> in {est.batches} batch{est.batches === 1 ? "" : "es"}, done within 24 hours.
+            </CardDescription>
+          </CardHeader>
           {isAdmin && (
-            <Button className={`mt-3 ${quietButton}`} variant="outline" disabled={!est.profiles} onClick={() => setConfirm(true)}>
-              <Sparkles /> Re-parse with Claude
-            </Button>
+            <CardFooter className="px-4">
+              <Button variant="outline" disabled={!est.profiles} onClick={() => setConfirm(true)}>
+                <Sparkles /> Re-parse with Claude
+              </Button>
+            </CardFooter>
           )}
-        </div>
+        </Card>
       </div>
       {runs.length > 0 && (
-        <ul className="mt-4 space-y-1 text-sm text-gray-600 dark:text-gray-300">
+        <ul className="mt-4 space-y-1 text-sm text-muted-foreground">
           {runs.map((r) => (
             <li key={r.id} className="flex flex-wrap items-center gap-2">
               <Pill tone={r.status === "collected" ? "green" : "blue"}>{r.status}</Pill>

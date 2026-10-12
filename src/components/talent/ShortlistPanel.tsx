@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { talentGet, type ShortlistRow } from "@/lib/talent";
 import { Panel, Pill } from "./TalentShell";
 
@@ -17,42 +18,40 @@ export function ShortlistPanel({ jobRef }: { jobRef: string }) {
       title="Shortlist order"
       description="Interviewed candidates, ordered by interview score (with your overrides), then match score, minus a small amount per risk flag. It's a reading order — submitting and closing are your calls."
     >
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500 dark:border-white/10 dark:text-gray-400">
-              <th className="py-2 pr-3 font-medium">#</th>
-              <th className="py-2 pr-3 font-medium">Candidate</th>
-              <th className="py-2 pr-3 text-right font-medium">Interview</th>
-              <th className="py-2 pr-3 text-right font-medium">Match</th>
-              <th className="py-2 pr-3 text-right font-medium">Risk flags</th>
-              <th className="py-2 font-medium">State</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.match_id} className="border-b border-gray-100 dark:border-white/5">
-                <td className="py-2 pr-3 tabular-nums text-gray-500">{r.rank}</td>
-                <td className="py-2 pr-3">
-                  <Link href={`/talent/interviews/${r.interview_id}`} className="font-medium text-gray-900 hover:text-brand-600 dark:text-white">
-                    {r.candidate ?? `Profile ${r.profile_id}`}
-                  </Link>
-                  <div className="text-xs text-gray-500">{r.current_designation}</div>
-                </td>
-                <td className="py-2 pr-3 text-right tabular-nums">{r.interview_score.toFixed(1)} / 5</td>
-                <td className="py-2 pr-3 text-right tabular-nums">{r.ai_score ?? "—"}</td>
-                <td className="py-2 pr-3 text-right tabular-nums">{r.risk_flags}</td>
-                <td className="py-2">
-                  <div className="flex flex-wrap gap-1">
-                    <Pill>{r.status}</Pill>
-                    {!r.reviewed && <Pill tone="amber">review</Pill>}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Table>
+        <TableHeader>
+          <TableRow className="text-xs uppercase tracking-wide hover:bg-transparent">
+            <TableHead className="text-muted-foreground">#</TableHead>
+            <TableHead className="text-muted-foreground">Candidate</TableHead>
+            <TableHead className="text-right text-muted-foreground">Interview</TableHead>
+            <TableHead className="text-right text-muted-foreground">Match</TableHead>
+            <TableHead className="text-right text-muted-foreground">Risk flags</TableHead>
+            <TableHead className="text-muted-foreground">State</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((r) => (
+            <TableRow key={r.match_id}>
+              <TableCell className="tabular-nums text-muted-foreground">{r.rank}</TableCell>
+              <TableCell>
+                <Link href={`/talent/interviews/${r.interview_id}`} className="font-medium text-gray-900 hover:text-brand-600 dark:text-white">
+                  {r.candidate ?? `Profile ${r.profile_id}`}
+                </Link>
+                <div className="text-xs text-muted-foreground">{r.current_designation}</div>
+              </TableCell>
+              <TableCell className="text-right tabular-nums">{r.interview_score.toFixed(1)} / 5</TableCell>
+              <TableCell className="text-right tabular-nums">{r.ai_score ?? "—"}</TableCell>
+              <TableCell className="text-right tabular-nums">{r.risk_flags}</TableCell>
+              <TableCell>
+                <div className="flex flex-wrap gap-1">
+                  <Pill>{r.status}</Pill>
+                  {!r.reviewed && <Pill tone="amber">review</Pill>}
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </Panel>
   );
 }
