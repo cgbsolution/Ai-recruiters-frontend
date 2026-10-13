@@ -342,13 +342,6 @@ export interface PrecisionReport {
 }
 
 export interface BackfillEstimate {
-  profiles: number;
-  model: string;
-  estimated_input_tokens: number;
-  estimated_output_tokens: number;
-  estimated_cost_usd: number;
-  batches: number;
-  prompt_version: string;
   embeddings_missing: number;
 }
 
