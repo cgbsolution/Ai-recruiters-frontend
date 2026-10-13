@@ -83,6 +83,19 @@ export function MatchRunStatus({ job }: { job: TalentJob }) {
     );
   }
   if (!active && s.match_status === "done") {
+    if (p?.ai_error) {
+      // Stays up until a run scores again: the ranking below has no AI scores.
+      return (
+        <Alert variant="warning">
+          <AlertTriangle />
+          <AlertTitle>Ranked without AI scores</AlertTitle>
+          <AlertDescription>
+            <p>{p.ai_error}</p>
+            <p>Candidates are ordered by skills and similarity only. Run matching again once it&apos;s fixed.</p>
+          </AlertDescription>
+        </Alert>
+      );
+    }
     const recent = p?.finished_at && Date.now() - parseUtc(p.finished_at).getTime() < 10 * 60_000;
     if (!recent) return null;
     return (
@@ -139,6 +152,16 @@ export function MatchRunStatus({ job }: { job: TalentJob }) {
             );
           })}
         </ol>
+        {p.ai_error && (
+          <Alert variant="warning">
+            <AlertTriangle />
+            <AlertTitle>Claude can&apos;t score this run</AlertTitle>
+            <AlertDescription>{p.ai_error}</AlertDescription>
+          </Alert>
+        )}
+        {p.rerun_requested && (
+          <p className="text-xs text-muted-foreground">The job changed during this run — another run follows it.</p>
+        )}
         {job.stuck_hint && (
           <Alert variant="warning">
             <AlertTriangle />

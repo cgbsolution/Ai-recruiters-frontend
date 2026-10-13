@@ -197,6 +197,9 @@ export interface AuditPage {
   page_size: number;
   actions: string[];
   actors: string[];
+  /** Per-option counts under the other active filters (for the filter menus). */
+  action_counts: Record<string, number>;
+  actor_counts: Record<string, number>;
   items: AuditItem[];
 }
 
@@ -222,6 +225,7 @@ export interface TalentJobRow {
   ref: string;
   title: string;
   location: string;
+  department?: string | null;
   status: string;
   autonomy_mode: "autopilot" | "copilot" | null;
   match_status: string | null;
@@ -267,6 +271,10 @@ export interface MatchProgress {
   total?: number | null;
   scored?: number;
   matches?: number;
+  /** Claude couldn't be used for this run (e.g. no credit): matches are ranked without AI scores. */
+  ai_error?: string | null;
+  /** The job changed mid-run; another run follows this one. */
+  rerun_requested?: boolean | null;
 }
 
 export interface TalentJob {
