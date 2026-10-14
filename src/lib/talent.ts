@@ -91,6 +91,8 @@ export interface TalentSettings {
   sender_domain: string;
   consent_text: string;
   send_ramp: { from_day: number; cap: number }[];
+  /** Who serves the agent's AI: the self-hosted Ollama (default) or Claude. */
+  ai_provider?: "ollama" | "anthropic";
   models: Record<string, string>;
   embedding_provider: string | null;
   branding: Branding;
@@ -271,7 +273,7 @@ export interface MatchProgress {
   total?: number | null;
   scored?: number;
   matches?: number;
-  /** Claude couldn't be used for this run (e.g. no credit): matches are ranked without AI scores. */
+  /** The AI couldn't be used for this run (Ollama model missing, no Claude credit…): ranked without AI scores. */
   ai_error?: string | null;
   /** The job changed mid-run; another run follows this one. */
   rerun_requested?: boolean | null;

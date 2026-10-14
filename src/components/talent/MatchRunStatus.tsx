@@ -13,7 +13,7 @@ const STEPS: { key: MatchProgress["stage"]; label: string }[] = [
   { key: "queued", label: "Waiting for the background worker" },
   { key: "filtering", label: "Filtering the talent pool (skills, experience, location)" },
   { key: "ranking", label: "Ranking by similarity (embeddings)" },
-  { key: "scoring", label: "Scoring the shortlist with Claude" },
+  { key: "scoring", label: "Scoring the shortlist with AI" },
 ];
 const ORDER = ["queued", "filtering", "ranking", "scoring", "done"];
 
@@ -155,7 +155,7 @@ export function MatchRunStatus({ job }: { job: TalentJob }) {
         {p.ai_error && (
           <Alert variant="warning">
             <AlertTriangle />
-            <AlertTitle>Claude can&apos;t score this run</AlertTitle>
+            <AlertTitle>The AI can&apos;t score this run</AlertTitle>
             <AlertDescription>{p.ai_error}</AlertDescription>
           </Alert>
         )}

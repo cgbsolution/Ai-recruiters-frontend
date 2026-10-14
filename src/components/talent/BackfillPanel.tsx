@@ -8,7 +8,7 @@ import { talentGet, talentPost, type BackfillEstimate } from "@/lib/talent";
 import { fmtNum, StatusLine } from "./Charts";
 import { Panel, useTalentOrg } from "./TalentShell";
 
-/** Embeddings for the whole pool. Profiles keep their fast-parse metadata (no Claude re-parse). */
+/** Embeddings for the whole pool. Profiles keep their fast-parse metadata (no bulk AI re-parse). */
 export function BackfillPanel() {
   const { isAdmin, orgId } = useTalentOrg();
   const [est, setEst] = useState<BackfillEstimate | null>(null);

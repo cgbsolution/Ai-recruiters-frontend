@@ -442,7 +442,16 @@ function SettingsBody() {
 
       <EmailBranding branding={s.branding} isAdmin={isAdmin} onSaved={(out) => absorb(out, false)} />
 
-      <Panel icon={Cpu} title="Models" description="Set with environment variables on the server (TALENT_*_MODEL, EMBEDDING_PROVIDER).">
+      <Panel
+        icon={Cpu}
+        title="Models"
+        description={
+          s.ai_provider === "anthropic"
+            ? "Claude serves the agent (TALENT_LLM_PROVIDER=anthropic, models in TALENT_*_MODEL). Set on the server."
+            : "Your own Ollama server serves the agent — no Anthropic credits are used (TALENT_LLM_PROVIDER, TALENT_OLLAMA_MODEL, EMBEDDING_PROVIDER on the server)."
+        }
+        action={<Pill tone={s.ai_provider === "anthropic" ? "blue" : "green"}>{s.ai_provider === "anthropic" ? "Claude" : "Ollama"}</Pill>}
+      >
         <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
           {[...Object.entries(s.models), ["embeddings", s.embedding_provider ?? "off"] as [string, string]].map(([k, v]) => (
             <div key={k} className="min-w-0 rounded-lg border bg-muted/30 px-3 py-2.5">
