@@ -310,7 +310,7 @@ export interface MatchItem {
   rank: number;
   profile_id: number;
   /** Whether an invite email could reach them, and why not (planning skips them). */
-  contact?: { allowed: boolean; reason: string | null };
+  contact?: { allowed: boolean; reason: string | null; code?: string | null };
   status: string;
   status_reason: string | null;
   ai_score: number | null;

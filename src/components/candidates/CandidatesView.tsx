@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import TalentMatchesPanel from "./TalentMatchesPanel";
 import {
   Table,
   TableBody,
@@ -989,6 +990,9 @@ export default function CandidatesView({ jobId }: { jobId: string }) {
 
         </div>
       </div>
+
+      {/* ── Talent Agent's ranked matches (read-only) ───────────────────── */}
+      <TalentMatchesPanel jobId={jobId} />
 
       {/* ── Auto-match suggestion banner ────────────────────────────────── */}
       {!loading && candidates.length === 0 && (

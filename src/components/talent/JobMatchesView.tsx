@@ -23,6 +23,7 @@ import {
   Save,
   Search,
   Send,
+  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Table2,
@@ -58,6 +59,7 @@ import {
 } from "@/lib/talent";
 import { cn } from "@/lib/utils";
 import { ApprovalsPanel } from "./ApprovalsPanel";
+import { ConsentDialog } from "./ConsentDialog";
 import {
   DataTable,
   DataTableColumnHeader,
@@ -377,6 +379,9 @@ function useStoredView(): [View, (v: View) => void] {
 }
 
 const canInvite = (m: MatchItem) => (m.status === "ranked" || m.status === "needs_refresh") && m.ai_score != null;
+/** Blocked only for want of consent (not a bounce or do-not-contact), so recording it would help. */
+const needsConsent = (m: MatchItem) =>
+  !!m.contact && !m.contact.allowed && (m.contact.code === "no_consent" || !!m.contact.code?.startsWith("consent_"));
 const contactKey = (m: MatchItem) => (!m.contact ? "unknown" : m.contact.allowed ? "allowed" : "blocked");
 const CONTACT_LABEL: Record<string, string> = { allowed: "Can email", blocked: "Can't email", unknown: "Not checked" };
 const RATING_LABEL: Record<string, string> = { relevant: "Relevant", not_relevant: "Not relevant", unrated: "Not rated" };
@@ -392,7 +397,17 @@ function RatingCell({ m }: { m: MatchItem }) {
   return <RatingButtons matchId={m.id} rating={ratings.get(m)} onRated={ratings.set} />;
 }
 
-function InviteButton({ m, onInvite, className }: { m: MatchItem; onInvite: (m: MatchItem) => void; className?: string }) {
+function InviteButton({
+  m,
+  onInvite,
+  onConsent,
+  className,
+}: {
+  m: MatchItem;
+  onInvite: (m: MatchItem) => void;
+  onConsent: (m: MatchItem) => void;
+  className?: string;
+}) {
   if (!canInvite(m)) return null;
   if (m.contact && !m.contact.allowed) {
     return (
@@ -401,6 +416,11 @@ function InviteButton({ m, onInvite, className }: { m: MatchItem; onInvite: (m: 
           <UserPlus /> Invite
         </Button>
         <span className="text-xs text-amber-700 dark:text-amber-400">Can’t email: {m.contact.reason}</span>
+        {needsConsent(m) && (
+          <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => onConsent(m)}>
+            <ShieldCheck /> Record consent
+          </Button>
+        )}
       </div>
     );
   }
@@ -470,13 +490,13 @@ function MustHavesBadge({ m }: { m: MatchItem }) {
 }
 
 /** The detail under an expanded table row: the same evidence as a card. */
-function ExpandedMatch({ m, onInvite }: { m: MatchItem; onInvite: (m: MatchItem) => void }) {
+function ExpandedMatch({ m, onInvite, onConsent }: { m: MatchItem; onInvite: (m: MatchItem) => void; onConsent: (m: MatchItem) => void }) {
   return (
     // Stays in view while a wide table is scrolled sideways, and never wider than the screen.
     <div className="sticky left-4 space-y-4 py-1" style={{ maxWidth: "min(60rem, calc(100vw - 6rem))" }}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <MatchFacts m={m} />
-        <InviteButton m={m} onInvite={onInvite} className="h-8" />
+        <InviteButton m={m} onInvite={onInvite} onConsent={onConsent} className="h-8" />
       </div>
       <Separator />
       <MatchDetails m={m} />
@@ -507,6 +527,7 @@ function JobBody({ jobRef }: { jobRef: string }) {
   const [rated, setRated] = useState<string[]>([]);
   const [ratings, setRatings] = useState<Record<string, MatchRating>>({});
   const [cardLimit, setCardLimit] = useState(CARD_PAGE);
+  const [consentFor, setConsentFor] = useState<MatchItem | null>(null);
   const lastStatus = useRef<string | null>(null);
   const seq = useRef(0);
 
@@ -785,6 +806,7 @@ function JobBody({ jobRef }: { jobRef: string }) {
           if (canInvite(m)) {
             actions.push({ label: blocked ? "Invite (can’t email)" : "Invite", icon: UserPlus, disabled: blocked, onSelect: () => invite(m) });
           }
+          actions.push({ label: "Record consent", icon: ShieldCheck, onSelect: () => setConsentFor(m) });
           actions.push({
             label: row.getIsExpanded() ? "Hide evidence" : "Show evidence",
             icon: FileSearch,
@@ -995,6 +1017,16 @@ function JobBody({ jobRef }: { jobRef: string }) {
 
       <ApprovalsPanel key={pending.map((p) => p.id).join()} items={pending} onDone={load} />
 
+      {consentFor && (
+        <ConsentDialog
+          profileId={consentFor.profile_id}
+          name={consentFor.profile.name || `profile #${consentFor.profile_id}`}
+          open
+          onOpenChange={(o) => !o && setConsentFor(null)}
+          onSaved={load}
+        />
+      )}
+
       <ShortlistPanel jobRef={job.ref} />
 
       <Panel
@@ -1031,7 +1063,7 @@ function JobBody({ jobRef }: { jobRef: string }) {
                 columns={columns}
                 data={shown}
                 getRowId={(m) => m.id}
-                renderExpanded={(m) => <ExpandedMatch m={m} onInvite={invite} />}
+                renderExpanded={(m) => <ExpandedMatch m={m} onInvite={invite} onConsent={setConsentFor} />}
                 initialHidden={["must_haves", "experience", "notice", "expected_ctc", "city", "invited_at"]}
                 empty={emptyState}
                 toolbar={(table) => toolbar(table)}
@@ -1053,7 +1085,7 @@ function JobBody({ jobRef }: { jobRef: string }) {
                         key={m.id}
                         m={{ ...m, recruiter_rating: ratingOf(m) }}
                         onRated={rate}
-                        actions={canInvite(m) ? <InviteButton m={m} onInvite={invite} /> : null}
+                        actions={canInvite(m) ? <InviteButton m={m} onInvite={invite} onConsent={setConsentFor} /> : null}
                       />
                     ))}
                     <div className="flex flex-col items-center gap-2 pt-1 text-sm text-muted-foreground">
