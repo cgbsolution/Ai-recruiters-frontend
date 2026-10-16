@@ -16,6 +16,14 @@ interface Props {
 
 type ShareStatus = "idle" | "checking" | "granted" | "black_screen" | "denied" | "wrong_surface" | "no_audio";
 
+// The fix for a black share differs by OS: on a Mac it is almost always the
+// browser missing macOS's Screen Recording permission (it can start sharing,
+// but macOS hands it black frames).
+const isMac =
+  typeof navigator !== "undefined" &&
+  /Macintosh|Mac OS X/.test(navigator.userAgent) &&
+  !/iPhone|iPad/.test(navigator.userAgent);
+
 export default function ScreenShareStep({ onNext, required = false, sessionId = null }: Props) {
   const [status, setStatus] = useState<ShareStatus>("idle");
   const [screenStream, setScreenStream] = useState<MediaStream | undefined>(undefined);
@@ -121,15 +129,33 @@ export default function ScreenShareStep({ onNext, required = false, sessionId = 
             <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
             <div className="text-amber-700 text-sm">
               <p className="font-semibold">Your shared screen is coming through completely black.</p>
-              <p className="mt-1">This happens on some laptops. To fix it:</p>
-              <ol className="mt-1 list-decimal list-inside space-y-0.5">
-                <li>If you have more than one screen, click &quot;Try Again&quot; and pick the other one.</li>
-                <li>
-                  Otherwise, in Chrome open <strong>Settings → System</strong>, turn off{" "}
-                  <strong>&quot;Use graphics acceleration when available&quot;</strong>, click{" "}
-                  <strong>Relaunch</strong>, and open your interview link again.
-                </li>
-              </ol>
+              {isMac ? (
+                <>
+                  <p className="mt-1">Your Mac is blocking your browser from recording the screen. To fix it:</p>
+                  <ol className="mt-1 list-decimal list-inside space-y-0.5">
+                    <li>
+                      Open <strong>System Settings → Privacy &amp; Security → Screen &amp; System Audio Recording</strong>{" "}
+                      (called <strong>Screen Recording</strong> on older macOS).
+                    </li>
+                    <li>Turn it on for your browser (e.g. <strong>Google Chrome</strong>).</li>
+                    <li>
+                      Quit the browser completely (<strong>⌘Q</strong>), reopen it, and open your interview link again.
+                    </li>
+                  </ol>
+                </>
+              ) : (
+                <>
+                  <p className="mt-1">This happens on some laptops. To fix it:</p>
+                  <ol className="mt-1 list-decimal list-inside space-y-0.5">
+                    <li>If you have more than one screen, click &quot;Try Again&quot; and pick the other one.</li>
+                    <li>
+                      Otherwise, in Chrome open <strong>Settings → System</strong>, turn off{" "}
+                      <strong>&quot;Use graphics acceleration when available&quot;</strong>, click{" "}
+                      <strong>Relaunch</strong>, and open your interview link again.
+                    </li>
+                  </ol>
+                </>
+              )}
             </div>
           </div>
         </div>

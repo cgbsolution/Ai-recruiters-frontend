@@ -1,11 +1,12 @@
 /**
  * Detects a screen share that is "working" but delivers only black frames.
  *
- * Some Windows laptops (typically two graphics chips, Intel + NVIDIA/AMD)
- * capture the entire screen as solid black: the track is live, the browser
- * reports no error, and the recording comes out as 11 minutes of black with
- * perfect audio (Saloni Jalan, session 52, 2026-10-16). Nothing noticed until
- * the recruiter pressed play.
+ * The track is live, the browser reports no error, and the recording comes
+ * out as 11 minutes of black with perfect audio — session 52 (2026-10-16), a
+ * Mac whose Chrome lacked macOS's Screen Recording permission: 6 MB for
+ * 11:35, i.e. the audio track and nothing else. Some Windows laptops (two
+ * graphics chips) do the same. Nothing noticed until the recruiter pressed
+ * play.
  *
  * The check is a 32x18 thumbnail of the frame: a real screen — even a
  * dark-mode one — has text or UI somewhere that lifts a pixel above the
