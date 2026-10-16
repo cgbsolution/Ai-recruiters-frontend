@@ -41,6 +41,7 @@ export type ClientEventType =
   | "recording_upload_attempt_failed" // one attempt failed; will retry
   | "recording_empty" // the recorder produced a 0-byte blob
   | "recording_missing" // interview ended with no recording blob at all
+  | "screen_capture_black" // the screen share delivered only black frames (context.phase: precheck | recording)
   // ── Pre-interview microphone check (DeviceTestStep) ──
   // One event per attempt. `context` carries the evidence (transcript, Deepgram
   // voice events, dBFS numbers) so the gate's thresholds can be tuned from real

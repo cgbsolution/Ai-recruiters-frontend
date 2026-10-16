@@ -99,7 +99,7 @@ export default function InterviewFlow({ token, inviteToken, candidateEmail }: Pr
   const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
 
   const session = useInterviewSession();
-  const { startRecording, stopRecording, isRecording } = useVideoRecording();
+  const { startRecording, stopRecording, isRecording, replaceScreenStream } = useVideoRecording();
 
   // Stream the recording to the server WHILE the interview runs, so it survives
   // a tab/browser/laptop close. Returns finalize() to stitch parts at the end.
@@ -458,7 +458,7 @@ export default function InterviewFlow({ token, inviteToken, candidateEmail }: Pr
     // during the interview.
     if (webcamStream || screenStream) {
       try {
-        const rid = startRecording(webcamStream, screenStream);
+        const rid = startRecording(webcamStream, screenStream, session.sessionId);
         if (rid) setActiveRecordingId(rid);
       } catch (err) {
         // Recording failure is non-fatal — interview proceeds without recording
@@ -496,7 +496,10 @@ export default function InterviewFlow({ token, inviteToken, candidateEmail }: Pr
 
   const handleScreenStreamChanged = useCallback((stream: MediaStream) => {
     setScreenStream(stream);
-  }, []);
+    // "Share Screen Again" mid-interview — the recorder must follow the new
+    // share, or the rest of the video is the dead one.
+    replaceScreenStream(stream);
+  }, [replaceScreenStream]);
 
   const handleSendMessage = useCallback(
     async (text: string): Promise<boolean> => session.sendMessage(text),
@@ -830,7 +833,7 @@ export default function InterviewFlow({ token, inviteToken, candidateEmail }: Pr
     case "PERMISSION_SCREEN":
       return (
         <PreInterviewLayout currentStep={5}>
-          <ScreenShareStep onNext={handleScreenShare} required={true} />
+          <ScreenShareStep onNext={handleScreenShare} required={true} sessionId={session.sessionId} />
         </PreInterviewLayout>
       );
 

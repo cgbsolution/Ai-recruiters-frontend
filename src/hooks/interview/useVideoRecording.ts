@@ -10,6 +10,7 @@ import {
 } from "@/lib/recordingStorage";
 import { isLowSpecDevice } from "@/lib/deviceCapability";
 import { reportClientEvent } from "@/lib/clientTelemetry";
+import { createFrameProbe, isVideoFrameBlack } from "@/lib/screenFrameCheck";
 
 interface VideoRecordingHook {
   isRecording: boolean;
@@ -17,6 +18,8 @@ interface VideoRecordingHook {
   startRecording: (
     webcamStream: MediaStream | null,
     screenStream: MediaStream | null,
+    /** Only for telemetry, so recording events can be tied to the interview. */
+    sessionId?: number | null,
   ) => string | null;
   stopRecording: () => Promise<{
     /** Assemble the full recording Blob on demand. Only the single-shot upload
@@ -31,6 +34,10 @@ interface VideoRecordingHook {
   } | null>;
   /** Returns the current recording id (if any), so callers can persist it. */
   getRecordingId: () => string | null;
+  /** Point the running recording at a new screen share (candidate stopped
+   *  sharing and shared again). Without this the canvas kept drawing the
+   *  ended stream for the rest of the interview. */
+  replaceScreenStream: (screenStream: MediaStream) => void;
 }
 
 // Recording is proctoring evidence: a reviewer has to be able to READ the text
@@ -65,6 +72,10 @@ const CANVAS_HEIGHT = 1080;
 // Floor for adaptive degradation — below ~2 fps the recording stops being
 // usable as evidence of what the candidate was doing.
 const MIN_ADAPTIVE_FPS = 2;
+// A screen share that shows nothing but black (or no frames at all) for this
+// long is treated as broken: the recording switches to the camera — see
+// lib/screenFrameCheck.ts. Checked every ~2 s.
+const SCREEN_BLACK_FALLBACK_MS = 6000;
 
 // Only fps and bitrate tier off the shared low-spec heuristic (the same one
 // that gates the 3D avatar, so the two can never disagree the way they once
@@ -108,9 +119,20 @@ export function useVideoRecording(): VideoRecordingHook {
   // Kept so we can close() it on stop. Chrome hard-caps AudioContexts per page
   // (~6); leaking one per resume eventually makes new recordings fail.
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const audioDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  // Kept for the black-screen fallback, which draws the camera on demand.
+  const webcamStreamRef = useRef<MediaStream | null>(null);
+  // When the screen feed went black (0 = currently showing content), and
+  // whether the recording has switched to the camera because of it.
+  const screenBlackSinceRef = useRef(0);
+  const screenBlackRef = useRef(false);
 
   const startRecording = useCallback(
-    (webcamStream: MediaStream | null, screenStream: MediaStream | null): string | null => {
+    (
+      webcamStream: MediaStream | null,
+      screenStream: MediaStream | null,
+      sessionId: number | null = null,
+    ): string | null => {
       if (recorderRef.current && recorderRef.current.state !== "inactive") {
         return recordingIdRef.current;
       }
@@ -124,6 +146,9 @@ export function useVideoRecording(): VideoRecordingHook {
       chunksRef.current = [];
       chunkIndexRef.current = 0;
       retainedBytesRef.current = 0;
+      webcamStreamRef.current = webcamStream;
+      screenBlackSinceRef.current = 0;
+      screenBlackRef.current = false;
 
       // Create off-screen canvas
       if (!canvasRef.current) {
@@ -174,9 +199,12 @@ export function useVideoRecording(): VideoRecordingHook {
       // Draw the source at native size when it fits, centred on whole pixels.
       // `Math.min(1, ...)` is what stops a 1366x768 laptop screen from being
       // stretched to 1920x1080: upscaling adds no detail and only softens text.
-      // Rounding dx/dy keeps a same-size blit free of resampling.
-      const drawFitted = (src: HTMLVideoElement, srcW: number, srcH: number) => {
-        const scale = Math.min(1, CANVAS_WIDTH / srcW, CANVAS_HEIGHT / srcH);
+      // Rounding dx/dy keeps a same-size blit free of resampling. The camera
+      // fallback does upscale — a 640x480 face lost in a 1080p frame is poor
+      // evidence, and there is no text to soften.
+      const drawFitted = (src: HTMLVideoElement, srcW: number, srcH: number, upscale = false) => {
+        const fit = Math.min(CANVAS_WIDTH / srcW, CANVAS_HEIGHT / srcH);
+        const scale = upscale ? fit : Math.min(1, fit);
         const dw = Math.round(srcW * scale);
         const dh = Math.round(srcH * scale);
         const dx = Math.round((CANVAS_WIDTH - dw) / 2);
@@ -184,21 +212,100 @@ export function useVideoRecording(): VideoRecordingHook {
         ctx.drawImage(src, dx, dy, dw, dh);
       };
 
-      // Draw loop: the screen capture, and nothing else.
+      // The camera element is only created when it is actually drawn (no
+      // screen share, or the share went black), so a normal session never
+      // pays for a second video decode.
+      const ensureWebcamVideo = (): HTMLVideoElement | null => {
+        if (webcamVideoRef.current) return webcamVideoRef.current;
+        const ws = webcamStreamRef.current;
+        if (!ws || ws.getVideoTracks().length === 0) return null;
+        const wv = document.createElement("video");
+        wv.srcObject = ws;
+        wv.muted = true;
+        wv.playsInline = true;
+        wv.play().catch(() => {});
+        webcamVideoRef.current = wv;
+        return wv;
+      };
+
+      // Draw loop: the screen capture, and nothing else — unless there is no
+      // usable screen capture, in which case the camera full-frame.
       const drawFrame = () => {
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
         const sv = screenVideoRef.current;
-        if (sv && sv.readyState >= 2) {
-          drawFitted(sv, sv.videoWidth || CANVAS_WIDTH, sv.videoHeight || CANVAS_HEIGHT);
+        if (sv && !screenBlackRef.current) {
+          if (sv.readyState >= 2) {
+            drawFitted(sv, sv.videoWidth || CANVAS_WIDTH, sv.videoHeight || CANVAS_HEIGHT);
+          }
           return;
         }
 
-        // Fallback only — no screen share in this session (see above).
-        const wv = webcamVideoRef.current;
-        if (wv && wv.readyState >= 2) {
-          drawFitted(wv, wv.videoWidth || 640, wv.videoHeight || 480);
+        const wv = ensureWebcamVideo();
+        const showingCamera = !!wv && wv.readyState >= 2;
+        if (showingCamera) {
+          drawFitted(wv, wv.videoWidth || 640, wv.videoHeight || 480, true);
+        }
+        if (sv) {
+          // Tell whoever reviews the recording why there's no screen.
+          const label = showingCamera
+            ? "Screen capture unavailable — showing camera"
+            : "Screen capture unavailable";
+          ctx.font = "26px sans-serif";
+          ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+          ctx.fillRect(24, 24, ctx.measureText(label).width + 32, 52);
+          ctx.fillStyle = "#fff";
+          ctx.fillText(label, 40, 59);
+        }
+      };
+
+      // Every ~2 s: has the screen share been black (or frameless) for long
+      // enough to switch to the camera? And has it come back?
+      const probe = createFrameProbe();
+      const checkScreenFeed = () => {
+        const sv = screenVideoRef.current;
+        if (!sv || !probe) return;
+        const black = isVideoFrameBlack(sv, probe);
+        if (black === false) {
+          screenBlackSinceRef.current = 0;
+          if (screenBlackRef.current) {
+            screenBlackRef.current = false;
+            console.warn("[useVideoRecording] screen share has content again — back to screen");
+            // Release the camera decode we only needed for the fallback.
+            const wv = webcamVideoRef.current;
+            if (wv) {
+              wv.pause();
+              wv.srcObject = null;
+              webcamVideoRef.current = null;
+            }
+          }
+          return;
+        }
+        // Unreadable frame with a picture present — not evidence either way.
+        if (black === null && sv.readyState >= 2) return;
+        const now = Date.now();
+        if (!screenBlackSinceRef.current) screenBlackSinceRef.current = now;
+        if (!screenBlackRef.current && now - screenBlackSinceRef.current >= SCREEN_BLACK_FALLBACK_MS) {
+          screenBlackRef.current = true;
+          const track = (sv.srcObject as MediaStream | null)?.getVideoTracks()[0];
+          const settings = (track?.getSettings() ?? {}) as MediaTrackSettings & { displaySurface?: string };
+          console.warn("[useVideoRecording] screen share is black — recording the camera instead");
+          reportClientEvent({
+            type: "screen_capture_black",
+            message: "screen share delivered only black frames during recording; switched to camera",
+            context: {
+              sessionId,
+              phase: "recording",
+              noFrames: sv.readyState < 2,
+              videoWidth: sv.videoWidth,
+              videoHeight: sv.videoHeight,
+              trackState: track?.readyState ?? null,
+              trackMuted: track?.muted ?? null,
+              displaySurface: settings.displaySurface ?? null,
+              hasCamera: !!webcamStreamRef.current?.getVideoTracks().length,
+            },
+          });
         }
       };
 
@@ -236,8 +343,10 @@ export function useVideoRecording(): VideoRecordingHook {
 
       const loopTick = () => {
         drawFrame();
+        ++tickCount;
+        if (tickCount % Math.max(1, Math.round(activeFps * 2)) === 0) checkScreenFeed();
         // Re-evaluate roughly every 4 seconds of wall clock, not every frame.
-        if (++tickCount % Math.max(1, Math.round(activeFps * 4)) !== 0) return;
+        if (tickCount % Math.max(1, Math.round(activeFps * 4)) !== 0) return;
         const want = targetFpsForHeap();
         if (want === activeFps) return;
         const prev = activeFps;
@@ -281,6 +390,7 @@ export function useVideoRecording(): VideoRecordingHook {
           const audioCtx = new AudioContext();
           audioCtxRef.current = audioCtx;
           const dest = audioCtx.createMediaStreamDestination();
+          audioDestRef.current = dest;
 
           if (micTracks.length > 0) {
             const micSource = audioCtx.createMediaStreamSource(
@@ -428,6 +538,8 @@ export function useVideoRecording(): VideoRecordingHook {
           audioCtxRef.current.close().catch(() => {});
           audioCtxRef.current = null;
         }
+        audioDestRef.current = null;
+        webcamStreamRef.current = null;
         setIsRecording(false);
 
         // Report size from the durable IndexedDB meta instead of materialising
@@ -478,5 +590,35 @@ export function useVideoRecording(): VideoRecordingHook {
 
   const getRecordingId = useCallback(() => recordingIdRef.current, []);
 
-  return { isRecording, startRecording, stopRecording, getRecordingId };
+  const replaceScreenStream = useCallback((screenStream: MediaStream) => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
+    // Same canvas, same size — only the source changes, so the recording
+    // carries on in the same segment.
+    let sv = screenVideoRef.current;
+    if (!sv) {
+      sv = document.createElement("video");
+      sv.muted = true;
+      sv.playsInline = true;
+      screenVideoRef.current = sv;
+    }
+    sv.srcObject = screenStream;
+    sv.play().catch(() => {});
+    screenBlackSinceRef.current = 0;
+    screenBlackRef.current = false;
+    // Mix in the new share's system audio (the AI's voice). The old share's
+    // source stays connected but its track has ended, so it is silent.
+    const audioCtx = audioCtxRef.current;
+    const dest = audioDestRef.current;
+    const sysTracks = screenStream.getAudioTracks();
+    if (audioCtx && dest && sysTracks.length > 0) {
+      try {
+        audioCtx.createMediaStreamSource(new MediaStream(sysTracks)).connect(dest);
+      } catch (err) {
+        console.warn("[useVideoRecording] could not mix the new screen audio:", err);
+      }
+    }
+  }, []);
+
+  return { isRecording, startRecording, stopRecording, getRecordingId, replaceScreenStream };
 }

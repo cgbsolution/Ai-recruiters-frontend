@@ -4,19 +4,26 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, CheckCircle, Monitor, XCircle } from "lucide-react";
 import { canCaptureSystemAudio } from "@/lib/browserCapabilities";
+import { reportClientEvent } from "@/lib/clientTelemetry";
+import { screenShareLooksBlack } from "@/lib/screenFrameCheck";
 
 interface Props {
   onNext: (screenStream?: MediaStream) => void;
   required?: boolean;
+  /** Only for telemetry, so a black-screen event can be tied to the interview. */
+  sessionId?: number | null;
 }
 
-type ShareStatus = "idle" | "granted" | "denied" | "wrong_surface" | "no_audio";
+type ShareStatus = "idle" | "checking" | "granted" | "black_screen" | "denied" | "wrong_surface" | "no_audio";
 
-export default function ScreenShareStep({ onNext, required = false }: Props) {
+export default function ScreenShareStep({ onNext, required = false, sessionId = null }: Props) {
   const [status, setStatus] = useState<ShareStatus>("idle");
   const [screenStream, setScreenStream] = useState<MediaStream | undefined>(undefined);
 
   const requestScreenShare = async () => {
+    // Retrying after a black share: release the old one first.
+    screenStream?.getTracks().forEach((t) => t.stop());
+    setScreenStream(undefined);
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { displaySurface: "monitor" } as any,
@@ -40,7 +47,29 @@ export default function ScreenShareStep({ onNext, required = false }: Props) {
         setStatus("no_audio");
         return;
       }
+      // A share can be "granted" and still be solid black on some laptops —
+      // the recording would then show nothing. Catch it here, while the
+      // candidate can still fix it.
+      setStatus("checking");
+      const black = await screenShareLooksBlack(stream);
       setScreenStream(stream);
+      if (black) {
+        const settings = track.getSettings() as MediaTrackSettings & { displaySurface?: string };
+        reportClientEvent({
+          type: "screen_capture_black",
+          message: "screen share is black at the pre-interview check",
+          context: {
+            sessionId,
+            phase: "precheck",
+            width: settings.width ?? null,
+            height: settings.height ?? null,
+            displaySurface: settings.displaySurface ?? null,
+            trackMuted: track.muted,
+          },
+        });
+        setStatus("black_screen");
+        return;
+      }
       setStatus("granted");
     } catch {
       setStatus("denied");
@@ -77,9 +106,34 @@ export default function ScreenShareStep({ onNext, required = false }: Props) {
         </div>
         {status === "granted" && <CheckCircle className="w-5 h-5 text-green-500" />}
         {status === "denied" && <XCircle className="w-5 h-5 text-red-500" />}
-        {(status === "wrong_surface" || status === "no_audio") && <AlertTriangle className="w-5 h-5 text-amber-500" />}
+        {(status === "wrong_surface" || status === "no_audio" || status === "black_screen") && <AlertTriangle className="w-5 h-5 text-amber-500" />}
+        {status === "checking" && <div className="w-5 h-5 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />}
         {status === "idle" && <div className="w-5 h-5 rounded-full border-2 border-gray-300" />}
       </div>
+
+      {status === "checking" && (
+        <p className="text-gray-500 text-sm mb-5">Checking your screen share…</p>
+      )}
+
+      {status === "black_screen" && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 w-full max-w-sm mb-5 text-left">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+            <div className="text-amber-700 text-sm">
+              <p className="font-semibold">Your shared screen is coming through completely black.</p>
+              <p className="mt-1">This happens on some laptops. To fix it:</p>
+              <ol className="mt-1 list-decimal list-inside space-y-0.5">
+                <li>If you have more than one screen, click &quot;Try Again&quot; and pick the other one.</li>
+                <li>
+                  Otherwise, in Chrome open <strong>Settings → System</strong>, turn off{" "}
+                  <strong>&quot;Use graphics acceleration when available&quot;</strong>, click{" "}
+                  <strong>Relaunch</strong>, and open your interview link again.
+                </li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      )}
 
       {status === "wrong_surface" && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 w-full max-w-sm mb-5 text-left">
@@ -134,9 +188,21 @@ export default function ScreenShareStep({ onNext, required = false }: Props) {
         </Button>
       )}
 
-      {(status === "wrong_surface" || status === "no_audio" || (status === "denied" && required)) && (
+      {(status === "wrong_surface" || status === "no_audio" || status === "black_screen" || (status === "denied" && required)) && (
         <Button onClick={requestScreenShare} className="w-full max-w-sm h-12 bg-purple-600 hover:bg-purple-500 text-white rounded-xl mt-2">
           Try Again
+        </Button>
+      )}
+
+      {/* Not a hard block: a candidate who can't fix their laptop still gets
+          to interview, and the recording falls back to their camera. */}
+      {status === "black_screen" && (
+        <Button
+          variant="ghost"
+          onClick={() => onNext(screenStream)}
+          className="w-full max-w-sm h-12 text-gray-500 hover:text-gray-800 border border-gray-200 rounded-xl mt-2"
+        >
+          Continue anyway
         </Button>
       )}
 
