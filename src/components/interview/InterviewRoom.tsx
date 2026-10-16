@@ -115,22 +115,33 @@ const AUTO_SKIP_SPEECH_GRACE_SECONDS = 8;
  *  "done" and cut the candidate off. */
 const AUTO_SKIP_SPEECH_GRACE_MS = 6000;
 
-const END_COMMANDS = [
-  "close interview", "end interview", "stop interview",
-  "exit interview", "finish interview",
-  "close my interview", "end my interview",
-  "close the interview", "close this interview",
-  "end this interview", "stop this interview",
-  "end the interview", "finish the interview",
-  "i want to end", "i want to stop", "i need to end",
-  "please end", "please stop", "please close",
-  "want to leave", "need to leave", "want to quit",
-  "terminate interview", "cancel interview",
-  // NOTE: "end up" was removed — it is an extremely common English phrase
-  // ("we'll end up doing X") and, matched anywhere in the answer, it was
-  // silently ENDING the whole interview mid-sentence.
-  "close this call", "end this call", "end call",
+/**
+ * "End the interview" commands. A message counts only when it is NOTHING BUT
+ * the command, give or take filler ("okay", "please", "now", "can you"). The
+ * same words inside an answer are part of the answer — matched anywhere, "we
+ * end up with an EBITDA..." once ended a candidate's interview after Q1.
+ * Even a real command doesn't end the interview here: it goes to the backend,
+ * which has Nira ask the candidate to confirm first.
+ * Keep in sync with END_INTERVIEW_COMMANDS in avatar_interview_service.py.
+ */
+const END_ACTIONS = ["end", "end up", "close", "stop", "finish", "terminate", "cancel", "exit", "quit"];
+const END_TARGETS = [
+  "interview", "the interview", "this interview", "my interview",
+  "call", "the call", "this call", "it", "this",
 ];
+const END_INTENTS = ["", "i want to ", "i need to ", "i would like to ", "i'd like to ", "let's ", "lets "];
+const END_COMMANDS = new Set<string>([
+  ...END_INTENTS.flatMap((intent) =>
+    END_ACTIONS.flatMap((action) => END_TARGETS.map((target) => `${intent}${action} ${target}`)),
+  ),
+  "end", "stop", "close", // "please end" etc. once the filler is stripped
+  "i want to end", "i want to stop", "i need to end",
+  "i want to leave", "i need to leave", "i have to leave", "i want to quit",
+]);
+const COMMAND_FILLER_WORDS = new Set([
+  "please", "kindly", "ok", "okay", "so", "sorry", "hi", "hello", "nira",
+  "now", "just", "actually", "can", "could", "you", "thanks", "thank",
+]);
 
 const COMPLETION_PHRASES = [
   "that's my answer", "that is my answer",
@@ -158,11 +169,24 @@ const SKIP_PHRASES = [
  */
 function endsWithPhrase(text: string, phrases: string[]): boolean {
   const lower = text.toLowerCase().replace(/[\s.,!?;:'"]+$/g, "");
-  return phrases.some((phrase) => lower.endsWith(phrase));
+  return phrases.some((phrase) => {
+    if (!lower.endsWith(phrase)) return false;
+    // Whole words only — "weekend call" must not match "end call".
+    const before = lower.charAt(lower.length - phrase.length - 1);
+    return before === "" || !/[a-z0-9]/.test(before);
+  });
 }
 
 function isEndCommand(text: string): boolean {
-  return endsWithPhrase(text, END_COMMANDS);
+  const words = text
+    .toLowerCase()
+    .replace(/’/g, "'")
+    .replace(/[^a-z0-9' ]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  while (words.length && COMMAND_FILLER_WORDS.has(words[0])) words.shift();
+  while (words.length && COMMAND_FILLER_WORDS.has(words[words.length - 1])) words.pop();
+  return END_COMMANDS.has(words.join(" "));
 }
 
 function isCompletionPhrase(text: string): boolean {
@@ -371,6 +395,11 @@ export default function InterviewRoom({
     return aiMsgs[aiMsgs.length - 1].questionIndex ?? 0;
   })();
 
+  /* ── Nira just asked "do you want to end the interview?" ── */
+  const lastMessage = messages[messages.length - 1];
+  const awaitingEndConfirmation =
+    !isInterviewComplete && lastMessage?.role === "ai" && !!lastMessage.awaitingEndConfirmation;
+
   /* ── Answered/skipped question count from questionStates (robust frontend tracking) ── */
   const completedQuestionCount = questionStates.filter(
     (q) => q.index > 0 && (q.status === "answered" || q.status === "skipped")
@@ -418,28 +447,22 @@ export default function InterviewRoom({
     capturedTranscriptRef.current = text;
 
     try {
-      // Check for end commands
-      if (isEndCommand(text)) {
-        isAutoCompletingRef.current = true; // prevent Effect 4b from double-calling
-        disableViolations();
-        onComplete();
-        return;
-      }
-
       // Check for skip commands
       if (isSkipCommand(text)) {
         await onSkipQuestion();
         return;
       }
 
-      // Normal answer submission
+      // Normal answer submission. An end command ("end the interview") goes
+      // through here too: the backend has Nira ask for confirmation rather
+      // than ending on the spot.
       await onSendMessage(text);
     } finally {
       isSubmittingRef.current = false;
       // Reset transcript state AFTER successful submission
       reset();
     }
-  }, [stop, cancel, reset, cancelSilenceAnim, getSnapshot, onSendMessage, onSkipQuestion, onComplete, disableViolations]);
+  }, [stop, cancel, reset, cancelSilenceAnim, getSnapshot, onSendMessage, onSkipQuestion]);
 
   /* ─── Skip button handler ── */
   const handleSkip = useCallback(async () => {
@@ -458,6 +481,25 @@ export default function InterviewRoom({
       isSubmittingRef.current = false;
     }
   }, [stop, cancel, reset, cancelSilenceAnim, onSkipQuestion]);
+
+  /* ─── "No, continue" on the end-interview confirmation ── */
+  const handleDeclineEnd = useCallback(async () => {
+    if (phaseRef.current !== "LISTENING") return;
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setPhase("PROCESSING");
+    processingStartRef.current = Date.now();
+    stop();
+    cancel();
+    reset();
+    cancelSilenceAnim();
+    try {
+      // The backend reads this as a "no" and re-asks the current question.
+      await onSendMessage("No, I want to continue the interview.");
+    } finally {
+      isSubmittingRef.current = false;
+    }
+  }, [stop, cancel, reset, cancelSilenceAnim, onSendMessage]);
 
   // Sync callback refs — used by silence detection effect to avoid stale closures
   handleSubmitRef.current = handleSubmit;
@@ -876,6 +918,9 @@ export default function InterviewRoom({
   useEffect(() => {
     if (autoSkipTimeout <= 0 || currentQuestionIndex <= 0) return;
     if (phase !== "LISTENING") return;
+    // Paused while Nira waits for a yes/no on ending the interview — the
+    // clock is for the question, and the buttons cover a silent candidate.
+    if (awaitingEndConfirmation) return;
 
     questionTimerRef.current = setInterval(() => {
       setQuestionTimeLeft((prev) => {
@@ -911,7 +956,7 @@ export default function InterviewRoom({
         questionTimerRef.current = null;
       }
     };
-  }, [phase, autoSkipTimeout, currentQuestionIndex]);
+  }, [phase, autoSkipTimeout, currentQuestionIndex, awaitingEndConfirmation]);
 
   /* ═══════════════════════════════════════════════════════════════ */
   /*  Violation modal                                               */
@@ -1579,8 +1624,32 @@ export default function InterviewRoom({
               </div>
             )}
 
+            {/* End-interview confirmation: buttons, or say "yes" / "no" */}
+            {phase === "LISTENING" && awaitingEndConfirmation && (
+              <div className="mt-3 flex flex-col items-center gap-2 shrink-0">
+                <p className="text-sm text-gray-600">
+                  Do you want to end the interview? Choose below, or say &quot;yes&quot; or &quot;no&quot;.
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleDeclineEnd}
+                    className="px-5 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-full hover:bg-gray-50 transition-colors"
+                  >
+                    No, continue
+                  </button>
+                  <button
+                    onClick={handleEndInterview}
+                    className="flex items-center gap-1.5 px-5 py-2 text-sm font-medium text-white bg-red-600 rounded-full hover:bg-red-700 transition-colors"
+                  >
+                    <PhoneOff className="w-3.5 h-3.5" />
+                    Yes, end interview
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Skip + auto-skip timer inline under chat */}
-            {phase === "LISTENING" && voiceState === "idle" && currentQuestionIndex > 0 && (
+            {phase === "LISTENING" && voiceState === "idle" && currentQuestionIndex > 0 && !awaitingEndConfirmation && (
               <div className="mt-3 flex items-center justify-center gap-4 shrink-0">
                 <button
                   onClick={handleSkip}

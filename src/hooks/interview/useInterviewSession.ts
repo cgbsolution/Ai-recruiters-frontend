@@ -30,6 +30,10 @@ export interface Message {
    *  They reuse the current question index (never invent a new one) so the
    *  progress counter and per-question timer stay in sync with the server. */
   isLocalFallback?: boolean;
+  /** Nira is asking "do you want to end the interview?" after the candidate
+   *  said an end command. A "yes" (spoken or the button) ends it; anything
+   *  else and the backend re-asks the current question. */
+  awaitingEndConfirmation?: boolean;
 }
 
 export interface QuestionState {
@@ -419,9 +423,14 @@ export function useInterviewSession(): InterviewSessionHook {
           feedback: data.feedback || undefined,
           questionIndex: data.question_index,
           codingQuestion: data.coding_question || undefined,
+          awaitingEndConfirmation: data.awaiting_end_confirmation || undefined,
         };
         setMessages((prev) => [...prev, aiMsg]);
-        updateQuestionStates(data.message, data.question_index, data.is_complete);
+        // The confirmation prompt isn't a question — keep the card on the
+        // question the candidate is actually on.
+        if (!data.awaiting_end_confirmation) {
+          updateQuestionStates(data.message, data.question_index, data.is_complete);
+        }
         // Reset fallback counter on successful response
         consecutiveFallbacksRef.current = 0;
 
