@@ -69,6 +69,8 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  /** Sign in with a one-time link from AskMira (the HRMS this company runs). */
+  loginWithAskmira: (launchToken: string) => Promise<void>;
   signup: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
   hasRole: (...roles: UserRole[]) => boolean;
@@ -316,6 +318,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     saveSession(data.access_token, data.user as AuthUser, data.expires_in);
   }, [saveSession]);
 
+  const loginWithAskmira = useCallback(async (launchToken: string) => {
+    const res = await fetch(`${API_BASE}/auth/askmira/exchange`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: launchToken }),
+    });
+    const data = await res.json().catch(() => ({ detail: "Sign-in from AskMira failed" }));
+    if (!res.ok) {
+      throw new Error(data.detail || "Sign-in from AskMira failed");
+    }
+    saveSession(data.access_token, data.user as AuthUser, data.expires_in);
+  }, [saveSession]);
+
   const signup = useCallback(async (name: string, email: string, password: string) => {
     const res = await fetch(`${API_BASE}/auth/signup`, {
       method: "POST",
@@ -353,7 +368,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, signup, logout, hasRole, updateUser, replaceToken }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, loginWithAskmira, signup, logout, hasRole, updateUser, replaceToken }}>
       {children}
     </AuthContext.Provider>
   );

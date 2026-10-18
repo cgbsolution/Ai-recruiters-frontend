@@ -27,6 +27,8 @@ const PUBLIC_PATHS = [
   "/interview",
   "/secondary-cam",
   "/avatar-debug",
+  // Sign-in from AskMira: the one-time link in the URL fragment is the credential.
+  "/sso",
   // Talent Agent candidate pages (refresh, invite, interview, my data): the
   // emailed magic link is the credential.
   "/t",
