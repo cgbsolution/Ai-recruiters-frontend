@@ -310,7 +310,9 @@ export interface MatchItem {
   rank: number;
   profile_id: number;
   /** Whether an invite email could reach them, and why not (planning skips them). */
-  contact?: { allowed: boolean; reason: string | null; code?: string | null };
+  /** can_ask: no consent yet, but the invite email can ask for it. */
+  contact?: { allowed: boolean; reason: string | null; code?: string | null; can_ask?: boolean };
+  interview?: { status: string; scheduled_at: string | null } | null;
   status: string;
   status_reason: string | null;
   ai_score: number | null;
@@ -407,6 +409,8 @@ export interface InvitePageData {
   job: { title: string; location: string; department: string; type: string; summary: string; experience: string };
   current: { current_ctc: number | null; expected_ctc: number | null; notice_period_days: number | null };
   open: boolean;
+  /** We have no consent for job emails yet: the page asks for it first. */
+  consent_needed: boolean;
 }
 
 export interface InterviewState {
@@ -417,7 +421,10 @@ export interface InterviewState {
   mode: "async_text" | "async_voice" | "live_voice";
   question_count: number;
   time_limit_minutes: number;
-  slots: { id: string; label: string; starts_at: string }[];
+  /** Free start times in the next booking_days days, grouped by day (org time zone). */
+  availability: { date: string; label: string; times: { starts_at: string; label: string }[] }[];
+  booking_days: number;
+  time_zone: string;
   scheduled_label: string | null;
   scheduled_at: string | null;
   opens_at: string | null;
@@ -492,4 +499,11 @@ export interface ShortlistRow {
   status: string;
   candidate: string | null;
   current_designation: string | null;
+}
+
+/** A match's status in words for the status pill: who said no, and who still owes us consent. */
+export function matchStatusText(m: Pick<MatchItem, "status" | "status_reason" | "contact">): string {
+  if (m.status === "declined" && m.status_reason === "candidate_not_interested") return "not interested";
+  if (m.status === "invited" && m.contact?.can_ask) return "consent requested";
+  return m.status;
 }

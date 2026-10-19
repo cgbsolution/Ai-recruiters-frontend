@@ -49,6 +49,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { notifyError, notifySuccess } from "@/lib/notify";
 import {
   fmtDate,
+  matchStatusText,
   talentGet,
   talentPost,
   talentPut,
@@ -382,8 +383,11 @@ const canInvite = (m: MatchItem) => (m.status === "ranked" || m.status === "need
 /** Blocked only for want of consent (not a bounce or do-not-contact), so recording it would help. */
 const needsConsent = (m: MatchItem) =>
   !!m.contact && !m.contact.allowed && (m.contact.code === "no_consent" || !!m.contact.code?.startsWith("consent_"));
-const contactKey = (m: MatchItem) => (!m.contact ? "unknown" : m.contact.allowed ? "allowed" : "blocked");
-const CONTACT_LABEL: Record<string, string> = { allowed: "Can email", blocked: "Can't email", unknown: "Not checked" };
+const contactKey = (m: MatchItem) =>
+  !m.contact ? "unknown" : m.contact.allowed ? "allowed" : m.contact.can_ask ? "ask" : "blocked";
+const CONTACT_LABEL: Record<string, string> = {
+  allowed: "Can email", ask: "Consent by email", blocked: "Can't email", unknown: "Not checked",
+};
 const RATING_LABEL: Record<string, string> = { relevant: "Relevant", not_relevant: "Not relevant", unrated: "Not rated" };
 
 /** Ratings made on this page, so the table keeps its page and the two views agree. */
@@ -409,7 +413,7 @@ function InviteButton({
   className?: string;
 }) {
   if (!canInvite(m)) return null;
-  if (m.contact && !m.contact.allowed) {
+  if (m.contact && !m.contact.allowed && !m.contact.can_ask) {
     return (
       <div className="flex max-w-[260px] flex-col items-end gap-1 text-right">
         <Button variant="outline" className={className} disabled title={m.contact.reason ?? undefined}>
@@ -421,6 +425,20 @@ function InviteButton({
             <ShieldCheck /> Record consent
           </Button>
         )}
+      </div>
+    );
+  }
+  if (m.contact?.can_ask) {
+    return (
+      <div className="flex max-w-[260px] flex-col items-end gap-1 text-right">
+        <Button variant="outline" className={className} onClick={() => onInvite(m)}
+          title="Emails them to ask for consent, then whether they're interested">
+          <UserPlus /> Invite
+        </Button>
+        <span className="text-xs text-muted-foreground">The email asks for their consent first</span>
+        <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => onConsent(m)}>
+          <ShieldCheck /> Record consent
+        </Button>
       </div>
     );
   }
@@ -438,6 +456,18 @@ function ContactBadge({ m }: { m: MatchItem }) {
       <Badge variant="outline" className="gap-1 font-normal text-emerald-700 dark:text-emerald-300">
         <MailCheck /> Can email
       </Badge>
+    );
+  }
+  if (m.contact.can_ask) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge variant="outline" tabIndex={0} className="gap-1 font-normal text-blue-700 dark:text-blue-300">
+            <MailCheck /> Consent by email
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-64">{m.contact.reason}</TooltipContent>
+      </Tooltip>
     );
   }
   return (
@@ -626,9 +656,9 @@ function JobBody({ jobRef }: { jobRef: string }) {
   const freshOptions: FilterOption[] = [...freshCounts.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([value, n]) => ({ value, label: value.replace(/_/g, " "), count: n }));
-  const contactOptions: FilterOption[] = (["allowed", "blocked", "unknown"] as const)
+  const contactOptions: FilterOption[] = (["allowed", "ask", "blocked", "unknown"] as const)
     .filter((k) => contactCounts.has(k))
-    .map((k) => ({ value: k, label: CONTACT_LABEL[k], icon: k === "allowed" ? MailCheck : k === "blocked" ? MailX : undefined, count: contactCounts.get(k) }));
+    .map((k) => ({ value: k, label: CONTACT_LABEL[k], icon: k === "allowed" || k === "ask" ? MailCheck : k === "blocked" ? MailX : undefined, count: contactCounts.get(k) }));
   const ratingOptions: FilterOption[] = (["relevant", "not_relevant", "unrated"] as const).map((k) => ({
     value: k,
     label: RATING_LABEL[k],
@@ -711,7 +741,7 @@ function JobBody({ jobRef }: { jobRef: string }) {
         accessorKey: "status",
         meta: { label: "Status" },
         header: sortable("Status"),
-        cell: ({ row }) => <Pill>{row.original.status}</Pill>,
+        cell: ({ row }) => <Pill>{matchStatusText(row.original)}</Pill>,
       },
       {
         id: "must_haves",
