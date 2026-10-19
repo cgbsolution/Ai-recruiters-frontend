@@ -4,11 +4,10 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Bot, CalendarClock, CheckCircle2, CircleAlert, Loader2, UserRound } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { fmtDate, publicGet, publicPost, type InterviewState } from "@/lib/talent";
+import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { CandidateFrame, LinkProblem } from "./CandidateFrame";
 import { InterviewRunner } from "./InterviewRunner";
 
@@ -30,6 +29,69 @@ function ErrorAlert({ message }: { message: string }) {
   );
 }
 
+type Day = InterviewState["availability"][number];
+
+/** The next `bookingDays` days as a strip (days with no free time greyed out), then that day's times. */
+function BookingCalendar({ days, bookingDays, day, time, onDay, onTime }: {
+  days: Day[];
+  bookingDays: number;
+  day: string | null;
+  time: string | null;
+  onDay: (date: string) => void;
+  onTime: (startsAt: string) => void;
+}) {
+  const byDate = new Map(days.map((d) => [d.date, d]));
+  const first = new Date(`${days[0].date}T00:00:00`);
+  const today = new Date();
+  const start = today < first ? new Date(today.getFullYear(), today.getMonth(), today.getDate()) : first;
+  const strip = Array.from({ length: bookingDays + 1 }, (_, i) => {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return { iso, d, open: byDate.has(iso) };
+  });
+  const selected = day ? byDate.get(day) : undefined;
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-4 gap-2 sm:grid-cols-8" role="radiogroup" aria-label="Interview date">
+        {strip.map(({ iso, d, open }) => (
+          <button key={iso} type="button" role="radio" aria-checked={day === iso} disabled={!open}
+            onClick={() => onDay(iso)}
+            className={cn(
+              "flex flex-col items-center rounded-xl border px-1 py-2 text-xs transition-colors",
+              open ? "border-gray-200 hover:bg-gray-50" : "cursor-not-allowed border-gray-100 text-gray-300",
+              day === iso && "border-brand-500 bg-brand-50 text-brand-700 hover:bg-brand-50",
+            )}>
+            <span className="uppercase">{d.toLocaleDateString(undefined, { weekday: "short" })}</span>
+            <span className="text-lg font-semibold leading-tight">{d.getDate()}</span>
+            <span>{d.toLocaleDateString(undefined, { month: "short" })}</span>
+          </button>
+        ))}
+      </div>
+      {selected ? (
+        <div>
+          <div className="mb-2 flex items-center gap-1.5 text-sm text-gray-700">
+            <CalendarClock className="h-4 w-4 text-gray-500" aria-hidden /> {selected.label}
+          </div>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Interview time">
+            {selected.times.map((t) => (
+              <button key={t.starts_at} type="button" role="radio" aria-checked={time === t.starts_at}
+                onClick={() => onTime(t.starts_at)}
+                className={cn(
+                  "rounded-lg border border-gray-200 px-2 py-2 text-sm hover:bg-gray-50",
+                  time === t.starts_at && "border-brand-500 bg-brand-50 font-medium text-brand-700 hover:bg-brand-50",
+                )}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-gray-500">Choose a day to see the free times.</p>
+      )}
+    </div>
+  );
+}
+
 export default function InterviewPage({ token }: { token: string }) {
   const base = `/interview/${encodeURIComponent(token)}`;
   const [s, setS] = useState<InterviewState | null>(null);
@@ -37,6 +99,7 @@ export default function InterviewPage({ token }: { token: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [choice, setChoice] = useState<string | null>(null);
+  const [day, setDay] = useState<string | null>(null);
 
   const load = useCallback(() => {
     publicGet<InterviewState>(base).then(setS).catch(() => setGone(true));
@@ -91,27 +154,31 @@ export default function InterviewPage({ token }: { token: string }) {
       {s.status === "offered" && (
         <Card className="mt-4 gap-3">
           <CardHeader>
-            <CardTitle className="text-sm font-medium text-gray-800">Pick a time</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-800">Pick a date and time</CardTitle>
+            <p className="text-xs text-gray-500">
+              Any time in the next {s.booking_days} days. Times are in {s.time_zone}.
+            </p>
           </CardHeader>
           <CardContent className="flex flex-col">
-            {s.slots.length === 0 ? (
+            {s.availability.length === 0 ? (
               <p className="text-sm text-gray-600">We&apos;re finding times that work — a recruiter will be in touch.</p>
             ) : (
-              <RadioGroup className="gap-2" aria-label="Interview times" value={choice ?? ""} onValueChange={setChoice}>
-                {s.slots.map((slot) => (
-                  <Label key={slot.id} htmlFor={`slot-${slot.id}`}
-                    className="cursor-pointer gap-3 rounded-xl border border-gray-200 px-4 py-3 font-normal leading-snug hover:bg-gray-50 has-[[data-state=checked]]:border-brand-500 has-[[data-state=checked]]:bg-brand-50">
-                    <RadioGroupItem id={`slot-${slot.id}`} value={slot.id} />
-                    <CalendarClock className="h-4 w-4 shrink-0 text-gray-500" aria-hidden />
-                    {slot.label}
-                  </Label>
-                ))}
-              </RadioGroup>
+              <BookingCalendar
+                days={s.availability}
+                bookingDays={s.booking_days}
+                day={day}
+                time={choice}
+                onDay={(d) => {
+                  setDay(d);
+                  setChoice(null);
+                }}
+                onTime={setChoice}
+              />
             )}
             {error && <ErrorAlert message={error} />}
-            {s.slots.length > 0 && (
+            {s.availability.length > 0 && (
               <Button type="button" variant="primary" size="lg" className="mt-4 w-full" disabled={!choice || busy}
-                onClick={() => act("/book", { slot_id: choice })}>
+                onClick={() => act("/book", { starts_at: choice })}>
                 {busy && <Loader2 className="h-4 w-4 animate-spin" />} Book this time
               </Button>
             )}
@@ -134,6 +201,11 @@ export default function InterviewPage({ token }: { token: string }) {
                 </p>
               </div>
             </div>
+            {s.mode !== "live_voice" && (
+              <Button type="button" variant="primary" size="lg" className="mt-4 w-full" disabled>
+                Start interview · opens {fmtDate(s.opens_at, true)}
+              </Button>
+            )}
             {error && <ErrorAlert message={error} />}
             {s.can_reschedule && (
               <Button type="button" variant="outline" size="lg" className="mt-4 w-full" disabled={busy} onClick={() => act("/reschedule")}>

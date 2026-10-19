@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TalentMatchCards, TalentMatchRows, useTalentMatches } from "./TalentMatchesPanel";
 import {
   Table,
   TableBody,
@@ -83,6 +84,7 @@ type ResumeFitScore = string | null;
 
 interface Candidate {
   id: number;
+  resume_metadata_id?: number | null;
   /** Opaque id used in page URLs (e.g. /evaluation/{ref}) instead of `id`. */
   ref: string;
   name: string;
@@ -432,6 +434,20 @@ export default function CandidatesView({ jobId }: { jobId: string }) {
 
   // ── Whether the current view is the "all" (Candidates) tab ───────────────
   const isCandidatesTab = activeTab === "Candidates";
+
+  // The Talent Agent's ranked matches who aren't candidates on this job yet.
+  // Listed on the Candidates tab only (they have no stage), read-only.
+  const candidateProfileIds = useMemo(
+    () => new Set(candidates.map((c) => c.resume_metadata_id).filter((id): id is number => id != null)),
+    [candidates],
+  );
+  const agentMatches = useTalentMatches(jobId, candidateProfileIds);
+  const agentShown = useMemo(() => {
+    if (!isCandidatesTab || showCompleted) return [];
+    const needle = search.trim().toLowerCase();
+    if (!needle) return agentMatches;
+    return agentMatches.filter((m) => (m.profile.name ?? "").toLowerCase().includes(needle));
+  }, [agentMatches, isCandidatesTab, showCompleted, search]);
 
   // ── Selection helpers ─────────────────────────────────────────────────────
   const toggleSelect = useCallback((id: number) => {
@@ -991,7 +1007,7 @@ export default function CandidatesView({ jobId }: { jobId: string }) {
       </div>
 
       {/* ── Auto-match suggestion banner ────────────────────────────────── */}
-      {!loading && candidates.length === 0 && (
+      {!loading && candidates.length === 0 && agentShown.length === 0 && (
         <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
           <Database className="w-5 h-5 text-blue-600 flex-shrink-0" />
           <p className="text-sm text-blue-800 flex-1">
@@ -1081,7 +1097,7 @@ export default function CandidatesView({ jobId }: { jobId: string }) {
                     ))}
                   </TableRow>
                 ))
-              ) : pagedCandidates.length === 0 ? (
+              ) : pagedCandidates.length === 0 && agentShown.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={20} className="py-16 text-center text-gray-500">
                     <Users className="w-10 h-10 mx-auto mb-2 text-gray-300" />
@@ -1091,7 +1107,8 @@ export default function CandidatesView({ jobId }: { jobId: string }) {
                   </TableCell>
                 </TableRow>
               ) : (
-                pagedCandidates.map((c) => {
+                <>
+                {pagedCandidates.map((c) => {
                   const isScheduled = c.interview_status === "Scheduled";
                   // Only show schedule label when status is actually "Scheduled"
                   const scheduleLabel = isScheduled
@@ -1439,7 +1456,9 @@ export default function CandidatesView({ jobId }: { jobId: string }) {
                       )}
                     </TableRow>
                   );
-                })
+                })}
+                <TalentMatchRows matches={agentShown} jobId={jobId} />
+                </>
               )}
             </TableBody>
           </Table>
@@ -1499,7 +1518,7 @@ export default function CandidatesView({ jobId }: { jobId: string }) {
                 <Skeleton key={i} className="h-72 w-full rounded-2xl" />
               ))}
             </div>
-          ) : pagedCandidates.length === 0 ? (
+          ) : pagedCandidates.length === 0 && agentShown.length === 0 ? (
             <div className="py-16 text-center text-gray-500">
               <Users className="mx-auto mb-2 h-10 w-10 text-gray-300" />
               {showCompleted
@@ -1508,6 +1527,7 @@ export default function CandidatesView({ jobId }: { jobId: string }) {
             </div>
           ) : (
             <>
+              {pagedCandidates.length > 0 && (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {pagedCandidates.map((c) => (
                   <CandidateGridCard
@@ -1533,6 +1553,9 @@ export default function CandidatesView({ jobId }: { jobId: string }) {
                   />
                 ))}
               </div>
+              )}
+
+              <TalentMatchCards matches={agentShown} jobId={jobId} />
 
               {/* Pagination for grid view */}
               <div className="mt-4 flex flex-col items-center justify-between gap-2 border-t border-gray-100 pt-4 sm:flex-row dark:border-white/10">

@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { CheckCircle2, CircleAlert, Loader2 } from "lucide-react";
+import { CheckCircle2, CircleAlert, Loader2, ShieldCheck } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { publicGet, publicPost, type InvitePageData } from "@/lib/talent";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CandidateFrame, LinkProblem } from "./CandidateFrame";
@@ -18,6 +19,9 @@ export default function InvitePage({ token }: { token: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [declined, setDeclined] = useState(false);
+  // Step 1 when we have no consent yet: agree to hear from us, then answer.
+  const [agreed, setAgreed] = useState(false);
+  const [consentStep, setConsentStep] = useState(true);
 
   useEffect(() => {
     publicGet<InvitePageData>(`/invite/${encodeURIComponent(token)}`)
@@ -54,13 +58,14 @@ export default function InvitePage({ token }: { token: string }) {
     );
   }
 
-  const answer = async (interested: boolean) => {
+  const answer = async (interested: boolean, consent = agreed) => {
     setError(null);
     setBusy(true);
     try {
       const num = (v: string) => (v.trim() === "" ? null : Number(v));
       const r = await publicPost<{ interview_url?: string }>(`/invite/${encodeURIComponent(token)}`, {
         interested,
+        consent,
         current_ctc: num(f.current_ctc),
         expected_ctc: num(f.expected_ctc),
         notice_period_days: num(f.notice_period_days),
@@ -92,6 +97,43 @@ export default function InvitePage({ token }: { token: string }) {
             <p className="text-sm text-gray-600">This role is no longer open. Thank you for your interest.</p>
           </CardContent>
         </Card>
+      ) : data.consent_needed && consentStep ? (
+        <>
+          <Card className="mt-4 gap-4">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-sm font-medium leading-snug text-gray-800">
+                <ShieldCheck className="h-4 w-4 text-brand-500" aria-hidden /> First, may we email you about this role?
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm leading-6 text-gray-700">
+                {data.organization} has your CV in its candidate database. Before we go any further we need your
+                permission to email you about this role and, if you&apos;re interested, its interview. You can change
+                your mind at any time with the link at the bottom of our emails.
+              </p>
+              <Label htmlFor="invite-consent"
+                className="cursor-pointer items-start gap-3 rounded-xl border border-gray-200 px-4 py-3 font-normal leading-snug text-gray-700 has-[[data-state=checked]]:border-brand-500 has-[[data-state=checked]]:bg-brand-50">
+                <Checkbox id="invite-consent" className="mt-0.5" checked={agreed} onCheckedChange={(v) => setAgreed(v === true)} />
+                I agree that {data.organization} may email me about this role and its interview.
+              </Label>
+            </CardContent>
+          </Card>
+          {error && (
+            <Alert variant="destructive" className="mt-3">
+              <CircleAlert />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <Button type="button" variant="primary" size="lg" className="w-full" disabled={!agreed || busy}
+              onClick={() => setConsentStep(false)}>
+              Agree and continue
+            </Button>
+            <Button type="button" variant="outline" size="lg" className="w-full" disabled={busy} onClick={() => answer(false, false)}>
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />} No thanks
+            </Button>
+          </div>
+        </>
       ) : (
         <>
           <Card className="mt-4 gap-4">
