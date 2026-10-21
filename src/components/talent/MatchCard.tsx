@@ -23,7 +23,7 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { notifyError } from "@/lib/notify";
-import { DIMENSION_LABELS, fmtDate, talentPost, type MatchItem, type MustHave } from "@/lib/talent";
+import { DIMENSION_LABELS, fmtDate, matchStatusText, talentPost, type MatchItem, type MustHave } from "@/lib/talent";
 import { cn } from "@/lib/utils";
 import { Pill } from "./TalentShell";
 
@@ -367,7 +367,7 @@ export function MatchCard({
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="font-semibold text-foreground">{p.name || `Profile ${m.profile_id}`}</span>
                 <Pill>{p.verification_status}</Pill>
-                {m.status !== "ranked" && <Pill>{m.status}</Pill>}
+                {m.status !== "ranked" && <Pill>{matchStatusText(m)}</Pill>}
               </div>
               <div className="text-sm text-muted-foreground">{roleLine(p)}</div>
               <MatchFacts m={m} className="pt-0.5" />

@@ -287,6 +287,7 @@ const STATUS_TONE: Record<string, keyof typeof PILL_TONES> = {
   active: "green", paused: "amber", cancelled: "gray", completed: "blue", open: "green",
   fresh: "green", stale: "amber", refreshing: "blue", unreachable: "red", unverified: "gray",
   ranked: "gray", needs_refresh: "amber", approval_pending: "amber", invited: "blue", declined: "gray",
+  "not interested": "red", "consent requested": "amber",
   scheduled: "blue", interviewed: "blue", shortlisted: "green", submitted: "green", closed: "gray",
   offered: "blue", in_progress: "blue", scored: "green", no_show: "red", human_requested: "amber", expired: "gray",
   pending: "amber", reviewed: "green", yes: "green", no: "red", unclear: "amber",
