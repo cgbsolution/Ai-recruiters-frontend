@@ -19,14 +19,18 @@ export default function AskmiraSignIn() {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    const token = new URLSearchParams(window.location.hash.slice(1)).get("token");
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const token = fragment.get("token");
+    // Where AskMira asked to land (a job's candidates): a plain path on this site only.
+    const next = fragment.get("next") ?? "";
+    const landing = /^\/(?!\/)[A-Za-z0-9._~/-]{0,200}$/.test(next) ? next : "/";
     window.history.replaceState(null, "", window.location.pathname);
     if (!token) {
       setError("This link has no sign-in token. Open Interviews again from AskMira.");
       return;
     }
     loginWithAskmira(token)
-      .then(() => router.replace("/"))
+      .then(() => router.replace(landing))
       .catch((e: Error) => setError(e.message));
   }, [loginWithAskmira, router]);
 

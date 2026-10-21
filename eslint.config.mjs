@@ -10,7 +10,8 @@ const compat = new FlatCompat({
 });
 
 const eslintConfig = [
-  ...compat.extends("next/core-web-vitals", "next/typescript"),
+  // On its own, so it ignores these everywhere. Inside an object that also has
+  // `rules`, `ignores` only narrows that one object and .next/ got linted.
   {
     ignores: [
       "node_modules/**",
@@ -19,6 +20,9 @@ const eslintConfig = [
       "build/**",
       "next-env.d.ts",
     ],
+  },
+  ...compat.extends("next/core-web-vitals", "next/typescript"),
+  {
     rules: {
       // 🔧 Relax strict rules
       "@typescript-eslint/no-explicit-any": "off",
