@@ -66,7 +66,7 @@ const AppSidebar: React.FC = () => {
         { icon: Database, name: "Resume Database", path: "/resume-database", roles: ["super_admin", "admin"], tourKey: "nav-resume-database" },
         { icon: Bot, name: "Talent Agent", path: "/talent", roles: ["super_admin", "admin", "recruiter"], tourKey: "nav-talent-agent" },
         { icon: Building2, name: "Organizations", path: "/organizations", roles: ["super_admin"], tourKey: "nav-organizations" },
-        { icon: Link2, name: "AskMira Connection", path: "/askmira-connection", roles: ["super_admin"] },
+        { icon: Link2, name: "AskMira Connection", path: "/askmira-connection", roles: ["super_admin", "admin"] },
         { icon: Shield, name: "Access Control", path: "/access-control", roles: ["super_admin", "admin"], tourKey: "nav-access-control" },
         { icon: FolderOpen, name: "File Manager", path: "/file-manager", roles: ["super_admin"], tourKey: "nav-file-manager" },
         { icon: Code2, name: "Code Sandbox Test", path: "/code-test", roles: ["super_admin"], tourKey: "nav-code-test" },

@@ -59,7 +59,8 @@ export function middleware(request: NextRequest) {
   // Protected routes — require token
   if (!token) {
     const signInUrl = new URL("/signin", request.url);
-    signInUrl.searchParams.set("redirect", pathname);
+    // With its query: an AskMira connect request must survive signing in.
+    signInUrl.searchParams.set("redirect", pathname + request.nextUrl.search);
     return NextResponse.redirect(signInUrl);
   }
 

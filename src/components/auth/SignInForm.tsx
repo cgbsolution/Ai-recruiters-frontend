@@ -10,6 +10,12 @@ import { Eye, EyeOff, Loader2, Mail, Lock } from "lucide-react";
 import { toast } from "sonner";
 import ForgotPasswordModal from "@/components/auth/ForgotPasswordModal";
 
+/** Where to go after signing in: the page that sent you here, if it is one of ours. */
+function afterSignIn(): string {
+  const target = new URLSearchParams(window.location.search).get("redirect") ?? "";
+  return target.startsWith("/") && !target.startsWith("//") && !target.startsWith("/\\") ? target : "/";
+}
+
 export default function SignInForm() {
   const { login } = useAuth();
 
@@ -57,7 +63,7 @@ export default function SignInForm() {
 
       try {
         await login(finalEmail.trim().toLowerCase(), finalPass);
-        window.location.href = "/";
+        window.location.href = afterSignIn();
       } catch (err) {
         setError((err as Error).message || "Login failed");
       } finally {
@@ -73,7 +79,7 @@ export default function SignInForm() {
 
     try {
       await login(email.trim().toLowerCase(), password);
-      window.location.href = "/";
+      window.location.href = afterSignIn();
     } catch (err) {
       setError((err as Error).message || "Login failed");
     } finally {
