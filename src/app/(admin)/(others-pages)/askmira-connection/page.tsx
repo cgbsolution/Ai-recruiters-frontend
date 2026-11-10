@@ -3,8 +3,8 @@ import React from "react";
 import AskmiraConnectionView from "@/components/askmira/AskmiraConnectionView";
 
 export const metadata: Metadata = {
-  title: "AskMira connection - AI Recruiters",
-  description: "Connect AskMira, the HRMS, with a one-time key",
+  title: "AskMiraa connection - AI Recruiters",
+  description: "Connect AskMiraa, the HRMS, with a one-time key",
 };
 
 export default function AskmiraConnectionPage() {

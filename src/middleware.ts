@@ -27,7 +27,7 @@ const PUBLIC_PATHS = [
   "/interview",
   "/secondary-cam",
   "/avatar-debug",
-  // Sign-in from AskMira: the one-time link in the URL fragment is the credential.
+  // Sign-in from AskMiraa: the one-time link in the URL fragment is the credential.
   "/sso",
   // Talent Agent candidate pages (refresh, invite, interview, my data): the
   // emailed magic link is the credential.
@@ -59,7 +59,7 @@ export function middleware(request: NextRequest) {
   // Protected routes — require token
   if (!token) {
     const signInUrl = new URL("/signin", request.url);
-    // With its query: an AskMira connect request must survive signing in.
+    // With its query: an AskMiraa connect request must survive signing in.
     signInUrl.searchParams.set("redirect", pathname + request.nextUrl.search);
     return NextResponse.redirect(signInUrl);
   }

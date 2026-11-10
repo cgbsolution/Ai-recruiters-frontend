@@ -6,7 +6,7 @@ import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 /**
- * Landing page for "Open Interviews" in AskMira. AskMira puts a one-time,
+ * Landing page for "Open Interviews" in AskMiraa. AskMiraa puts a one-time,
  * one-minute sign-in token in the URL fragment (never sent to any server or
  * Referer); it is traded for a normal session here and then wiped from the URL.
  */
@@ -21,12 +21,12 @@ export default function AskmiraSignIn() {
     started.current = true;
     const fragment = new URLSearchParams(window.location.hash.slice(1));
     const token = fragment.get("token");
-    // Where AskMira asked to land (a job's candidates): a plain path on this site only.
+    // Where AskMiraa asked to land (a job's candidates): a plain path on this site only.
     const next = fragment.get("next") ?? "";
     const landing = /^\/(?!\/)[A-Za-z0-9._~/-]{0,200}$/.test(next) ? next : "/";
     window.history.replaceState(null, "", window.location.pathname);
     if (!token) {
-      setError("This link has no sign-in token. Open Interviews again from AskMira.");
+      setError("This link has no sign-in token. Open Interviews again from AskMiraa.");
       return;
     }
     loginWithAskmira(token)
@@ -40,7 +40,7 @@ export default function AskmiraSignIn() {
         {error ? (
           <div className="space-y-3">
             <h1 className="text-xl font-semibold text-gray-800 dark:text-white/90">
-              Couldn&apos;t sign you in from AskMira
+              Couldn&apos;t sign you in from AskMiraa
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">{error}</p>
             <a href="/signin" className="text-sm text-brand-500 hover:text-brand-600">
@@ -50,7 +50,7 @@ export default function AskmiraSignIn() {
         ) : (
           <div className="flex items-center gap-3 text-gray-600 dark:text-gray-300">
             <Loader2 className="size-5 animate-spin" />
-            <span>Signing you in from AskMira…</span>
+            <span>Signing you in from AskMiraa…</span>
           </div>
         )}
       </div>

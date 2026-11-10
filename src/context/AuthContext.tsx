@@ -69,7 +69,7 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  /** Sign in with a one-time link from AskMira (the HRMS this company runs). */
+  /** Sign in with a one-time link from AskMiraa (the HRMS this company runs). */
   loginWithAskmira: (launchToken: string) => Promise<void>;
   signup: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
@@ -324,9 +324,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: launchToken }),
     });
-    const data = await res.json().catch(() => ({ detail: "Sign-in from AskMira failed" }));
+    const data = await res.json().catch(() => ({ detail: "Sign-in from AskMiraa failed" }));
     if (!res.ok) {
-      throw new Error(data.detail || "Sign-in from AskMira failed");
+      throw new Error(data.detail || "Sign-in from AskMiraa failed");
     }
     saveSession(data.access_token, data.user as AuthUser, data.expires_in);
   }, [saveSession]);

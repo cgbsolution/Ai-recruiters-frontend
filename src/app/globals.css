@@ -73,9 +73,9 @@
   --text-theme-xs--line-height: 18px;
 
 
-  /* AskMira re-theme: hard-coded indigo/violet accents follow the maroon,
+  /* AskMiraa re-theme: hard-coded indigo/violet accents follow the maroon,
      purple a lighter maroon-rose (so two-colour gradients stay two-tone),
-     blue/sky/cyan the muted AskMira info blue. Status greens, ambers, reds stay. */
+     blue/sky/cyan the muted AskMiraa info blue. Status greens, ambers, reds stay. */
   --color-indigo-25: #fbf7f6;
   --color-indigo-50: #f6eceb;
   --color-indigo-100: #eedcda;
@@ -1122,7 +1122,7 @@ span.flatpickr-weekday,
 }
 
 
-/* AskMira chrome: the nav rail is the AskMira maroon, top to bottom. */
+/* AskMiraa chrome: the nav rail is the AskMiraa maroon, top to bottom. */
 .askmira-rail {
   background-image: linear-gradient(180deg, #6b0a13 0%, #5c0a11 45%, #34040a 100%);
 }

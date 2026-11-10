@@ -37,9 +37,9 @@ function hostOf(url: string): string {
 }
 
 /**
- * /connect/askmira — AskMira asks to connect one of its workspaces to the
+ * /connect/askmira — AskMiraa asks to connect one of its workspaces to the
  * signed-in admin's organization. Allow makes a one-time code, bound to this
- * organization, that only the AskMira server which asked can use; Cancel sends
+ * organization, that only the AskMiraa server which asked can use; Cancel sends
  * the admin back with nothing.
  */
 export default function AskmiraConnectApprove() {
@@ -80,24 +80,24 @@ export default function AskmiraConnectApprove() {
       <div className="flex flex-col justify-center flex-1 w-full max-w-md mx-auto px-6 space-y-5">
         <div className="flex items-center gap-3">
           <ShieldCheck className="size-7 text-brand-500" />
-          <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Connect AskMira</h1>
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Connect AskMiraa</h1>
         </div>
 
         {!request ? (
           <p className="text-sm text-gray-500">
-            This link is incomplete. Start again from AskMira: Settings → Connectors → AnytimeHire → Connect.
+            This link is incomplete. Start again from AskMiraa: Settings → Connectors → AnytimeHire → Connect.
           </p>
         ) : isLoading ? (
           <Loader2 className="size-5 animate-spin text-gray-500" />
         ) : !isOrgAdmin ? (
           <p className="text-sm text-gray-500">
-            Only an admin of an organization here can connect it to AskMira. Sign in with an admin account of your
-            organization, or ask one of them to press Connect in AskMira.
+            Only an admin of an organization here can connect it to AskMiraa. Sign in with an admin account of your
+            organization, or ask one of them to press Connect in AskMiraa.
           </p>
         ) : (
           <>
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              The AskMira workspace <span className="font-semibold">“{request.tenant_name}”</span> at{" "}
+              The AskMiraa workspace <span className="font-semibold">“{request.tenant_name}”</span> at{" "}
               <span className="font-mono">{hostOf(request.redirect_uri)}</span> asks to connect to your organization
               {mine ? (
                 <>
@@ -108,15 +108,15 @@ export default function AskmiraConnectApprove() {
               .
             </p>
             <ul className="list-disc space-y-1 pl-5 text-sm text-gray-600 dark:text-gray-300">
-              <li>Its people can open AnytimeHire from AskMira without a second password.</li>
-              <li>It keeps your team list here in step with AskMira (HR as admins, managers as recruiters).</li>
+              <li>Its people can open AnytimeHire from AskMiraa without a second password.</li>
+              <li>It keeps your team list here in step with AskMiraa (HR as admins, managers as recruiters).</li>
               <li>
-                Its people can see your jobs, candidates and interviews in AskMira, as their role here allows — never
+                Its people can see your jobs, candidates and interviews in AskMiraa, as their role here allows — never
                 résumés, contact details or AI scores.
               </li>
             </ul>
             <p className="text-xs text-gray-500">
-              It reaches your organization only. You can disconnect it any time under AskMira Connection.
+              It reaches your organization only. You can disconnect it any time under AskMiraa Connection.
             </p>
             {mine?.connected && mine.askmira_workspace !== request.tenant_name ? (
               <p className="text-sm text-amber-600">

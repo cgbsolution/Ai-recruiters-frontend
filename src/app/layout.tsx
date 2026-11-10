@@ -14,7 +14,7 @@ import { ProductTour } from "@/components/product-tour/ProductTour";
 import { Toaster } from "sonner";
 
 
-// AskMira's pairing: Inter for the UI, Fraunces for page titles.
+// AskMiraa's pairing: Inter for the UI, Fraunces for page titles.
 const outfit = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const fraunces = Fraunces({ subsets: ["latin"], variable: "--font-fraunces", axes: ["SOFT", "opsz"] });
 
