@@ -23,12 +23,12 @@ import { api } from "@/lib/api";
 // ── Feature definitions ─────────────────────────────────────────────────────
 const FEATURES = [
   { key: "interview", label: "Interview", color: "#8979FF" },
-  { key: "jd_generation", label: "JD Gen", color: "#FF6B6B" },
-  { key: "jd_parsing", label: "JD Parse", color: "#FFA94D" },
-  { key: "resume_parsing", label: "Resume", color: "#51CF66" },
-  { key: "fit_score", label: "Fit Score", color: "#339AF0" },
-  { key: "question_generation", label: "Q Gen", color: "#CC5DE8" },
-  { key: "answer_evaluation", label: "Eval", color: "#20C997" },
+  { key: "jd_generation", label: "JD Gen", color: "#CC4A3A" },
+  { key: "jd_parsing", label: "JD Parse", color: "#F8A01A" },
+  { key: "resume_parsing", label: "Resume", color: "#5CB98D" },
+  { key: "fit_score", label: "Fit Score", color: "#2D6A8A" },
+  { key: "question_generation", label: "Q Gen", color: "#A3585B" },
+  { key: "answer_evaluation", label: "Eval", color: "#2E7D5B" },
   { key: "question_suggestion", label: "Suggest", color: "#F783AC" },
 ] as const;
 
@@ -195,14 +195,14 @@ export default function AiUsageAnalytics({ orgId }: { orgId?: string } = {}) {
               value: fmtNum(t?.input_tokens ?? 0),
               change: summary?.trends?.input_tokens ?? 0,
               chartKey: "input_tokens" as const,
-              color: "#4f46e5",
+              color: "#7d0712",
             },
             {
               label: "Total Tokens Out",
               value: fmtNum(t?.output_tokens ?? 0),
               change: summary?.trends?.output_tokens ?? 0,
               chartKey: "output_tokens" as const,
-              color: "#4f46e5",
+              color: "#7d0712",
             },
             {
               label: "Total Token Cost",
@@ -215,7 +215,7 @@ export default function AiUsageAnalytics({ orgId }: { orgId?: string } = {}) {
             const isPositive = card.change >= 0;
             const Icon = isPositive ? TrendingUp : TrendingDown;
             const miniChartConfig: ChartConfig = {
-              value: { label: card.label, color: isPositive ? "#4f46e5" : "#ef4444" },
+              value: { label: card.label, color: isPositive ? "#7d0712" : "#ef4444" },
             };
             const miniData = (summary?.chart_data ?? []).map((d) => ({
               name: d.name,

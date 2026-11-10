@@ -32,8 +32,8 @@ interface CandidateRow {
 
 const STAGES: { key: CandidateStatus; label: string; color: string }[] = [
   { key: "Applied", label: "Applied", color: "#f59e0b" },
-  { key: "Interview", label: "Interview", color: "#3b82f6" },
-  { key: "Offered", label: "Offered", color: "#a855f7" },
+  { key: "Interview", label: "Interview", color: "#2d6a8a" },
+  { key: "Offered", label: "Offered", color: "#a3585b" },
   { key: "Selected", label: "Selected", color: "#14b8a6" },
   { key: "Hired", label: "Hired", color: "#10b981" },
   { key: "Rejected", label: "Rejected", color: "#ef4444" },

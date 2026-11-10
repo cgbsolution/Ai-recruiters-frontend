@@ -22,12 +22,12 @@ import { api } from "@/lib/api";
 // ── Feature definitions with distinct colors ────────────────────────────────
 const FEATURES = [
   { key: "interview", label: "Interview Room", color: "#8979FF" },
-  { key: "jd_generation", label: "JD Generation", color: "#FF6B6B" },
-  { key: "jd_parsing", label: "JD Parsing", color: "#FFA94D" },
-  { key: "resume_parsing", label: "Resume Parsing", color: "#51CF66" },
-  { key: "fit_score", label: "Fit Score", color: "#339AF0" },
-  { key: "question_generation", label: "Question Gen", color: "#CC5DE8" },
-  { key: "answer_evaluation", label: "Answer Eval", color: "#20C997" },
+  { key: "jd_generation", label: "JD Generation", color: "#CC4A3A" },
+  { key: "jd_parsing", label: "JD Parsing", color: "#F8A01A" },
+  { key: "resume_parsing", label: "Resume Parsing", color: "#5CB98D" },
+  { key: "fit_score", label: "Fit Score", color: "#2D6A8A" },
+  { key: "question_generation", label: "Question Gen", color: "#A3585B" },
+  { key: "answer_evaluation", label: "Answer Eval", color: "#2E7D5B" },
   { key: "question_suggestion", label: "Question Suggest", color: "#F783AC" },
 ] as const;
 

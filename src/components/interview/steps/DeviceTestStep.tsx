@@ -766,7 +766,7 @@ function SpokenMicCheck({ stream, onNext, sessionId, language = "en", managerEma
                 className="h-full rounded-full transition-all duration-100"
                 style={{
                   width: `${level}%`,
-                  background: level > 60 ? "#22c55e" : level > 30 ? "#eab308" : "#3b82f6",
+                  background: level > 60 ? "#22c55e" : level > 30 ? "#eab308" : "#2d6a8a",
                 }}
               />
             </div>
@@ -1105,7 +1105,7 @@ function SimpleDeviceTest({ stream, onNext }: Props) {
           <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
             <div
               className="h-full rounded-full transition-all duration-100"
-              style={{ width: `${micLevel}%`, background: micLevel > 60 ? "#22c55e" : micLevel > 30 ? "#eab308" : "#3b82f6" }}
+              style={{ width: `${micLevel}%`, background: micLevel > 60 ? "#22c55e" : micLevel > 30 ? "#eab308" : "#2d6a8a" }}
             />
           </div>
           <p className="text-xs text-gray-400 mt-2">

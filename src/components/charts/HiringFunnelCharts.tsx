@@ -22,12 +22,12 @@ import { api } from "@/lib/api";
 type ViewMode = "monthly" | "weekly";
 
 const STAGES = [
-  { key: "applied", label: "Applied", color: "#FFA94D" },
-  { key: "interview", label: "Interview", color: "#339AF0" },
-  { key: "offered", label: "Offered", color: "#CC5DE8" },
-  { key: "selected", label: "Selected", color: "#51CF66" },
-  { key: "hired", label: "Hired", color: "#20C997" },
-  { key: "rejected", label: "Rejected", color: "#FF6B6B" },
+  { key: "applied", label: "Applied", color: "#F8A01A" },
+  { key: "interview", label: "Interview", color: "#2D6A8A" },
+  { key: "offered", label: "Offered", color: "#A3585B" },
+  { key: "selected", label: "Selected", color: "#5CB98D" },
+  { key: "hired", label: "Hired", color: "#2E7D5B" },
+  { key: "rejected", label: "Rejected", color: "#CC4A3A" },
 ] as const;
 
 const chartConfig: ChartConfig = Object.fromEntries(
@@ -115,7 +115,7 @@ export default function HiringFunnelCharts() {
                   <YAxis
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fontSize: 12, fill: "#6B7280" }}
+                    tick={{ fontSize: 12, fill: "#7A6E68" }}
                   />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   {STAGES.map((s) => (

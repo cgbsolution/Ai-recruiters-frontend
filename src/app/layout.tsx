@@ -1,4 +1,4 @@
-import { Outfit } from "next/font/google";
+import { Fraunces, Inter } from "next/font/google";
 import "./globals.css";
 import type { Metadata } from "next";
 
@@ -14,9 +14,9 @@ import { ProductTour } from "@/components/product-tour/ProductTour";
 import { Toaster } from "sonner";
 
 
-const outfit = Outfit({
-  subsets: ["latin"],
-});
+// AskMira's pairing: Inter for the UI, Fraunces for page titles.
+const outfit = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const fraunces = Fraunces({ subsets: ["latin"], variable: "--font-fraunces", axes: ["SOFT", "opsz"] });
 
 export const metadata: Metadata = {
   title: "Create Next App",
@@ -38,7 +38,7 @@ export default function RootLayout({
   return (
     // `translate="no"` is the W3C-standard signal browsers honor to skip
     // auto-translation — prevents the insertBefore crash described above.
-    <html lang="en" translate="no">
+    <html lang="en" translate="no" className={`${outfit.variable} ${fraunces.variable}`}>
       <body className={`${outfit.className} notranslate dark:bg-gray-900`}>
         <AuthProvider>
           <ThemeProvider>

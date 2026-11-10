@@ -55,7 +55,7 @@ export interface StatusMeta {
 export const STATUS_META: Record<StatusCategory, StatusMeta> = {
   scheduled: {
     label: "Scheduled",
-    color: "#3b82f6",
+    color: "#2d6a8a",
     bg: "#eff6ff",
     badge: "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400",
     dot: "bg-blue-500",
@@ -83,7 +83,7 @@ export const STATUS_META: Record<StatusCategory, StatusMeta> = {
   },
   rescheduled: {
     label: "Rescheduled",
-    color: "#8b5cf6",
+    color: "#a3585b",
     bg: "#f5f3ff",
     badge: "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-400",
     dot: "bg-violet-500",

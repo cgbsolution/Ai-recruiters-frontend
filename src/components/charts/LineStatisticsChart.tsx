@@ -22,8 +22,8 @@ import { api } from "@/lib/api";
 type ViewMode = "daily" | "weekly" | "monthly";
 
 const chartConfig: ChartConfig = {
-  active: { label: "Active Jobs", color: "#465fff" },
-  finished: { label: "Finished Jobs", color: "#20C997" },
+  active: { label: "Active Jobs", color: "#7d0712" },
+  finished: { label: "Finished Jobs", color: "#2E7D5B" },
 };
 
 export default function LineStatisticsChart() {

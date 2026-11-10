@@ -30,7 +30,7 @@ interface FunnelRow {
 }
 
 const chartConfig: ChartConfig = {
-  total: { label: "Candidates", color: "#6366f1" },
+  total: { label: "Candidates", color: "#7d0712" },
 };
 
 export default function CandidateActivityChart() {
@@ -137,9 +137,9 @@ export default function CandidateActivityChart() {
                 <AreaChart data={chartData} margin={{ top: 12, right: 8, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="candidateActivityFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#6366f1" stopOpacity={0.45} />
-                      <stop offset="55%" stopColor="#8b5cf6" stopOpacity={0.18} />
-                      <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
+                      <stop offset="0%" stopColor="#7d0712" stopOpacity={0.45} />
+                      <stop offset="55%" stopColor="#a3585b" stopOpacity={0.18} />
+                      <stop offset="100%" stopColor="#a3585b" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -161,13 +161,13 @@ export default function CandidateActivityChart() {
                     type="monotone"
                     dataKey="total"
                     name="Candidates"
-                    stroke="#6366f1"
+                    stroke="#7d0712"
                     strokeWidth={2}
                     fill="url(#candidateActivityFill)"
                     isAnimationActive
                     animationDuration={800}
                     animationEasing="ease-out"
-                    dot={{ r: 2.5, fill: "#6366f1" }}
+                    dot={{ r: 2.5, fill: "#7d0712" }}
                     activeDot={{ r: 6, strokeWidth: 2, stroke: "#fff" }}
                   />
                 </AreaChart>

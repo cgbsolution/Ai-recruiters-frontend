@@ -100,8 +100,7 @@ const AppSidebar: React.FC = () => {
       onMouseEnter={() => !isExpanded && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       className={cn(
-        "fixed left-0 top-0 z-50 mt-16 flex h-screen flex-col border-r border-gray-200/80 bg-white text-gray-900 transition-[width] duration-200 ease-out lg:mt-0",
-        "dark:border-white/10 dark:bg-gray-950 dark:text-gray-100",
+        "askmira-rail fixed left-0 top-0 z-50 mt-16 flex h-screen flex-col border-r border-white/10 text-white transition-[width] duration-200 ease-out lg:mt-0",
         open ? "w-[260px]" : "w-[84px]",
         isMobileOpen ? "translate-x-0" : "-translate-x-full",
         "lg:translate-x-0",
@@ -113,8 +112,7 @@ const AppSidebar: React.FC = () => {
         <Link href="/" onClick={handleLinkClick} className="flex items-center gap-2">
           {open ? (
             <>
-              <Image className="dark:hidden" src="/images/logo/ai.svg" alt="Logo" width={140} height={36} priority />
-              <Image className="hidden dark:block" src="/images/logo/ai-white.svg" alt="Logo" width={140} height={36} priority />
+              <Image src="/images/logo/ai-white.svg" alt="Logo" width={140} height={36} priority />
             </>
           ) : (
             <Image src="/images/logo/logo-icon.svg" alt="Logo" width={30} height={30} priority />
@@ -126,7 +124,7 @@ const AppSidebar: React.FC = () => {
       <nav className="no-scrollbar flex-1 overflow-y-auto px-3 pt-2 pb-4">
         <p
           className={cn(
-            "mb-2 px-2 text-[10px] font-bold uppercase tracking-[0.15em] text-gray-400",
+            "mb-2 px-2 text-[10px] font-bold uppercase tracking-[0.15em] text-white/50",
             !open && "lg:text-center",
           )}
         >
@@ -149,15 +147,15 @@ const AppSidebar: React.FC = () => {
                     "group relative flex items-center rounded-xl transition-all duration-150 ease-out",
                     open ? "gap-3 px-3 py-2.5" : "h-10 w-10 mx-auto justify-center",
                     active
-                      ? "bg-gradient-to-r from-indigo-500/10 to-purple-500/10 text-indigo-600 dark:from-indigo-500/15 dark:to-purple-500/15 dark:text-indigo-300"
-                      : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-white",
+                      ? "bg-white/10 text-white"
+                      : "text-white/80 hover:bg-white/10 hover:text-white",
                   )}
                 >
                   {/* Active left accent bar */}
                   {active && (
                     <span
                       aria-hidden
-                      className="absolute left-0 top-1/2 h-5 w-1 -translate-x-0 -translate-y-1/2 rounded-r-full bg-gradient-to-b from-indigo-500 to-purple-500"
+                      className="absolute left-0 top-1/2 h-5 w-1 -translate-x-0 -translate-y-1/2 rounded-r-full bg-marigold-500"
                     />
                   )}
 
@@ -166,8 +164,8 @@ const AppSidebar: React.FC = () => {
                     className={cn(
                       "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all duration-150",
                       active
-                        ? "bg-gradient-to-br from-indigo-500 to-purple-500 text-white shadow-sm shadow-indigo-500/30"
-                        : "bg-gray-100 text-gray-500 group-hover:bg-gray-200 group-hover:text-gray-700 dark:bg-white/5 dark:text-gray-400 dark:group-hover:bg-white/10",
+                        ? "bg-marigold-500 text-gray-950 shadow-sm shadow-black/20"
+                        : "bg-white/10 text-white/85 group-hover:bg-white/15 group-hover:text-white",
                     )}
                   >
                     <Icon className="h-4 w-4" />
@@ -204,7 +202,7 @@ const AppSidebar: React.FC = () => {
           onClick={openModal}
           title={!open ? "Create Opening" : undefined}
           className={cn(
-            "group relative overflow-hidden rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:from-indigo-600 hover:to-purple-600 hover:shadow-lg hover:shadow-indigo-500/25 active:translate-y-0",
+            "group relative overflow-hidden rounded-xl bg-marigold-500 text-gray-950 shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:bg-marigold-400 hover:shadow-lg active:translate-y-0",
             open ? "h-10 w-full justify-start gap-2 px-3 text-sm font-semibold" : "h-10 w-10 p-0",
           )}
         >
@@ -216,21 +214,21 @@ const AppSidebar: React.FC = () => {
 
       {/* ── User profile footer with menu ─────────────────────────────────── */}
       {user && (
-        <div className={cn("border-t border-gray-200/80 p-3 dark:border-white/10", !open && "flex justify-center")} data-tour="user-profile-card">
+        <div className={cn("border-t border-white/10 p-3", !open && "flex justify-center")} data-tour="user-profile-card">
           {open ? (
-            <div className="flex items-center gap-3 rounded-xl bg-gray-50 p-2.5 dark:bg-white/5">
+            <div className="flex items-center gap-3 rounded-xl bg-white/10 p-2.5">
               {/* Avatar w/ online dot */}
               <div className="relative shrink-0">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 text-xs font-semibold text-white shadow-sm">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-marigold-500 text-xs font-semibold text-gray-950 shadow-sm">
                   {getInitials(user.name)}
                 </div>
-                <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-gray-50 dark:ring-gray-950" />
+                <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-brand-700" />
               </div>
 
               {/* Name + role */}
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">{user.name}</p>
-                <p className="truncate text-[11px] font-medium uppercase tracking-wider text-indigo-600 dark:text-indigo-300">
+                <p className="truncate text-sm font-semibold text-white">{user.name}</p>
+                <p className="truncate text-[11px] font-medium uppercase tracking-wider text-marigold-300">
                   {user.role.replace("_", " ")}
                 </p>
               </div>
@@ -240,7 +238,7 @@ const AppSidebar: React.FC = () => {
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="rounded-md p-1 text-gray-400 hover:bg-gray-200/70 hover:text-gray-600 dark:hover:bg-white/10 dark:hover:text-gray-200"
+                    className="rounded-md p-1 text-white/70 hover:bg-white/10 hover:text-white"
                     aria-label="Account menu"
                   >
                     <MoreVertical className="h-4 w-4" />
@@ -272,7 +270,7 @@ const AppSidebar: React.FC = () => {
                   title={user.name}
                   aria-label="Account menu"
                 >
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 text-xs font-semibold text-white shadow-sm">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-marigold-500 text-xs font-semibold text-gray-950 shadow-sm">
                     {getInitials(user.name)}
                   </div>
                   <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-gray-950" />

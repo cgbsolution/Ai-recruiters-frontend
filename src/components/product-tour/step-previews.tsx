@@ -97,8 +97,8 @@ export const AiUsagePreview = () => (
         />
         <defs>
           <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#6366f1" />
-            <stop offset="100%" stopColor="#a855f7" />
+            <stop offset="0%" stopColor="#7d0712" />
+            <stop offset="100%" stopColor="#a3585b" />
           </linearGradient>
         </defs>
       </svg>
